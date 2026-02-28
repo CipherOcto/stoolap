@@ -41,6 +41,91 @@ pub struct MerkleProof {
     pub path: Vec<u8>,
 }
 
+/// A single level in a hexary Merkle proof
+///
+/// Contains the sibling information needed to verify one level
+/// of a 16-way hexary trie.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofLevel {
+    /// 16-bit bitmap indicating which child positions have hashes
+    /// Bit i is set if child at position i (0-15) exists
+    pub bitmap: u16,
+
+    /// Sibling hashes (non-path children only)
+    /// Order corresponds to set bits in bitmap (excluding path bit)
+    pub siblings: Vec<[u8; 32]>,
+}
+
+/// Hexary Merkle proof for 16-way trie verification
+///
+/// This proof type is designed for hexary (16-way branching) tries like
+/// RowTrie, providing compact proofs and efficient verification.
+///
+/// # Fields
+///
+/// * `value_hash` - Hash of the value being proven (row hash)
+/// * `levels` - Proof levels from root to leaf
+/// * `root` - Expected Merkle root
+/// * `path` - Nibble path (2 nibbles packed per byte, LSB first)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HexaryProof {
+    /// Hash of the value being proven
+    pub value_hash: [u8; 32],
+
+    /// Proof levels from root to leaf
+    pub levels: Vec<ProofLevel>,
+
+    /// Expected Merkle root
+    pub root: [u8; 32],
+
+    /// Nibble path (2 nibbles packed per byte, LSB first)
+    /// If path length is odd, last byte uses only low nibble
+    pub path: Vec<u8>,
+}
+
+impl HexaryProof {
+    /// Create a new empty hexary proof
+    pub fn new() -> Self {
+        Self {
+            value_hash: [0u8; 32],
+            levels: Vec::new(),
+            root: [0u8; 32],
+            path: Vec::new(),
+        }
+    }
+
+    /// Create a proof with a value hash
+    pub fn with_value_hash(value_hash: [u8; 32]) -> Self {
+        Self {
+            value_hash,
+            levels: Vec::new(),
+            root: [0u8; 32],
+            path: Vec::new(),
+        }
+    }
+
+    /// Add a proof level
+    pub fn add_level(&mut self, bitmap: u16, siblings: Vec<[u8; 32]>) {
+        self.levels.push(ProofLevel { bitmap, siblings });
+    }
+
+    /// Set the root hash
+    pub fn set_root(&mut self, root: [u8; 32]) {
+        self.root = root;
+    }
+
+    /// Set the path
+    pub fn set_path(&mut self, path: Vec<u8>) {
+        self.path = path;
+    }
+}
+
+impl Default for HexaryProof {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MerkleProof {
     /// Create a new empty Merkle proof
     ///
@@ -418,5 +503,28 @@ mod tests {
         let level1_left = hash_pair(&[1u8; 32], &[2u8; 32]);
         let expected = hash_pair(&level1_left, &[3u8; 32]);
         assert_eq!(root, expected);
+    }
+
+    #[test]
+    fn test_hexary_proof_basic_structure() {
+        use crate::trie::proof::HexaryProof;
+        use crate::trie::proof::ProofLevel;
+
+        let proof = HexaryProof {
+            value_hash: [1u8; 32],
+            levels: vec![
+                ProofLevel {
+                    bitmap: 0b1000000000001000,
+                    siblings: vec![[2u8; 32]],
+                }
+            ],
+            root: [3u8; 32],
+            path: vec![0x35], // nibbles [5]
+        };
+
+        assert_eq!(proof.value_hash, [1u8; 32]);
+        assert_eq!(proof.levels.len(), 1);
+        assert_eq!(proof.levels[0].bitmap, 0b1000000000001000);
+        assert_eq!(proof.path, vec![0x35]);
     }
 }
