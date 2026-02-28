@@ -456,6 +456,9 @@ pub fn pack_nibbles(nibbles: &[u8]) -> Vec<u8> {
 
 /// Unpack bytes into nibbles (2 nibbles per byte, LSB first)
 ///
+/// Returns exactly 2 nibbles per input byte, preserving all nibbles including zeros.
+/// The caller is responsible for knowing the expected length of the original path.
+///
 /// # Examples
 ///
 /// ```
@@ -470,11 +473,6 @@ pub fn unpack_nibbles(packed: &[u8]) -> Vec<u8> {
     for &byte in packed {
         result.push(byte & 0x0F); // Low nibble
         result.push((byte >> 4) & 0x0F); // High nibble
-    }
-
-    // Remove trailing zero nibbles from odd-length packing
-    while result.last() == Some(&0) && result.len() % 2 == 0 {
-        result.pop();
     }
 
     result
@@ -721,13 +719,13 @@ mod tests {
     fn test_unpack_nibbles() {
         use crate::trie::proof::unpack_nibbles;
 
-        // Even: [0xC5] -> [5, 12]
+        // [0xC5] -> [5, 12] (always returns 2 nibbles per byte)
         let result = unpack_nibbles(&[0xC5]);
         assert_eq!(result, vec![5, 12]);
 
-        // Odd: [0xC5, 0x03] -> [5, 12, 3]
+        // [0xC5, 0x03] -> [5, 12, 3, 0] (always returns 2 nibbles per byte)
         let result = unpack_nibbles(&[0xC5, 0x03]);
-        assert_eq!(result, vec![5, 12, 3]);
+        assert_eq!(result, vec![5, 12, 3, 0]);
     }
 
     #[test]
@@ -735,6 +733,28 @@ mod tests {
         use crate::trie::proof::{pack_nibbles, unpack_nibbles};
 
         let original = vec![1, 5, 12, 15, 7, 3];
+        let packed = pack_nibbles(&original);
+        let unpacked = unpack_nibbles(&packed);
+        assert_eq!(original, unpacked);
+    }
+
+    #[test]
+    fn test_nibble_roundtrip_with_trailing_zeros() {
+        use crate::trie::proof::{pack_nibbles, unpack_nibbles};
+
+        // Test case that would fail with buggy implementation
+        let original = vec![1, 2, 3, 0]; // ends with zero
+        let packed = pack_nibbles(&original);
+        let unpacked = unpack_nibbles(&packed);
+        assert_eq!(original, unpacked);
+    }
+
+    #[test]
+    fn test_nibble_roundtrip_row_id_encoding() {
+        use crate::trie::proof::{pack_nibbles, unpack_nibbles};
+
+        // Simulate row_id=1 encoding: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let original = vec![0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let packed = pack_nibbles(&original);
         let unpacked = unpack_nibbles(&packed);
         assert_eq!(original, unpacked);
