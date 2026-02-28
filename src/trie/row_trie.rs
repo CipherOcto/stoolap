@@ -18,7 +18,7 @@
 //! database rows with cryptographic proofs.
 
 use crate::determ::DetermRow;
-use crate::trie::proof::{merkle_root, MerkleProof};
+use crate::trie::proof::{merkle_root, MerkleProof, HexaryProof, ProofLevel, pack_nibbles, hash_16_children};
 
 /// Represents a state difference between two trie states
 ///
@@ -126,12 +126,16 @@ impl RowNode {
     /// Recompute the hash of a branch node
     fn recompute_branch_hash(&mut self) {
         if let RowNode::Branch { ref mut hash, children } = self {
-            let child_hashes: Vec<[u8; 32]> = children
-                .iter()
-                .map(|child| child.as_ref().map(|c| c.hash()).unwrap_or([0u8; 32]))
-                .collect();
+            let child_hashes: [Option<[u8; 32]>; 16] = std::array::from_fn(|i| {
+                children[i].as_ref().map(|c| c.hash())
+            });
 
-            *hash = merkle_root(&child_hashes);
+            // Convert to array of [u8; 32] with zeros for missing children
+            let child_hash_array: [[u8; 32]; 16] = std::array::from_fn(|i| {
+                child_hashes[i].unwrap_or([0u8; 32])
+            });
+
+            *hash = hash_16_children(&child_hash_array);
         }
     }
 }
@@ -277,7 +281,11 @@ impl RowTrie {
                         }
 
                         // For new leaf
-                        let new_remaining = &key[depth + 1..];
+                        let new_remaining = if depth + 1 < key.len() {
+                            &key[depth + 1..]
+                        } else {
+                            &[]
+                        };
                         let new_leaf = RowNode::new_leaf(row_id, row);
 
                         if new_remaining.iter().all(|&x| x == 0) {
@@ -690,6 +698,137 @@ impl RowTrie {
                             depth + prefix.len(),
                             siblings,
                             path,
+                            target_row_id,
+                        );
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    /// Generate a hexary Merkle proof for a row
+    ///
+    /// This method creates a compact proof that can be used to verify the inclusion
+    /// of a row in the trie without requiring the full trie. Extension nodes are
+    /// flattened into the proof path.
+    ///
+    /// # Arguments
+    ///
+    /// * `row_id` - The ID of the row to generate a proof for
+    ///
+    /// # Returns
+    ///
+    /// `Some(HexaryProof)` if the row exists, `None` otherwise
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stoolap::trie::row_trie::RowTrie;
+    /// use stoolap::determ::{DetermRow, DetermValue};
+    ///
+    /// let mut trie = RowTrie::new();
+    /// let row = DetermRow::from_values(vec![DetermValue::integer(42)]);
+    /// trie.insert(1, row);
+    ///
+    /// let proof = trie.get_hexary_proof(1);
+    /// assert!(proof.is_some());
+    /// assert!(proof.unwrap().verify());
+    /// ```
+    pub fn get_hexary_proof(&self, row_id: i64) -> Option<HexaryProof> {
+        let key = encode_row_id(row_id);
+        let mut levels = Vec::new();
+        let mut path_nibbles = Vec::new();
+
+        let row_hash = self.do_get_hexary_proof(
+            self.root.as_ref().map(|r| r.as_ref()),
+            &key,
+            0,
+            &mut levels,
+            &mut path_nibbles,
+            row_id,
+        )?;
+
+        let mut proof = HexaryProof::with_value_hash(row_hash);
+        proof.levels = levels;
+        proof.set_root(self.get_root());
+        proof.set_path(pack_nibbles(&path_nibbles));
+
+        Some(proof)
+    }
+
+    fn do_get_hexary_proof(
+        &self,
+        node: Option<&RowNode>,
+        key: &[u8],
+        depth: usize,
+        levels: &mut Vec<ProofLevel>,
+        path_nibbles: &mut Vec<u8>,
+        target_row_id: i64,
+    ) -> Option<[u8; 32]> {
+        match node {
+            None => None,
+            Some(RowNode::Leaf { row_id, row_hash, .. }) => {
+                // Verify the row_id matches
+                if *row_id != target_row_id {
+                    return None;
+                }
+                // Re-encode the target row_id to get its expected key
+                let expected_key = encode_row_id(target_row_id);
+                // Check if the search key matches the expected key from current depth
+                if depth >= expected_key.len() || &key[depth..] == &expected_key[depth..] {
+                    Some(*row_hash)
+                } else {
+                    None
+                }
+            }
+            Some(RowNode::Branch { children, .. }) => {
+                if depth >= key.len() {
+                    return None;
+                }
+                let path_nibble = key[depth];
+                path_nibbles.push(path_nibble);
+
+                // Collect sibling information
+                let mut bitmap = 0u16;
+                let mut siblings = Vec::new();
+
+                for (i, child) in children.iter().enumerate() {
+                    if child.is_some() {
+                        bitmap |= 1 << i;
+                        if i != path_nibble as usize {
+                            // This is a sibling, add its hash
+                            siblings.push(child.as_ref().map(|c| c.hash()).unwrap_or([0u8; 32]));
+                        }
+                    }
+                }
+
+                levels.push(ProofLevel { bitmap, siblings });
+
+                self.do_get_hexary_proof(
+                    children[path_nibble as usize].as_ref().map(|c| c.as_ref()),
+                    key,
+                    depth + 1,
+                    levels,
+                    path_nibbles,
+                    target_row_id,
+                )
+            }
+            Some(RowNode::Extension { prefix, child, .. }) => {
+                // Check if the key starting at depth has the extension's prefix
+                if depth + prefix.len() <= key.len() {
+                    let key_prefix = &key[depth..depth + prefix.len()];
+                    if key_prefix == &prefix[..] {
+                        // Flatten extension: add all prefix nibbles to path
+                        for &nibble in prefix.iter() {
+                            path_nibbles.push(nibble);
+                        }
+                        return self.do_get_hexary_proof(
+                            Some(child.as_ref()),
+                            key,
+                            depth + prefix.len(),
+                            levels,
+                            path_nibbles,
                             target_row_id,
                         );
                     }

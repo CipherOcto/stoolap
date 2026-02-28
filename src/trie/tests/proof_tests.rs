@@ -13,6 +13,8 @@
 // limitations under the License.
 
 use crate::trie::proof::{hash_pair, merkle_root, MerkleProof};
+use crate::trie::row_trie::RowTrie;
+use crate::determ::{DetermRow, DetermValue};
 
 #[test]
 fn test_merkle_root_empty() {
@@ -74,5 +76,102 @@ fn test_merkle_proof_verify() {
     // leaf1 is at index 0 (binary: 00), path is [0, 0] (left, left)
     proof.set_path(vec![0, 0]);
 
+    assert!(proof.verify());
+}
+
+#[test]
+fn test_row_trie_get_hexary_proof_single_row() {
+    let mut trie = RowTrie::new();
+    let row = DetermRow::from_values(vec![DetermValue::integer(42)]);
+    let (root, _) = trie.insert(1, row.clone());
+
+    let proof = trie.get_hexary_proof(1);
+    assert!(proof.is_some());
+
+    let proof = proof.unwrap();
+    assert_eq!(proof.root, root);
+    assert_eq!(proof.value_hash, row.hash());
+    assert!(proof.verify());
+}
+
+#[test]
+fn test_row_trie_get_hexary_proof_nonexistent() {
+    let trie = RowTrie::new();
+    let proof = trie.get_hexary_proof(999);
+    assert!(proof.is_none());
+}
+
+#[test]
+fn test_row_trie_get_hexary_proof_multiple_rows() {
+    let mut trie = RowTrie::new();
+
+    // Insert rows that diverge at different nibble positions
+    // Row 256 has nibbles [0,0,1,0,...] (first byte is 0, second byte starts with 0)
+    // Row 1 has nibbles [0,1,0,0,...]
+    let row1 = DetermRow::from_values(vec![DetermValue::integer(1)]);
+    let row256 = DetermRow::from_values(vec![DetermValue::integer(256)]);
+
+    let (_root1, _) = trie.insert(1, row1);
+    let (root2, _) = trie.insert(256, row256.clone());
+
+    // Verify row 256 exists
+    let retrieved = trie.get(256);
+    assert!(retrieved.is_some(), "Row 256 should exist");
+
+    // Get proof for row 256
+    let proof = trie.get_hexary_proof(256);
+    assert!(proof.is_some());
+
+    let proof = proof.unwrap();
+    assert_eq!(proof.value_hash, row256.hash());
+
+    // Debug: check levels and path
+    println!("Proof levels: {}", proof.levels.len());
+    println!("Path nibbles: {:?}", proof.path);
+
+    assert!(proof.verify(), "Proof should verify");
+}
+
+#[test]
+fn test_row_trie_get_hexary_proof_branch_siblings() {
+    let mut trie = RowTrie::new();
+
+    // Insert two rows that will be in the same branch
+    let row1 = DetermRow::from_values(vec![DetermValue::integer(1)]);
+    let row16 = DetermRow::from_values(vec![DetermValue::integer(16)]);
+
+    let (_root, _) = trie.insert(1, row1);
+    let (root2, _) = trie.insert(16, row16.clone());
+
+    // Verify both rows exist
+    assert!(trie.get(1).is_some(), "Row 1 should exist");
+    assert!(trie.get(16).is_some(), "Row 16 should exist");
+
+    // Get proof for row 16
+    let proof = trie.get_hexary_proof(16);
+    assert!(proof.is_some(), "Proof for row 16 should exist");
+
+    let proof = proof.unwrap();
+    assert_eq!(proof.value_hash, row16.hash());
+    assert_eq!(proof.root, root2);
+    assert!(proof.verify(), "Proof should verify");
+}
+
+#[test]
+fn test_row_trie_get_hexary_proof_verify_end_to_end() {
+    let mut trie = RowTrie::new();
+
+    // Insert a row and get a proof
+    let row = DetermRow::from_values(vec![DetermValue::integer(42)]);
+    let (root, _) = trie.insert(100, row.clone());
+
+    let proof = trie.get_hexary_proof(100);
+    assert!(proof.is_some());
+
+    let proof = proof.unwrap();
+    assert_eq!(proof.root, root);
+    assert_eq!(proof.value_hash, row.hash());
+
+    // Verify the proof
     assert!(proof.verify());
 }
