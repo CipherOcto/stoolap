@@ -214,16 +214,12 @@ impl RowTrie {
                 row_data,
             }) => {
                 // Check if this is the same row_id (update) or different (need to branch)
-                println!("do_insert_static: Encountered Leaf with existing_id={}, new row_id={}, depth={}", existing_id, row_id, depth);
                 if existing_id == row_id {
                     // Same row_id, replace the leaf (update)
-                    println!("do_insert_static: Same row_id, replacing leaf");
                     RowNode::new_leaf(row_id, row)
                 } else {
                     // Different row_id, need to create a branch
-                    println!("do_insert_static: Different row_id, creating branch");
                     let existing_key = encode_row_id(existing_id);
-                    println!("do_insert_static: existing_key={:?}, key={:?}", &existing_key[..4], &key[..4]);
 
                     // Find where the keys diverge (starting from current depth)
                     let mut diverge_at = depth;
@@ -233,7 +229,6 @@ impl RowTrie {
                         diverge_at += 1;
                     }
 
-                    println!("do_insert_static: diverge_at={}", diverge_at);
 
                     // Create a branch at the current depth
                     let mut branch = RowNode::new_branch();
@@ -242,11 +237,23 @@ impl RowTrie {
                     if diverge_at == depth {
                         // Keys diverge immediately at current depth
                         // Put both leaves as children of this branch
-                        let existing_nibble = existing_key[depth] as usize;
-                        let new_nibble = key[depth] as usize;
+                        let existing_nibble = if depth < existing_key.len() {
+                            existing_key[depth] as usize
+                        } else {
+                            0
+                        };
+                        let new_nibble = if depth < key.len() {
+                            key[depth] as usize
+                        } else {
+                            0
+                        };
 
                         // For existing leaf, check if there are more nibbles after divergence
-                        let existing_remaining = &existing_key[depth + 1..];
+                        let existing_remaining = if depth + 1 < existing_key.len() {
+                            &existing_key[depth + 1..]
+                        } else {
+                            &[]
+                        };
                         let existing_leaf = RowNode::Leaf {
                             row_id: existing_id,
                             row_hash,
@@ -292,37 +299,50 @@ impl RowTrie {
                         // Keys match for some path before diverging
                         // Need to create extension or nested branches
                         let common_prefix = &key[depth..diverge_at];
-                        println!("do_insert_static: Creating nested structure, common_prefix={:?}", common_prefix);
 
                         // Create a sub-branch at the divergence point
                         let mut sub_branch = RowNode::new_branch();
 
-                        let existing_nibble = existing_key[diverge_at] as usize;
-                        let new_nibble = key[diverge_at] as usize;
+                        // Safety check: if diverge_at is at or past key length, one key is a prefix of the other
+                        // In this case, the remaining key path is all zeros
+                        let existing_nibble = if diverge_at < existing_key.len() {
+                            existing_key[diverge_at] as usize
+                        } else {
+                            0 // Past end means trailing zeros
+                        };
+                        let new_nibble = if diverge_at < key.len() {
+                            key[diverge_at] as usize
+                        } else {
+                            0 // Past end means trailing zeros
+                        };
 
-                        println!("do_insert_static: existing_nibble={}, new_nibble={}", existing_nibble, new_nibble);
 
                         let existing_leaf = RowNode::Leaf {
                             row_id: existing_id,
                             row_hash,
                             row_data,
                         };
-                        let new_leaf = RowNode::new_leaf(row_id, row);
+                        let new_leaf = RowNode::new_leaf(row_id, row.clone());
 
                         if let RowNode::Branch { ref mut children, .. } = sub_branch {
-                            children[existing_nibble] = Some(Box::new(existing_leaf));
-                            children[new_nibble] = Some(Box::new(new_leaf));
-                            println!("do_insert_static: Set children[{}]={:?}, children[{}]={:?}", existing_nibble, "Leaf(existing)", new_nibble, "Leaf(new)");
+                            if existing_nibble == new_nibble {
+                                // Both keys go to the same child - recursively insert one into the other
+                                children[existing_nibble] = Some(Box::new(
+                                    Self::do_insert_static(Some(existing_leaf), key, diverge_at + 1, row_id, row)
+                                ));
+                            } else {
+                                // Different children - add both
+                                children[existing_nibble] = Some(Box::new(existing_leaf));
+                                children[new_nibble] = Some(Box::new(new_leaf));
+                            }
                         }
                         sub_branch.recompute_branch_hash();
 
                         if common_prefix.is_empty() {
-                            println!("do_insert_static: common_prefix is empty, returning branch");
                             branch = sub_branch;
                         } else {
                             // Wrap in extension
                             let ext = RowNode::new_extension(common_prefix.to_vec(), sub_branch);
-                            println!("do_insert_static: Wrapped in extension, returning");
                             return ext;
                         }
                     }
@@ -499,11 +519,9 @@ impl RowTrie {
     fn do_get_hash(&self, node: Option<&RowNode>, key: &[u8], depth: usize) -> Option<[u8; 32]> {
         match node {
             None => {
-                println!("do_get_hash: None at depth {}", depth);
                 None
             }
             Some(RowNode::Leaf { row_id, row_hash, .. }) => {
-                println!("do_get_hash: Leaf(row_id={}) at depth {}, key.len()={}", row_id, depth, key.len());
                 // Check if we've found the right leaf
                 // We've found it if we've consumed the entire key, OR if the remaining nibbles are all zeros (padding)
                 if depth >= key.len() {
@@ -517,15 +535,12 @@ impl RowTrie {
             }
             Some(RowNode::Branch { children, .. }) => {
                 if depth >= key.len() {
-                    println!("do_get_hash: Branch at depth {}, but depth >= key.len()", depth);
                     return None;
                 }
                 let nibble = key[depth] as usize;
-                println!("do_get_hash: Branch at depth {}, nibble={}, child exists: {}", depth, nibble, children[nibble].is_some());
                 self.do_get_hash(children[nibble].as_ref().map(|c| c.as_ref()), key, depth + 1)
             }
             Some(RowNode::Extension { prefix, child, .. }) => {
-                println!("do_get_hash: Extension at depth {}, prefix.len()={}", depth, prefix.len());
                 // Check if the key starts with the extension's prefix
                 if depth + prefix.len() <= key.len() {
                     let key_prefix = &key[depth..depth + prefix.len()];
@@ -545,18 +560,21 @@ impl RowTrie {
     /// Get a row from the trie
     pub fn get(&self, row_id: i64) -> Option<DetermRow> {
         let key = encode_row_id(row_id);
-        self.do_get(self.root.as_ref().map(|r| r.as_ref()), &key, 0)
+        self.do_get(self.root.as_ref().map(|r| r.as_ref()), &key, 0, row_id)
     }
 
-    fn do_get(&self, node: Option<&RowNode>, key: &[u8], depth: usize) -> Option<DetermRow> {
+    fn do_get(&self, node: Option<&RowNode>, key: &[u8], depth: usize, target_row_id: i64) -> Option<DetermRow> {
         match node {
             None => None,
-            Some(RowNode::Leaf { row_data, .. }) => {
-                // Check if we've found the right leaf
-                if depth >= key.len() {
-                    row_data.as_ref().map(|r| r.as_ref().clone())
-                } else if key[depth..].iter().all(|&x| x == 0) {
-                    // Remaining nibbles are all padding zeros
+            Some(RowNode::Leaf { row_id, row_data, .. }) => {
+                // Verify the row_id matches
+                if *row_id != target_row_id {
+                    return None;
+                }
+                // Re-encode the target row_id to get its expected key
+                let expected_key = encode_row_id(target_row_id);
+                // Check if the search key matches the expected key from current depth
+                if depth >= expected_key.len() || &key[depth..] == &expected_key[depth..] {
                     row_data.as_ref().map(|r| r.as_ref().clone())
                 } else {
                     None
@@ -567,7 +585,7 @@ impl RowTrie {
                     return None;
                 }
                 let nibble = key[depth] as usize;
-                self.do_get(children[nibble].as_ref().map(|c| c.as_ref()), key, depth + 1)
+                self.do_get(children[nibble].as_ref().map(|c| c.as_ref()), key, depth + 1, target_row_id)
             }
             Some(RowNode::Extension { prefix, child, .. }) => {
                 // Check if the key starting at depth has the extension's prefix
@@ -578,6 +596,7 @@ impl RowTrie {
                             Some(child.as_ref()),
                             key,
                             depth + prefix.len(),
+                            target_row_id,
                         );
                     }
                 }
@@ -599,6 +618,7 @@ impl RowTrie {
             0,
             &mut siblings,
             &mut path,
+            row_id,
         )?;
 
         proof.set_value_hash(row_hash);
@@ -616,15 +636,17 @@ impl RowTrie {
         depth: usize,
         siblings: &mut Vec<[u8; 32]>,
         path: &mut Vec<u8>,
+        target_row_id: i64,
     ) -> Option<[u8; 32]> {
         match node {
             None => None,
-            Some(RowNode::Leaf { row_hash, .. }) => {
-                // Check if we've found the right leaf
-                if depth >= key.len() {
-                    Some(*row_hash)
-                } else if key[depth..].iter().all(|&x| x == 0) {
-                    // Remaining nibbles are all padding zeros
+            Some(RowNode::Leaf { row_id, row_hash, .. }) => {
+                // Verify the row_id matches
+                if *row_id != target_row_id {
+                    return None;
+                }
+                // Check if we've consumed the key (remaining nibbles are all padding zeros)
+                if depth >= key.len() || key[depth..].iter().all(|&x| x == 0) {
                     Some(*row_hash)
                 } else {
                     None
@@ -654,6 +676,7 @@ impl RowTrie {
                     depth + 1,
                     siblings,
                     path,
+                    target_row_id,
                 )
             }
             Some(RowNode::Extension { prefix, child, .. }) => {
@@ -667,6 +690,7 @@ impl RowTrie {
                             depth + prefix.len(),
                             siblings,
                             path,
+                            target_row_id,
                         );
                     }
                 }
