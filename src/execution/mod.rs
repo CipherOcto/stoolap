@@ -21,6 +21,7 @@ pub mod gas;
 pub mod context;
 
 pub use gas::{GasMeter, GasPrice, GasPrices};
+pub use context::{ExecutionContext, StateSnapshot};
 
 #[cfg(test)]
 mod tests;
