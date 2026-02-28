@@ -301,6 +301,17 @@ pub enum Error {
     /// Query cancelled
     #[error("query cancelled")]
     QueryCancelled,
+
+    // =========================================================================
+    // Gas metering errors
+    // =========================================================================
+    /// Gas overflow during computation
+    #[error("gas overflow during computation")]
+    GasOverflow,
+
+    /// Out of gas - transaction exceeded gas limit
+    #[error("out of gas: used {used} gas, limit is {limit}")]
+    OutOfGas { used: u64, limit: u64 },
 }
 
 impl Error {

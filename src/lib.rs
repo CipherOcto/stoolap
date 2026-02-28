@@ -56,6 +56,7 @@
 //!
 //! - [`api`] - Public database interface ([`api::Database`])
 //! - [`core`] - Core types ([`DataType`], [`Value`], [`Row`], [`Schema`], [`Error`])
+//! - [`execution`] - Execution engine with gas metering
 //! - [`storage`] - Storage layer with MVCC, indexes, and expressions
 //! - [`parser`] - SQL parser
 //! - [`functions`] - 101+ SQL functions (scalar, aggregate, window)
@@ -73,6 +74,7 @@ pub mod api;
 pub mod common;
 pub mod core;
 pub mod determ;
+pub mod execution;
 pub mod executor;
 pub mod functions;
 pub mod optimizer;
@@ -88,6 +90,9 @@ pub use core::{
     DataType, Error, IndexEntry, IndexType, IsolationLevel, Operator, Result, Row, Schema,
     SchemaBuilder, SchemaColumn, Value,
 };
+
+// Re-export execution types
+pub use execution::{GasMeter, GasPrice, GasPrices};
 
 // Re-export common utilities
 pub use common::{BufferPool, I64Map, I64Set, PoolStats, SemVer, SmartString};
