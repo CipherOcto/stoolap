@@ -29,9 +29,8 @@ use crate::core::{Error, Result};
 /// - Stores large text on heap with Box<[u8]>
 /// - Supports deterministic Merkle hashing
 ///
-/// Note: Float values don't implement Eq due to NaN semantics, but
-/// PartialEq is still implemented for comparison.
-#[derive(Debug, Clone, PartialEq)]
+/// Note: Float values use bitwise equality (f64::to_bits) for Eq implementation.
+#[derive(Debug, Clone)]
 pub enum DetermValue {
     /// NULL value
     Null,
@@ -50,6 +49,26 @@ pub enum DetermValue {
     /// Extension type for future use
     Extension(Box<[u8]>),
 }
+
+impl PartialEq for DetermValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DetermValue::Null, DetermValue::Null) => true,
+            (DetermValue::Integer(a), DetermValue::Integer(b)) => a == b,
+            (DetermValue::Float(a), DetermValue::Float(b)) => a.to_bits() == b.to_bits(),
+            (DetermValue::InlineText(a_data, a_len), DetermValue::InlineText(b_data, b_len)) => {
+                a_len == b_len && &a_data[..(*a_len as usize)] == &b_data[..(*b_len as usize)]
+            }
+            (DetermValue::HeapText(a), DetermValue::HeapText(b)) => a == b,
+            (DetermValue::Boolean(a), DetermValue::Boolean(b)) => a == b,
+            (DetermValue::Timestamp(a), DetermValue::Timestamp(b)) => a == b,
+            (DetermValue::Extension(a), DetermValue::Extension(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for DetermValue {}
 
 impl DetermValue {
     // =========================================================================

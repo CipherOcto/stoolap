@@ -56,7 +56,7 @@ impl Default for StateDiff {
 }
 
 /// A node in the row trie
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowNode {
     /// Leaf node containing row data
     Leaf {
@@ -146,7 +146,7 @@ impl Default for RowNode {
 ///
 /// The RowTrie provides efficient storage and verification of row data
 /// with Merkle proofs.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowTrie {
     /// Root node of the trie
     root: Option<Box<RowNode>>,

@@ -19,7 +19,7 @@ use crate::determ::value::DetermValue;
 
 /// Deterministic Row type
 /// A row is a collection of deterministic values
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetermRow {
     pub values: Vec<DetermValue>,
 }

@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 ///
 /// This contains the schema trie and all table tries for
 /// state verification and rollback.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateSnapshot {
     /// Schema trie containing all table schemas
     pub schemas: SchemaTrie,
