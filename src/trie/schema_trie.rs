@@ -17,8 +17,8 @@
 //! This module provides a Merkle trie structure for storing and verifying
 //! database table schemas with cryptographic proofs.
 
-use crate::core::{DataType, Schema, SchemaColumn};
-use std::collections::HashMap;
+use crate::core::DataType;
+use std::collections::BTreeMap;
 
 /// Column definition for a table
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,59 +29,15 @@ pub struct ColumnDef {
     pub data_type: DataType,
     /// Whether the column is nullable
     pub nullable: bool,
-    /// Whether the column is a primary key
-    pub is_primary_key: bool,
 }
 
 impl ColumnDef {
     /// Create a new column definition
-    pub fn new(name: String, data_type: DataType) -> Self {
+    pub fn new(name: &str, data_type: DataType, nullable: bool) -> Self {
         Self {
-            name,
+            name: name.to_string(),
             data_type,
-            nullable: true,
-            is_primary_key: false,
-        }
-    }
-
-    /// Set whether the column is nullable
-    pub fn with_nullable(mut self, nullable: bool) -> Self {
-        self.nullable = nullable;
-        self
-    }
-
-    /// Set whether the column is a primary key
-    pub fn with_primary_key(mut self, is_primary_key: bool) -> Self {
-        self.is_primary_key = is_primary_key;
-        self
-    }
-}
-
-impl From<&SchemaColumn> for ColumnDef {
-    fn from(col: &SchemaColumn) -> Self {
-        Self {
-            name: col.name.clone(),
-            data_type: col.data_type,
-            nullable: col.nullable,
-            is_primary_key: col.primary_key,
-        }
-    }
-}
-
-impl From<ColumnDef> for SchemaColumn {
-    fn from(def: ColumnDef) -> Self {
-        Self {
-            id: 0, // Will be set by schema builder
-            name: def.name.clone(),
-            name_lower: def.name.to_lowercase(),
-            data_type: def.data_type,
-            nullable: def.nullable,
-            primary_key: def.is_primary_key,
-            auto_increment: false,
-            default_expr: None,
-            default_value: None,
-            check_expr: None,
-            vector_dimensions: 0,
+            nullable,
         }
     }
 }
@@ -93,14 +49,23 @@ pub struct TableSchema {
     pub name: String,
     /// Column definitions
     pub columns: Vec<ColumnDef>,
+    /// Primary key column name (if any)
+    pub primary_key: Option<String>,
+    /// Root hash of the table's data trie
+    pub table_root: [u8; 32],
+    /// Map of index name to root hash
+    pub index_roots: BTreeMap<String, [u8; 32]>,
 }
 
 impl TableSchema {
     /// Create a new table schema
-    pub fn new(name: String) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
-            name,
-            columns: vec![],
+            name: name.to_string(),
+            columns: Vec::new(),
+            primary_key: None,
+            table_root: [0u8; 32],
+            index_roots: BTreeMap::new(),
         }
     }
 
@@ -111,20 +76,34 @@ impl TableSchema {
 
     /// Get the hash of the schema
     pub fn hash(&self) -> [u8; 32] {
-        // TODO: Implement proper hashing
-        // For now, return a simple hash based on name length
+        // Simple XOR-based hash for now
         let mut hash = [0u8; 32];
-        hash[0] = self.name.len() as u8;
-        hash
-    }
-}
 
-impl From<&Schema> for TableSchema {
-    fn from(schema: &Schema) -> Self {
-        Self {
-            name: schema.table_name.clone(),
-            columns: schema.columns.iter().map(ColumnDef::from).collect(),
+        // Hash the name
+        for (i, byte) in self.name.bytes().enumerate() {
+            hash[i % 32] ^= byte;
         }
+
+        // Hash columns
+        for col in &self.columns {
+            for (i, byte) in col.name.bytes().enumerate() {
+                hash[(i + 16) % 32] ^= byte;
+            }
+            let type_byte = col.data_type.as_u8();
+            hash[17] ^= type_byte;
+            if col.nullable {
+                hash[18] ^= 0xFF;
+            }
+        }
+
+        // Hash primary key
+        if let Some(pk) = &self.primary_key {
+            for (i, byte) in pk.bytes().enumerate() {
+                hash[(i + 24) % 32] ^= byte;
+            }
+        }
+
+        hash
     }
 }
 
@@ -135,122 +114,82 @@ impl From<&Schema> for TableSchema {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaTrie {
     /// Map of table name to schema
-    schemas: HashMap<String, TableSchema>,
+    pub tables: BTreeMap<String, TableSchema>,
     /// Root hash of the trie
-    root_hash: [u8; 32],
+    pub root: [u8; 32],
 }
 
 impl SchemaTrie {
     /// Create a new empty schema trie
     pub fn new() -> Self {
         Self {
-            schemas: HashMap::new(),
-            root_hash: [0u8; 32],
+            tables: BTreeMap::new(),
+            root: [0u8; 32],
         }
     }
 
-    /// Insert a table schema into the trie
-    pub fn insert(&mut self, schema: TableSchema) {
+    /// Add a table schema to the trie
+    pub fn create_table(&mut self, schema: TableSchema) {
         let name = schema.name.clone();
-        self.schemas.insert(name, schema);
-        self.update_root_hash();
+        self.tables.insert(name, schema);
+        self.rehash();
+    }
+
+    /// Remove a table from the trie
+    pub fn drop_table(&mut self, name: &str) {
+        self.tables.remove(name);
+        self.rehash();
     }
 
     /// Get a table schema from the trie
-    pub fn get(&self, table_name: &str) -> Option<&TableSchema> {
-        self.schemas.get(table_name)
+    pub fn get_table(&self, name: &str) -> Option<&TableSchema> {
+        self.tables.get(name)
     }
 
-    /// Get the Merkle root of the trie
-    pub fn root_hash(&self) -> [u8; 32] {
-        self.root_hash
+    /// Check if a table exists in the trie
+    pub fn table_exists(&self, name: &str) -> bool {
+        self.tables.contains_key(name)
     }
 
-    /// Update the root hash based on current schemas
-    fn update_root_hash(&mut self) {
-        // TODO: Implement proper Merkle root computation
-        // For now, use a simple hash based on number of schemas
-        let mut hash = [0u8; 32];
-        hash[0] = self.schemas.len() as u8;
-        self.root_hash = hash;
+    /// List all table names in the trie
+    pub fn list_tables(&self) -> Vec<String> {
+        self.tables.keys().cloned().collect()
     }
 
-    /// Generate a proof for a table schema
-    pub fn generate_proof(&self, _table_name: &str) -> Option<crate::trie::proof::MerkleProof> {
-        // TODO: Implement proof generation
-        None
+    /// Get the root hash of the schema trie
+    pub fn get_root(&self) -> [u8; 32] {
+        self.root
+    }
+
+    /// Recompute the root hash from all tables
+    pub fn rehash(&mut self) {
+        if self.tables.is_empty() {
+            self.root = [0u8; 32];
+            return;
+        }
+
+        // Simple XOR-based hash combining all table hashes
+        let mut combined_hash = [0u8; 32];
+
+        for (name, schema) in &self.tables {
+            let table_hash = schema.hash();
+
+            // Combine name and table hash
+            for (i, byte) in name.bytes().enumerate() {
+                combined_hash[i % 32] ^= byte;
+            }
+
+            for i in 0..32 {
+                combined_hash[i] ^= table_hash[i];
+            }
+        }
+
+        self.root = combined_hash;
     }
 }
 
 impl Default for SchemaTrie {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_column_def_new() {
-        let col = ColumnDef::new("test_col".to_string(), DataType::Integer);
-        assert_eq!(col.name, "test_col");
-        assert_eq!(col.data_type, DataType::Integer);
-        assert!(col.nullable);
-        assert!(!col.is_primary_key);
-    }
-
-    #[test]
-    fn test_column_def_builder() {
-        let col = ColumnDef::new("id".to_string(), DataType::Integer)
-            .with_nullable(false)
-            .with_primary_key(true);
-
-        assert!(!col.nullable);
-        assert!(col.is_primary_key);
-    }
-
-    #[test]
-    fn test_table_schema_new() {
-        let schema = TableSchema::new("users".to_string());
-        assert_eq!(schema.name, "users");
-        assert!(schema.columns.is_empty());
-    }
-
-    #[test]
-    fn test_table_schema_add_column() {
-        let mut schema = TableSchema::new("users".to_string());
-        schema.add_column(ColumnDef::new("id".to_string(), DataType::Integer));
-        schema.add_column(ColumnDef::new("name".to_string(), DataType::Text));
-
-        assert_eq!(schema.columns.len(), 2);
-        assert_eq!(schema.columns[0].name, "id");
-        assert_eq!(schema.columns[1].name, "name");
-    }
-
-    #[test]
-    fn test_schema_trie_new() {
-        let trie = SchemaTrie::new();
-        assert_eq!(trie.root_hash(), [0u8; 32]);
-        assert!(trie.get("nonexistent").is_none());
-    }
-
-    #[test]
-    fn test_schema_trie_insert_and_get() {
-        let mut trie = SchemaTrie::new();
-        let schema = TableSchema::new("test_table".to_string());
-        trie.insert(schema);
-
-        let retrieved = trie.get("test_table");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().name, "test_table");
-    }
-
-    #[test]
-    fn test_schema_trie_default() {
-        let trie = SchemaTrie::default();
-        assert!(trie.schemas.is_empty());
-        assert_eq!(trie.root_hash(), [0u8; 32]);
     }
 }

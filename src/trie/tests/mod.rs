@@ -14,3 +14,4 @@
 
 mod proof_tests;
 mod row_trie_tests;
+mod schema_trie_tests;
