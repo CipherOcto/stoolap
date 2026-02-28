@@ -425,6 +425,61 @@ pub fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+/// Pack nibbles into bytes (2 nibbles per byte, LSB first)
+///
+/// Each byte contains two nibbles: low nibble first, then high nibble.
+/// If the input has odd length, the final byte has the nibble in the low position.
+///
+/// # Examples
+///
+/// ```
+/// use stoolap::trie::proof::pack_nibbles;
+///
+/// let packed = pack_nibbles(&[5, 12]);
+/// assert_eq!(packed, vec![0xC5]); // 5 in low nibble, 12 (0xC) in high
+/// ```
+pub fn pack_nibbles(nibbles: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity((nibbles.len() + 1) / 2);
+
+    for chunk in nibbles.chunks(2) {
+        let low = chunk[0] & 0x0F;
+        let high = if chunk.len() > 1 {
+            (chunk[1] & 0x0F) << 4
+        } else {
+            0
+        };
+        result.push(low | high);
+    }
+
+    result
+}
+
+/// Unpack bytes into nibbles (2 nibbles per byte, LSB first)
+///
+/// # Examples
+///
+/// ```
+/// use stoolap::trie::proof::unpack_nibbles;
+///
+/// let nibbles = unpack_nibbles(&[0xC5]);
+/// assert_eq!(nibbles, vec![5, 12]);
+/// ```
+pub fn unpack_nibbles(packed: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(packed.len() * 2);
+
+    for &byte in packed {
+        result.push(byte & 0x0F); // Low nibble
+        result.push((byte >> 4) & 0x0F); // High nibble
+    }
+
+    // Remove trailing zero nibbles from odd-length packing
+    while result.last() == Some(&0) && result.len() % 2 == 0 {
+        result.pop();
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,5 +702,41 @@ mod tests {
         let level = ProofLevel::default();
         assert_eq!(level.bitmap, 0);
         assert!(level.siblings.is_empty());
+    }
+
+    #[test]
+    fn test_pack_nibbles() {
+        use crate::trie::proof::pack_nibbles;
+
+        // Even length: [5, 12] -> [0xC5] (5 in low, 12=0xC in high)
+        let result = pack_nibbles(&[5, 12]);
+        assert_eq!(result, vec![0xC5]);
+
+        // Odd length: [5, 12, 3] -> [0xC5, 0x03] (5 in low, 12 in high; 3 in low, 0 in high)
+        let result = pack_nibbles(&[5, 12, 3]);
+        assert_eq!(result, vec![0xC5, 0x03]);
+    }
+
+    #[test]
+    fn test_unpack_nibbles() {
+        use crate::trie::proof::unpack_nibbles;
+
+        // Even: [0xC5] -> [5, 12]
+        let result = unpack_nibbles(&[0xC5]);
+        assert_eq!(result, vec![5, 12]);
+
+        // Odd: [0xC5, 0x03] -> [5, 12, 3]
+        let result = unpack_nibbles(&[0xC5, 0x03]);
+        assert_eq!(result, vec![5, 12, 3]);
+    }
+
+    #[test]
+    fn test_nibble_roundtrip() {
+        use crate::trie::proof::{pack_nibbles, unpack_nibbles};
+
+        let original = vec![1, 5, 12, 15, 7, 3];
+        let packed = pack_nibbles(&original);
+        let unpacked = unpack_nibbles(&packed);
+        assert_eq!(original, unpacked);
     }
 }
