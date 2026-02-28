@@ -530,6 +530,36 @@ pub fn reconstruct_children(
     children
 }
 
+/// Hash all 16 child hashes together using SHA-256
+///
+/// This function computes the hash of a branch node by hashing all 16 child hashes
+/// together. This is used for computing parent node hashes in hexary tries.
+///
+/// # Arguments
+///
+/// * `children` - Array of 16 child hashes (each 32 bytes)
+///
+/// # Returns
+///
+/// SHA-256 hash of all concatenated child hashes
+///
+/// # Examples
+///
+/// ```
+/// use stoolap::trie::proof::hash_16_children;
+///
+/// let children = [[0u8; 32]; 16];
+/// let hash = hash_16_children(&children);
+/// assert_eq!(hash.len(), 32);
+/// ```
+pub fn hash_16_children(children: &[[u8; 32]; 16]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for child in children.iter() {
+        hasher.update(child);
+    }
+    hasher.finalize().into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -829,5 +859,39 @@ mod tests {
         assert_eq!(children[5], [5u8; 32]); // Our hash
         assert_eq!(children[12], [12u8; 32]);
         assert_eq!(children[0], [0u8; 32]); // Empty
+    }
+
+    #[test]
+    fn test_hash_16_children_empty() {
+        use crate::trie::proof::hash_16_children;
+
+        let children = [[0u8; 32]; 16];
+        let hash = hash_16_children(&children);
+        // All zeros should hash to a specific value
+        assert_ne!(hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_hash_16_children_single() {
+        use crate::trie::proof::hash_16_children;
+
+        let mut children = [[0u8; 32]; 16];
+        children[0] = [1u8; 32];
+        let hash = hash_16_children(&children);
+        // Should be different from empty children
+        assert_ne!(hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_hash_16_children_deterministic() {
+        use crate::trie::proof::hash_16_children;
+
+        let mut children = [[0u8; 32]; 16];
+        children[5] = [42u8; 32];
+        children[12] = [99u8; 32];
+
+        let hash1 = hash_16_children(&children);
+        let hash2 = hash_16_children(&children);
+        assert_eq!(hash1, hash2);
     }
 }
