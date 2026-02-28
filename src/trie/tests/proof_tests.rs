@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::trie::proof::{merkle_root, MerkleProof};
+use crate::trie::proof::{hash_pair, merkle_root, MerkleProof};
 
 #[test]
 fn test_merkle_root_empty() {
@@ -36,8 +36,8 @@ fn test_merkle_root_two() {
     let leaf2 = [2u8; 32];
     let leaves = [leaf1, leaf2];
     let root = merkle_root(&leaves);
-    // With XOR hash, root should be 1 XOR 2 = 3
-    let expected = [3u8; 32];
+    // With SHA-256 hash, root is H(1 || 2)
+    let expected = hash_pair(&leaf1, &leaf2);
     assert_eq!(root, expected);
 }
 
@@ -55,14 +55,14 @@ fn test_merkle_proof_verify() {
     // Create a proof for leaf1 (index 0)
     // In a 4-leaf tree:
     // Level 0 (leaves): [leaf1=1], [leaf2=2], [leaf3=3], [leaf4=4]
-    // Level 1: [hash(leaf1,leaf2)=3], [hash(leaf3,leaf4)=7]
-    // Level 2 (root): [hash(3,7)=4]
+    // Level 1: [hash(leaf1,leaf2)], [hash(leaf3,leaf4)]
+    // Level 2 (root): [hash(hash(leaf1,leaf2), hash(leaf3,leaf4))]
     //
     // For leaf1 (index 0):
     // - Sibling at level 0: leaf2 = [2u8; 32]
-    // - Sibling at level 1: hash(leaf3, leaf4) = [7u8; 32]
-    let sibling_leaf2 = leaf2; // [2u8; 32]
-    let sibling_34 = [7u8; 32]; // 3 XOR 4
+    // - Sibling at level 1: hash(leaf3, leaf4)
+    let sibling_leaf2 = leaf2;
+    let sibling_34 = hash_pair(&leaf3, &leaf4);
 
     let mut proof = MerkleProof::new();
     proof.set_value_hash(leaf1);

@@ -16,10 +16,12 @@
 //!
 //! This module provides deterministic values that:
 //! - Use no Arc/pointers for predictable memory layout
-//! - Support Merkle hashing for consistent state across nodes
-//! - Are fully serializable for network transmission
+//! - Store small text inline ([u8; 15], u8 length)
+//! - Store large text on heap with Box<[u8]>
+//! - Support deterministic Merkle hashing
 
 use crate::core::{Error, Result};
+use sha2::{Digest, Sha256};
 
 /// Deterministic Value enum
 ///
@@ -28,8 +30,6 @@ use crate::core::{Error, Result};
 /// - Stores small text inline ([u8; 15], u8 length)
 /// - Stores large text on heap with Box<[u8]>
 /// - Supports deterministic Merkle hashing
-///
-/// Note: Float values use bitwise equality (f64::to_bits) for Eq implementation.
 #[derive(Debug, Clone)]
 pub enum DetermValue {
     /// NULL value
@@ -57,7 +57,7 @@ impl PartialEq for DetermValue {
             (DetermValue::Integer(a), DetermValue::Integer(b)) => a == b,
             (DetermValue::Float(a), DetermValue::Float(b)) => a.to_bits() == b.to_bits(),
             (DetermValue::InlineText(a_data, a_len), DetermValue::InlineText(b_data, b_len)) => {
-                a_len == b_len && &a_data[..(*a_len as usize)] == &b_data[..(*b_len as usize)]
+                a_len == b_len && &a_data[..*a_len as usize] == &b_data[..*b_len as usize]
             }
             (DetermValue::HeapText(a), DetermValue::HeapText(b)) => a == b,
             (DetermValue::Boolean(a), DetermValue::Boolean(b)) => a == b,
@@ -111,15 +111,15 @@ impl DetermValue {
         DetermValue::Float(value)
     }
 
-    /// Create a text value (inline or heap based on length)
+    /// Create a text value (automatically chooses inline or heap)
     pub fn text(value: &str) -> Self {
         let bytes = value.as_bytes();
         if bytes.len() <= 15 {
-            let mut inline = [0u8; 15];
-            inline[..bytes.len()].copy_from_slice(bytes);
-            DetermValue::InlineText(inline, bytes.len() as u8)
+            let mut data = [0u8; 15];
+            data[..bytes.len()].copy_from_slice(bytes);
+            DetermValue::InlineText(data, bytes.len() as u8)
         } else {
-            DetermValue::HeapText(bytes.to_vec().into_boxed_slice())
+            DetermValue::HeapText(bytes.into())
         }
     }
 
@@ -134,10 +134,15 @@ impl DetermValue {
     }
 
     // =========================================================================
-    // Type accessors
+    // Getters
     // =========================================================================
 
-    /// Returns the data type tag of this value
+    /// Check if this is a NULL value
+    pub fn is_null(&self) -> bool {
+        matches!(self, DetermValue::Null)
+    }
+
+    /// Get the data type identifier
     pub fn data_type(&self) -> u8 {
         match self {
             DetermValue::Null => Self::TYPE_NULL,
@@ -149,57 +154,6 @@ impl DetermValue {
             DetermValue::Timestamp(_) => Self::TYPE_TIMESTAMP,
             DetermValue::Extension(_) => Self::TYPE_EXTENSION,
         }
-    }
-
-    /// Returns true if this value is NULL
-    pub fn is_null(&self) -> bool {
-        matches!(self, DetermValue::Null)
-    }
-
-    // =========================================================================
-    // Merkle hashing
-    // =========================================================================
-
-    /// Compute the Merkle hash of this value
-    pub fn hash(&self) -> [u8; 32] {
-        let mut hasher = MerkleHasher::new();
-        match self {
-            DetermValue::Null => {
-                hasher.input(&[Self::TYPE_NULL]);
-            }
-            DetermValue::Integer(v) => {
-                hasher.input(&[Self::TYPE_INTEGER]);
-                hasher.input(&v.to_le_bytes());
-            }
-            DetermValue::Float(v) => {
-                hasher.input(&[Self::TYPE_FLOAT]);
-                hasher.input(&v.to_le_bytes());
-            }
-            DetermValue::InlineText(data, len) => {
-                hasher.input(&[Self::TYPE_INLINE_TEXT]);
-                hasher.input(&[*len]);
-                hasher.input(&data[..(*len as usize)]);
-            }
-            DetermValue::HeapText(data) => {
-                hasher.input(&[Self::TYPE_HEAP_TEXT]);
-                hasher.input(&(data.len() as u32).to_le_bytes());
-                hasher.input(data);
-            }
-            DetermValue::Boolean(v) => {
-                hasher.input(&[Self::TYPE_BOOLEAN]);
-                hasher.input(&[*v as u8]);
-            }
-            DetermValue::Timestamp(v) => {
-                hasher.input(&[Self::TYPE_TIMESTAMP]);
-                hasher.input(&v.to_le_bytes());
-            }
-            DetermValue::Extension(data) => {
-                hasher.input(&[Self::TYPE_EXTENSION]);
-                hasher.input(&(data.len() as u32).to_le_bytes());
-                hasher.input(data);
-            }
-        }
-        hasher.finalize()
     }
 
     // =========================================================================
@@ -246,9 +200,22 @@ impl DetermValue {
         }
     }
 
+    /// Return the length of the encoded value without allocating
+    pub fn encoded_len(&self) -> usize {
+        match self {
+            DetermValue::Null => 1,
+            DetermValue::Integer(_) => 9,
+            DetermValue::Float(_) => 9,
+            DetermValue::InlineText(_, len) => 2 + *len as usize,
+            DetermValue::HeapText(data) => 5 + data.len(),
+            DetermValue::Boolean(_) => 2,
+            DetermValue::Timestamp(_) => 9,
+            DetermValue::Extension(data) => 5 + data.len(),
+        }
+    }
+
     /// Decode a value from bytes
     pub fn decode(data: &[u8]) -> Result<Self> {
-        use crate::core::Error;
         if data.is_empty() {
             return Err(Error::invalid_argument("cannot decode empty data"));
         }
@@ -274,12 +241,12 @@ impl DetermValue {
                     return Err(Error::invalid_argument("invalid inline text data"));
                 }
                 let len = data[1] as usize;
-                if data.len() < 2 + len || len > 15 {
-                    return Err(Error::invalid_argument("invalid inline text length"));
+                if data.len() < 2 + len {
+                    return Err(Error::invalid_argument("invalid inline text data"));
                 }
-                let mut inline = [0u8; 15];
-                inline[..len].copy_from_slice(&data[2..2 + len]);
-                Ok(DetermValue::InlineText(inline, len as u8))
+                let mut data_array = [0u8; 15];
+                data_array[..len].copy_from_slice(&data[2..2 + len]);
+                Ok(DetermValue::InlineText(data_array, len as u8))
             }
             Self::TYPE_HEAP_TEXT => {
                 if data.len() < 5 {
@@ -287,9 +254,10 @@ impl DetermValue {
                 }
                 let len = u32::from_le_bytes([data[1], data[2], data[3], data[4]]) as usize;
                 if data.len() < 5 + len {
-                    return Err(Error::invalid_argument("truncated heap text data"));
+                    return Err(Error::invalid_argument("invalid heap text data"));
                 }
-                Ok(DetermValue::HeapText(data[5..5 + len].to_vec().into_boxed_slice()))
+                let data = data[5..].to_vec();
+                Ok(DetermValue::HeapText(data.into()))
             }
             Self::TYPE_BOOLEAN => {
                 if data.len() < 2 {
@@ -310,64 +278,109 @@ impl DetermValue {
                 }
                 let len = u32::from_le_bytes([data[1], data[2], data[3], data[4]]) as usize;
                 if data.len() < 5 + len {
-                    return Err(Error::invalid_argument("truncated extension data"));
+                    return Err(Error::invalid_argument("invalid extension data"));
                 }
-                Ok(DetermValue::Extension(data[5..5 + len].to_vec().into_boxed_slice()))
+                let data = data[5..].to_vec();
+                Ok(DetermValue::Extension(data.into()))
             }
-            tag => Err(Error::invalid_argument(format!("unknown type tag: {}", tag))),
+            _ => Err(Error::invalid_argument("unknown data type tag")),
         }
     }
 
-    /// Returns the encoded length of this value
-    pub fn encoded_len(&self) -> usize {
+    // =========================================================================
+    // Merkle Hashing
+    // =========================================================================
+
+    /// Compute the Merkle hash of this value
+    pub fn hash(&self) -> [u8; 32] {
+        let mut hasher = MerkleHasher::new();
         match self {
-            DetermValue::Null => 1,
-            DetermValue::Integer(_) => 9,
-            DetermValue::Float(_) => 9,
-            DetermValue::InlineText(_, len) => 2 + *len as usize,
-            DetermValue::HeapText(data) => 5 + data.len(),
-            DetermValue::Boolean(_) => 2,
-            DetermValue::Timestamp(_) => 9,
-            DetermValue::Extension(data) => 5 + data.len(),
+            DetermValue::Null => {
+                hasher.input(&[Self::TYPE_NULL]);
+            }
+            DetermValue::Integer(v) => {
+                hasher.input(&[Self::TYPE_INTEGER]);
+                hasher.input(&v.to_le_bytes());
+            }
+            DetermValue::Float(v) => {
+                hasher.input(&[Self::TYPE_FLOAT]);
+                hasher.input(&v.to_le_bytes());
+            }
+            DetermValue::InlineText(data, len) => {
+                hasher.input(&[Self::TYPE_INLINE_TEXT]);
+                hasher.input(&[*len]);
+                hasher.input(&data[..(*len as usize)]);
+            }
+            DetermValue::HeapText(data) => {
+                hasher.input(&[Self::TYPE_HEAP_TEXT]);
+                hasher.input(&(data.len() as u32).to_le_bytes());
+                hasher.input(data);
+            }
+            DetermValue::Boolean(v) => {
+                hasher.input(&[Self::TYPE_BOOLEAN]);
+                hasher.input(&[*v as u8]);
+            }
+            DetermValue::Timestamp(v) => {
+                hasher.input(&[Self::TYPE_TIMESTAMP]);
+                hasher.input(&v.to_le_bytes());
+            }
+            DetermValue::Extension(data) => {
+                hasher.input(&[Self::TYPE_EXTENSION]);
+                hasher.input(&(data.len() as u32).to_le_bytes());
+                hasher.input(data);
+            }
+        }
+        hasher.finalize()
+    }
+
+    /// Get the value as an integer if possible
+    pub fn as_integer(&self) -> Option<i64> {
+        match self {
+            DetermValue::Integer(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    /// Get the value as text if possible
+    pub fn as_text(&self) -> Option<String> {
+        match self {
+            DetermValue::InlineText(data, len) => {
+                std::str::from_utf8(&data[..*len as usize]).ok().map(|s| s.to_string())
+            }
+            DetermValue::HeapText(data) => std::str::from_utf8(data).ok().map(|s| s.to_string()),
+            _ => None,
         }
     }
 }
 
-// =========================================================================
+// ============================================================================
 // MerkleHasher
-// =========================================================================
+// ============================================================================
 
-/// Simple XOR-based Merkle hasher
+/// Cryptographic Merkle hasher using SHA-256
 ///
-/// This is a very simple hash function for demonstration.
-/// In production, you should use a proper cryptographic hash like SHA-256.
+/// Provides secure, deterministic hashing for Merkle tree commitments.
 #[derive(Debug, Clone)]
 pub struct MerkleHasher {
-    state: [u8; 32],
-    position: usize,
+    hasher: Sha256,
 }
 
 impl MerkleHasher {
     /// Create a new hasher with initial state
     pub fn new() -> Self {
         Self {
-            state: [0u8; 32],
-            position: 0,
+            hasher: Sha256::new(),
         }
     }
 
     /// Input bytes into the hasher
     pub fn input(&mut self, data: &[u8]) {
-        for (i, &byte) in data.iter().enumerate() {
-            let pos = (self.position + i) % 32;
-            self.state[pos] ^= byte;
-        }
-        self.position = (self.position + data.len()) % 32;
+        self.hasher.update(data);
     }
 
     /// Finalize and return the hash
     pub fn finalize(self) -> [u8; 32] {
-        self.state
+        self.hasher.finalize().into()
     }
 }
 
@@ -406,6 +419,25 @@ mod tests {
     }
 
     #[test]
+    fn test_determ_value_encode_roundtrip() {
+        let values = vec![
+            DetermValue::null(),
+            DetermValue::integer(42),
+            DetermValue::float(3.14),
+            DetermValue::text("hello"),
+            DetermValue::text("this is a very long string that exceeds 15 bytes"),
+            DetermValue::boolean(true),
+            DetermValue::timestamp(1234567890),
+        ];
+
+        for original in values {
+            let encoded = original.encode();
+            let decoded = DetermValue::decode(&encoded).expect("Failed to decode");
+            assert_eq!(original, decoded);
+        }
+    }
+
+    #[test]
     fn test_merkle_hasher_deterministic() {
         let mut hasher1 = MerkleHasher::new();
         hasher1.input(&[1, 2, 3]);
@@ -428,7 +460,36 @@ mod tests {
         hasher2.input(&[4, 5, 6]);
         let hash2 = hasher2.finalize();
 
-        // Different inputs should (with high probability) produce different hashes
         assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_merkle_hasher_appends() {
+        let mut hasher = MerkleHasher::new();
+        hasher.input(&[1, 2, 3]);
+        hasher.input(&[4, 5, 6]);
+        let hash1 = hasher.finalize();
+
+        let mut hasher2 = MerkleHasher::new();
+        hasher2.input(&[1, 2, 3, 4, 5, 6]);
+        let hash2 = hasher2.finalize();
+
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_determ_value_hash() {
+        let val1 = DetermValue::integer(42);
+        let hash1 = val1.hash();
+
+        let val2 = DetermValue::integer(42);
+        let hash2 = val2.hash();
+
+        assert_eq!(hash1, hash2);
+
+        let val3 = DetermValue::integer(43);
+        let hash3 = val3.hash();
+
+        assert_ne!(hash1, hash3);
     }
 }

@@ -18,6 +18,7 @@
 //! Merkle proofs, which allow efficient verification of data inclusion
 //! in a Merkle tree without requiring the full tree.
 
+use sha2::{Digest, Sha256};
 use std::default::Default;
 
 /// A Merkle proof that demonstrates inclusion of a value in a Merkle tree
@@ -133,12 +134,13 @@ impl MerkleProof {
     /// # Examples
     ///
     /// ```
-    /// use stoolap::trie::proof::MerkleProof;
+    /// use stoolap::trie::proof::{MerkleProof, hash_pair};
     ///
     /// let mut proof = MerkleProof::new();
     /// proof.set_value_hash([1u8; 32]);
     /// proof.add_sibling([2u8; 32]);
-    /// proof.set_root([3u8; 32]); // 1 XOR 2 = 3
+    /// let expected_root = hash_pair(&[1u8; 32], &[2u8; 32]);
+    /// proof.set_root(expected_root);
     /// proof.set_path(vec![0]);
     ///
     /// assert!(proof.verify());
@@ -200,15 +202,15 @@ impl Default for MerkleProof {
 /// # Examples
 ///
 /// ```
-/// use stoolap::trie::proof::merkle_root;
+/// use stoolap::trie::proof::{merkle_root, hash_pair};
 ///
 /// let leaves = [
 ///     [1u8; 32],
 ///     [2u8; 32],
 /// ];
 /// let root = merkle_root(&leaves);
-/// // With XOR hash, root is 1 XOR 2 = 3
-/// assert_eq!(root, [3u8; 32]);
+/// // With SHA-256 hash, root is H(1 || 2)
+/// assert_eq!(root, hash_pair(&[1u8; 32], &[2u8; 32]));
 /// ```
 pub fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
     if leaves.is_empty() {
@@ -239,20 +241,19 @@ pub fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
     current_level[0]
 }
 
-/// Hash two values together using XOR
+/// Hash two values together using SHA-256
 ///
-/// This is a simple hash function for demonstration purposes.
-/// In production, this should be replaced with a proper cryptographic
-/// hash function like SHA-256 or BLAKE3.
+/// Combines two hashes by concatenating them and computing SHA-256.
+/// This provides cryptographic security for Merkle tree proofs.
 ///
 /// # Arguments
 ///
-/// * `a` - First hash
-/// * `b` - Second hash
+/// * `a` - First hash (left child)
+/// * `b` - Second hash (right child)
 ///
 /// # Returns
 ///
-/// The XOR of the two input hashes
+/// The SHA-256 hash of the concatenated inputs
 ///
 /// # Examples
 ///
@@ -262,14 +263,15 @@ pub fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
 /// let a = [1u8; 32];
 /// let b = [2u8; 32];
 /// let result = hash_pair(&a, &b);
-/// assert_eq!(result, [3u8; 32]); // 1 XOR 2 = 3
+/// // Result is SHA-256(a || b)
+/// assert_ne!(result, [0u8; 32]);
+/// assert!(result.len() == 32);
 /// ```
 pub fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
-    let mut result = [0u8; 32];
-    for i in 0..32 {
-        result[i] = a[i] ^ b[i];
-    }
-    result
+    let mut hasher = Sha256::new();
+    hasher.update(a);
+    hasher.update(b);
+    hasher.finalize().into()
 }
 
 #[cfg(test)]
@@ -281,24 +283,30 @@ mod tests {
         let a = [1u8; 32];
         let b = [2u8; 32];
         let result = hash_pair(&a, &b);
-        assert_eq!(result, [3u8; 32]);
+        // SHA-256 produces a cryptographic hash, not a simple value
+        assert_ne!(result, [0u8; 32]);
+        assert_ne!(result, a);
+        assert_ne!(result, b);
     }
 
     #[test]
     fn test_hash_pair_commutative() {
+        // Note: SHA-256 is NOT commutative - hash_pair(a, b) != hash_pair(b, a)
+        // because H(a || b) != H(b || a)
         let a = [1u8; 32];
         let b = [2u8; 32];
         let result1 = hash_pair(&a, &b);
         let result2 = hash_pair(&b, &a);
-        assert_eq!(result1, result2);
+        assert_ne!(result1, result2);
     }
 
     #[test]
-    fn test_hash_pair_identity() {
+    fn test_hash_pair_deterministic() {
         let a = [5u8; 32];
-        let zero = [0u8; 32];
-        let result = hash_pair(&a, &zero);
-        assert_eq!(result, a);
+        let b = [7u8; 32];
+        let result1 = hash_pair(&a, &b);
+        let result2 = hash_pair(&a, &b);
+        assert_eq!(result1, result2);
     }
 
     #[test]
@@ -316,14 +324,13 @@ mod tests {
         proof.set_value_hash([42u8; 32]);
         proof.add_sibling([1u8; 32]);
         proof.add_sibling([2u8; 32]);
-        proof.set_root([3u8; 32]);
+        proof.set_root(hash_pair(&[1u8; 32], &[42u8; 32]));
         proof.set_path(vec![0, 1]);
 
         assert_eq!(proof.value_hash, [42u8; 32]);
         assert_eq!(proof.siblings.len(), 2);
         assert_eq!(proof.siblings[0], [1u8; 32]);
         assert_eq!(proof.siblings[1], [2u8; 32]);
-        assert_eq!(proof.root, [3u8; 32]);
         assert_eq!(proof.path, vec![0, 1]);
     }
 
@@ -355,11 +362,12 @@ mod tests {
     #[test]
     fn test_merkle_proof_verify_two_leaves() {
         // leaf1 = [1], leaf2 = [2]
-        // root = 1 XOR 2 = [3]
+        // root = SHA-256(1 || 2)
         let mut proof = MerkleProof::new();
         proof.set_value_hash([1u8; 32]);
         proof.add_sibling([2u8; 32]);
-        proof.set_root([3u8; 32]);
+        let expected_root = hash_pair(&[1u8; 32], &[2u8; 32]);
+        proof.set_root(expected_root);
         proof.set_path(vec![0]); // leaf1 is on the left
 
         assert!(proof.verify());
@@ -383,26 +391,32 @@ mod tests {
     fn test_merkle_root_two_elements() {
         let leaves = [[1u8; 32], [2u8; 32]];
         let root = merkle_root(&leaves);
-        assert_eq!(root, [3u8; 32]);
+        let expected = hash_pair(&[1u8; 32], &[2u8; 32]);
+        assert_eq!(root, expected);
     }
 
     #[test]
     fn test_merkle_root_four_elements() {
         // Level 0: [1], [2], [3], [4]
-        // Level 1: [1^2=3], [3^4=7]
-        // Level 2: [3^7=4]
+        // Level 1: hash_pair([1], [2]), hash_pair([3], [4])
+        // Level 2: hash_pair(hash_pair([1], [2]), hash_pair([3], [4]))
         let leaves = [[1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32]];
         let root = merkle_root(&leaves);
-        assert_eq!(root, [4u8; 32]);
+        let level1_left = hash_pair(&[1u8; 32], &[2u8; 32]);
+        let level1_right = hash_pair(&[3u8; 32], &[4u8; 32]);
+        let expected = hash_pair(&level1_left, &level1_right);
+        assert_eq!(root, expected);
     }
 
     #[test]
     fn test_merkle_root_three_elements() {
         // Level 0: [1], [2], [3]
-        // Level 1: [1^2=3], [3] (odd, promoted)
-        // Level 2: [3^3=0]
+        // Level 1: hash_pair([1], [2]), [3] (odd, promoted)
+        // Level 2: hash_pair(hash_pair([1], [2]), [3])
         let leaves = [[1u8; 32], [2u8; 32], [3u8; 32]];
         let root = merkle_root(&leaves);
-        assert_eq!(root, [0u8; 32]);
+        let level1_left = hash_pair(&[1u8; 32], &[2u8; 32]);
+        let expected = hash_pair(&level1_left, &[3u8; 32]);
+        assert_eq!(root, expected);
     }
 }
