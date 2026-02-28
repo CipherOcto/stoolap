@@ -487,6 +487,34 @@ pub fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+/// Error type for serialization/deserialization
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SerializationError {
+    InsufficientData { expected: usize, found: usize },
+    InvalidData(String),
+}
+
+impl std::fmt::Display for SerializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SerializationError::InsufficientData { expected, found } => {
+                write!(f, "Insufficient data: expected {} bytes, found {}", expected, found)
+            }
+            SerializationError::InvalidData(msg) => {
+                write!(f, "Invalid data: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SerializationError {}
+
+/// Trait for Solana-style serialization
+pub trait SolanaSerialize: Sized {
+    fn serialize(&self) -> Vec<u8>;
+    fn deserialize(data: &[u8]) -> std::result::Result<Self, SerializationError>;
+}
+
 /// Pack nibbles into bytes (2 nibbles per byte, LSB first)
 ///
 /// Each byte contains two nibbles: low nibble first, then high nibble.
@@ -620,6 +648,113 @@ pub fn hash_16_children(children: &[[u8; 32]; 16]) -> [u8; 32] {
         hasher.update(child);
     }
     hasher.finalize().into()
+}
+
+impl SolanaSerialize for HexaryProof {
+    fn serialize(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+
+        // Value hash (32 bytes)
+        out.extend_from_slice(&self.value_hash);
+
+        // Root hash (32 bytes)
+        out.extend_from_slice(&self.root);
+
+        // Path length (u8) + path data
+        out.push(self.path.len() as u8);
+        out.extend_from_slice(&self.path);
+
+        // Number of levels (u8)
+        out.push(self.levels.len() as u8);
+
+        // Each level: bitmap (u16 LE) + sibling count (u8) + sibling hashes
+        for level in &self.levels {
+            out.extend_from_slice(&level.bitmap.to_le_bytes());
+            out.push(level.siblings.len() as u8);
+            for sibling in &level.siblings {
+                out.extend_from_slice(sibling);
+            }
+        }
+
+        out
+    }
+
+    fn deserialize(data: &[u8]) -> std::result::Result<Self, SerializationError> {
+        use SerializationError::*;
+
+        let mut cursor = 0;
+
+        // Value hash
+        if data.len() < cursor + 32 {
+            return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+        }
+        let value_hash = data[cursor..cursor + 32].try_into().unwrap();
+        cursor += 32;
+
+        // Root hash
+        if data.len() < cursor + 32 {
+            return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+        }
+        let root = data[cursor..cursor + 32].try_into().unwrap();
+        cursor += 32;
+
+        // Path length
+        if data.len() < cursor + 1 {
+            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+        }
+        let path_len = data[cursor] as usize;
+        cursor += 1;
+
+        // Path data
+        if data.len() < cursor + path_len {
+            return Err(InsufficientData { expected: cursor + path_len, found: data.len() });
+        }
+        let path = data[cursor..cursor + path_len].to_vec();
+        cursor += path_len;
+
+        // Levels length
+        if data.len() < cursor + 1 {
+            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+        }
+        let levels_len = data[cursor] as usize;
+        cursor += 1;
+
+        let mut levels = Vec::new();
+        for _ in 0..levels_len {
+            // Bitmap (u16 LE)
+            if data.len() < cursor + 2 {
+                return Err(InsufficientData { expected: cursor + 2, found: data.len() });
+            }
+            let bitmap = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
+            cursor += 2;
+
+            // Sibling count
+            if data.len() < cursor + 1 {
+                return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+            }
+            let sibling_count = data[cursor] as usize;
+            cursor += 1;
+
+            // Sibling hashes
+            let mut siblings = Vec::new();
+            for _ in 0..sibling_count {
+                if data.len() < cursor + 32 {
+                    return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+                }
+                siblings.push(data[cursor..cursor + 32].try_into().unwrap());
+                cursor += 32;
+            }
+
+            levels.push(ProofLevel { bitmap, siblings });
+        }
+
+        Ok(HexaryProof {
+            value_hash,
+            levels,
+            root,
+            path,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1022,5 +1157,27 @@ mod tests {
         proof.set_path(pack_nibbles(&[1])); // nibble 1
 
         assert!(!proof.verify());
+    }
+
+    #[test]
+    fn test_hexary_proof_serialization_roundtrip() {
+        use crate::trie::proof::{HexaryProof, ProofLevel, SolanaSerialize};
+
+        let original = HexaryProof {
+            value_hash: [1u8; 32],
+            levels: vec![
+                ProofLevel {
+                    bitmap: 0x1234,
+                    siblings: vec![[2u8; 32], [3u8; 32]],
+                },
+            ],
+            root: [4u8; 32],
+            path: vec![0x35, 0xC3],
+        };
+
+        let serialized = original.serialize();
+        let deserialized = HexaryProof::deserialize(&serialized).unwrap();
+
+        assert_eq!(original, deserialized);
     }
 }
