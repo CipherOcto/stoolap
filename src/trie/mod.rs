@@ -16,16 +16,44 @@
 //!
 //! This module provides Merkle tree implementations for verifying
 //! database state in a blockchain context.
+//!
+//! # HexaryProof
+//!
+//! The primary proof type is [`HexaryProof`], designed for 16-way hexary tries
+//! like [`RowTrie`]. It provides compact proofs and efficient verification.
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use stoolap::trie::{RowTrie, HexaryProof};
+//! use stoolap::determ::{DetermRow, DetermValue};
+//!
+//! let mut trie = RowTrie::new();
+//! let row = DetermRow::from_values(vec![DetermValue::integer(42)]);
+//! trie.insert(42, row);
+//!
+//! // Generate and verify a proof
+//! if let Some(proof) = trie.get_hexary_proof(42) {
+//!     assert!(proof.verify());
+//! }
+//! ```
+//!
+//! # Module Structure
+//!
+//! - [`proof`] - Hexary proof types and verification
+//! - [`row_trie`] - Row-storage hexary trie
+//! - [`schema_trie`] - Schema metadata trie
 
 pub mod proof;
 pub mod row_trie;
 pub mod schema_trie;
 
+// Primary exports for HexaryProof system
 pub use proof::{HexaryProof, ProofLevel};
 pub use row_trie::{RowTrie, RowNode, StateDiff};
 pub use schema_trie::{SchemaTrie, TableSchema, ColumnDef};
 
-// Re-export hexary proof utility functions
+// Re-export hexary proof utility functions for convenience
 pub use proof::{
     hash_16_children, pack_nibbles, unpack_nibbles, reconstruct_children,
     SolanaSerialize, SerializationError
