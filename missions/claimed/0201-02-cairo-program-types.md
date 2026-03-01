@@ -1,7 +1,7 @@
 # Mission: Cairo Program Data Structures
 
 ## Status
-Open
+In Progress
 
 ## RFC
 RFC-0201: STWO and Cairo Integration for Zero-Knowledge Proofs
@@ -55,7 +55,7 @@ impl CairoProgram {
 ```
 
 ## Claimant
-Open
+AI Agent (Subagent-Driven Development)
 
 ## Pull Request
 TBD
