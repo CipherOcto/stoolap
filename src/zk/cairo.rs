@@ -18,6 +18,14 @@
 //! that can be proven using STWO.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+use std::process::Command;
+
+/// Minimum supported Cairo compiler version
+const MIN_CAIRO_VERSION: u32 = 2_06_00;
+
+/// Default Cairo compiler version (2.6.0)
+const DEFAULT_CAIRO_VERSION: u32 = 2_06_00;
 
 /// Cairo program identifier (blake3 hash of source code)
 pub type CairoProgramHash = [u8; 32];
@@ -71,22 +79,102 @@ impl CairoProgram {
         }
     }
 
-    /// Compile Cairo source to Sierra (stub)
+    /// Compile Cairo source to Sierra
     ///
-    /// Note: This will be implemented in Mission 0201-03
-    /// with actual Cairo compiler integration.
+    /// This method calls the cairo-compile binary to compile Cairo source code
+    /// to Sierra intermediate representation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CompileError` if:
+    /// - Cairo compiler is not found
+    /// - Source code has syntax errors
+    /// - Compilation fails for any reason
     pub fn compile_to_sierra(source: &str) -> Result<Vec<u8>, CompileError> {
-        let _ = source;
-        Err(CompileError::NotImplemented("compile_to_sierra".to_string()))
+        // Try to find cairo-compile in PATH
+        let compiler = find_cairo_compiler()?;
+
+        // Write source to a temporary file
+        let source_file = tempfile::NamedTempFile::new()
+            .map_err(|e| CompileError::SyntaxError(format!("Failed to create temp file: {}", e)))?;
+
+        std::fs::write(source_file.path(), source)
+            .map_err(|e| CompileError::SyntaxError(format!("Failed to write source: {}", e)))?;
+
+        // Run cairo-compile
+        let output = Command::new(&compiler)
+            .arg(source_file.path())
+            .arg("--sierra")
+            .arg("--output")
+            .arg("-") // Output to stdout
+            .output()
+            .map_err(|e| CompileError::CompilerNotFound)?;
+
+        // Check if compilation succeeded
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(parse_compile_error(&error_msg));
+        }
+
+        // Return Sierra bytecode
+        Ok(output.stdout)
     }
 
-    /// Compile Sierra to CASM (stub)
+    /// Compile Sierra to CASM
     ///
-    /// Note: This will be implemented in Mission 0201-03
-    /// with actual Cairo compiler integration.
+    /// This method calls the sierra-to-casm compiler to convert Sierra
+    /// intermediate representation to Cairo Assembly Machine bytecode.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CompileError` if:
+    /// - Sierra-to-CASM compiler is not found
+    /// - Sierra bytecode is invalid
+    /// - Compilation fails for any reason
     pub fn compile_to_casm(sierra: &[u8]) -> Result<Vec<u8>, CompileError> {
-        let _ = sierra;
-        Err(CompileError::NotImplemented("compile_to_casm".to_string()))
+        // Try to find sierra-to-casm-compile in PATH
+        let compiler = find_sierra_to_casm_compiler()?;
+
+        // Write Sierra to a temporary file
+        let sierra_file = tempfile::NamedTempFile::new()
+            .map_err(|e| CompileError::TypeError(format!("Failed to create temp file: {}", e)))?;
+
+        std::fs::write(sierra_file.path(), sierra)
+            .map_err(|e| CompileError::TypeError(format!("Failed to write Sierra: {}", e)))?;
+
+        // Run sierra-to-casm-compile
+        let output = Command::new(&compiler)
+            .arg(sierra_file.path())
+            .arg("--output")
+            .arg("-") // Output to stdout
+            .output()
+            .map_err(|e| CompileError::CompilerNotFound)?;
+
+        // Check if compilation succeeded
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(parse_compile_error(&error_msg));
+        }
+
+        // Return CASM bytecode
+        Ok(output.stdout)
+    }
+
+    /// Compile Cairo source fully to CASM
+    ///
+    /// This is a convenience method that compiles Cairo source → Sierra → CASM.
+    pub fn compile_full(source: &str) -> Result<Self, CompileError> {
+        let hash = Self::compute_hash(source);
+        let sierra = Self::compile_to_sierra(source)?;
+        let casm = Self::compile_to_casm(&sierra)?;
+
+        Ok(Self {
+            hash,
+            source: source.to_string(),
+            sierra,
+            casm,
+            version: DEFAULT_CAIRO_VERSION,
+        })
     }
 
     /// Check if this program has been fully compiled
@@ -123,6 +211,103 @@ impl std::fmt::Display for CompileError {
 }
 
 impl std::error::Error for CompileError {}
+
+/// Find the Cairo compiler binary in PATH
+fn find_cairo_compiler() -> Result<std::path::PathBuf, CompileError> {
+    // Try common cairo-compile names
+    const COMPILER_NAMES: &[&str] = &["cairo-compile", "starknet-compile", "cairo-lang-compile"];
+
+    for name in COMPILER_NAMES {
+        if let Ok(path) = which::which(name) {
+            // Verify compiler version
+            if let Ok(version) = check_cairo_version(&path) {
+                if version >= MIN_CAIRO_VERSION {
+                    return Ok(path);
+                }
+            }
+        }
+    }
+
+    Err(CompileError::CompilerNotFound)
+}
+
+/// Find the sierra-to-casm compiler binary in PATH
+fn find_sierra_to_casm_compiler() -> Result<std::path::PathBuf, CompileError> {
+    // Try common sierra-to-casm names
+    const COMPILER_NAMES: &[&str] = &["sierra-to-casm", "sierra-to-casm-compile"];
+
+    for name in COMPILER_NAMES {
+        if let Ok(path) = which::which(name) {
+            return Ok(path);
+        }
+    }
+
+    Err(CompileError::CompilerNotFound)
+}
+
+/// Check Cairo compiler version
+fn check_cairo_version(compiler_path: &Path) -> Result<u32, CompileError> {
+    let output = Command::new(compiler_path)
+        .arg("--version")
+        .output()
+        .map_err(|_| CompileError::CompilerNotFound)?;
+
+    if !output.status.success() {
+        return Ok(0); // Unknown version, assume old
+    }
+
+    let version_str = String::from_utf8_lossy(&output.stdout);
+    parse_cairo_version(&version_str)
+}
+
+/// Parse Cairo version string (e.g., "2.6.0" → 20600)
+fn parse_cairo_version(version_str: &str) -> Result<u32, CompileError> {
+    // Parse version like "2.6.0" or "Cairo compiler version 2.6.0"
+    let version_str = version_str
+        .trim()
+        .split_whitespace()
+        .last()
+        .unwrap_or(version_str);
+
+    let parts: Vec<&str> = version_str.split('.').collect();
+    if parts.len() < 2 {
+        return Err(CompileError::InvalidVersion(version_str.to_string()));
+    }
+
+    let major: u32 = parts[0]
+        .parse()
+        .map_err(|_| CompileError::InvalidVersion(version_str.to_string()))?;
+    let minor: u32 = parts[1]
+        .parse()
+        .map_err(|_| CompileError::InvalidVersion(version_str.to_string()))?;
+    let patch: u32 = if parts.len() > 2 {
+        parts[2]
+            .parse()
+            .map_err(|_| CompileError::InvalidVersion(version_str.to_string()))?
+    } else {
+        0
+    };
+
+    Ok(major * 10000 + minor * 100 + patch)
+}
+
+/// Parse compiler error output
+fn parse_compile_error(error_msg: &str) -> CompileError {
+    let error_msg = error_msg.trim();
+
+    // Check for syntax errors
+    if error_msg.contains("syntax error") || error_msg.contains("unexpected token") {
+        return CompileError::SyntaxError(error_msg.to_string());
+    }
+
+    // Check for type errors
+    if error_msg.contains("type error") || error_msg.contains("type mismatch") {
+        return CompileError::TypeError(error_msg.to_string());
+    }
+
+    // Default to syntax error for unknown errors
+    CompileError::SyntaxError(error_msg.to_string())
+}
 
 /// Registry of Cairo programs
 ///
@@ -282,14 +467,79 @@ mod tests {
     }
 
     #[test]
-    fn test_cairo_program_compile_stubs() {
+    fn test_cairo_program_compile_not_found() {
+        // This test will fail if cairo-compile is actually installed
+        // which is fine - it means we can test the real compilation
         let source = "fn main() { return (); }";
-        let result = CairoProgram::compile_to_sierra(source);
-        assert!(result.is_err(), "Should return error for unimplemented stub");
 
-        let sierra = vec![1, 2, 3];
-        let result = CairoProgram::compile_to_casm(&sierra);
-        assert!(result.is_err(), "Should return error for unimplemented stub");
+        // If cairo-compile is not in PATH, should get CompilerNotFound
+        let result = CairoProgram::compile_to_sierra(source);
+
+        // Either compilation succeeds (cairo-compile installed) or fails gracefully
+        match result {
+            Ok(_) => println!("Cairo compiler found - compilation succeeded"),
+            Err(CompileError::CompilerNotFound) => {
+                // Expected when compiler not installed
+            }
+            Err(e) => {
+                panic!("Unexpected error: {:?}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_cairo_program_version_parsing() {
+        // Test version parsing
+        let v1 = parse_cairo_version("2.6.0").unwrap();
+        assert_eq!(v1, 20600);
+
+        let v2 = parse_cairo_version("2.6").unwrap();
+        assert_eq!(v2, 20600);
+
+        let v3 = parse_cairo_version("3.0.0").unwrap();
+        assert_eq!(v3, 30000);
+
+        // Invalid versions
+        assert!(parse_cairo_version("invalid").is_err());
+        assert!(parse_cairo_version("a.b.c").is_err());
+    }
+
+    #[test]
+    fn test_cairo_program_full_compile() {
+        let source = "fn main() { return (); }";
+
+        // If cairo-compile is not installed, this is expected to fail
+        let result = CairoProgram::compile_full(source);
+
+        match result {
+            Ok(program) => {
+                // If compilation succeeded, verify the program is fully compiled
+                assert!(program.is_compiled());
+                assert!(!program.sierra.is_empty());
+                assert!(!program.casm.is_empty());
+            }
+            Err(CompileError::CompilerNotFound) => {
+                // Expected when compiler not installed
+            }
+            Err(e) => {
+                panic!("Unexpected error: {:?}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_compile_error() {
+        // Test syntax error parsing
+        let err = parse_compile_error("error: syntax error at line 5");
+        assert!(matches!(err, CompileError::SyntaxError(_)));
+
+        // Test type error parsing
+        let err = parse_compile_error("error: type error: expected felt252");
+        assert!(matches!(err, CompileError::TypeError(_)));
+
+        // Test unknown error defaults to syntax error
+        let err = parse_compile_error("some unknown error");
+        assert!(matches!(err, CompileError::SyntaxError(_)));
     }
 
     #[test]
