@@ -76,6 +76,7 @@ ahash = "0.8"  # Fast hash for hash indexes (DOS-resistant)
 hashbrown = "0.16"  # HashMap with raw_entry API for efficient group-by
 roaring = "0.11"  # Compressed bitmap indexes (used by Lucene, Druid, Spark)
 lru = "0.16"  # O(1) LRU cache for compiled expression programs
+hex = { version = "0.4", optional = true }  # Hex encoding for ZK proofs
 
 # Optional benchmark dependencies (for comparison benchmarks)
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
@@ -130,7 +131,7 @@ sqlite = ["dep:rusqlite"]
 duckdb = ["dep:duckdb"]
 mimalloc = ["dep:mimalloc"]
 semantic = ["candle-core", "candle-nn", "candle-transformers", "tokenizers", "hf-hub"]
-zk = ["dep:stwo", "dep:blake3", "dep:which", "dep:tempfile"]  # Zero-knowledge proofs support
+zk = ["dep:stwo", "dep:blake3", "dep:which", "dep:tempfile", "dep:hex"]  # Zero-knowledge proofs support
 
 [[example]]
 name = "benchmark_sqlite"

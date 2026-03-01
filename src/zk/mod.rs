@@ -43,7 +43,7 @@ pub mod proof;
 #[cfg(feature = "zk")]
 pub use cairo::{CairoProgram, CairoProgramHash, CairoProgramRegistry, CompileError, RegistryError};
 #[cfg(feature = "zk")]
-pub use prover::{ProverConfig, STWOProver};
+pub use prover::{ProverConfig, ProverError, STWOProver, VerifyError};
 #[cfg(feature = "zk")]
 pub use proof::{
     CairoProgramForRegistration, MAX_INPUTS_SIZE, MAX_OUTPUTS_SIZE, MAX_PROOF_SIZE,
