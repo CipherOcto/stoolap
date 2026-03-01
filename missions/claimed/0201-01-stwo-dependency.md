@@ -1,7 +1,7 @@
 # Mission: STWO Dependency Integration
 
 ## Status
-Open
+In Progress
 
 ## RFC
 RFC-0201: STWO and Cairo Integration for Zero-Knowledge Proofs
@@ -54,7 +54,7 @@ impl STWOProver {
 - Basic smoke test of prover creation
 
 ## Claimant
-Open
+AI Agent (Subagent-Driven Development)
 
 ## Pull Request
 TBD
