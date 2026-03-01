@@ -37,8 +37,16 @@
 pub mod cairo;
 #[cfg(feature = "zk")]
 pub mod prover;
+#[cfg(feature = "zk")]
+pub mod proof;
 
 #[cfg(feature = "zk")]
 pub use cairo::{CairoProgram, CairoProgramHash, CairoProgramRegistry, CompileError, RegistryError};
 #[cfg(feature = "zk")]
 pub use prover::{ProverConfig, STWOProver};
+#[cfg(feature = "zk")]
+pub use proof::{
+    CairoProgramForRegistration, MAX_INPUTS_SIZE, MAX_OUTPUTS_SIZE, MAX_PROOF_SIZE,
+    MAX_PUBLIC_INPUTS_SIZE, ProofSummary, ProofValidationError, SerializationError,
+    SolanaSerialize, StarkProof, ZKOperation,
+};
