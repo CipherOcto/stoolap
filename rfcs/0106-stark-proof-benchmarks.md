@@ -38,13 +38,13 @@ The `zk` feature already exists. Add `stwo-cairo-prover` as part of zk:
 stwo-cairo-prover = "1.1"
 ```
 
-### No Feature Flag - Duplicated Benchmarks
+### No Feature Flag - All Benchmarks Behind zk
 
-Instead of feature-gated code, duplicate benchmark functions:
-- Mock benchmarks: Always compile (no STWO dependency)
-- Real benchmarks: Require `zk` feature
+All benchmarks (both mock and real) are behind the `zk` feature:
+- Mock benchmarks: Require `zk` feature (ZK-related functionality)
+- Real benchmarks: Require `zk` feature (STWO integration)
 
-This allows running both in CI when zk is enabled.
+This ensures all ZK benchmarks are gated together.
 
 ### Benchmark Parameters
 
@@ -88,37 +88,21 @@ fn generate_real_proof(&self, program: &CairoProgram, inputs: &[u8]) -> Result<S
 
 ### Benchmark Implementation
 
+All benchmarks behind `zk` feature:
+
 ```rust
-// Mock - always available
-fn bench_mock_proof_generation(c: &mut Criterion) {
-    let mut group = c.benchmark_group("stark_mock_proof_generation");
-
-    for size in [10, 100, 1000].iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let prover = STWOProver::new();
-            let inputs = generate_batch_inputs(size);
-
-            b.iter(|| {
-                prover.generate_mock_proof(&program, &inputs);
-            });
-        });
-    }
-}
-
-// Real - requires zk feature
 #[cfg(feature = "zk")]
-fn bench_real_proof_generation(c: &mut Criterion) {
-    let mut group = c.benchmark_group("stark_real_proof_generation");
+mod benches {
+    use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 
-    for size in [10, 100, 1000].iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let prover = STWOProver::new();
-            let inputs = generate_batch_inputs(size);
+    // Mock
+    pub fn bench_mock_proof_generation(c: &mut Criterion) {
+        // ...
+    }
 
-            b.iter(|| {
-                prover.generate_real_proof(&program, &inputs);
-            });
-        });
+    // Real
+    pub fn bench_real_proof_generation(c: &mut Criterion) {
+        // ...
     }
 }
 ```
@@ -162,9 +146,7 @@ fn bench_real_proof_generation(c: &mut Criterion) {
 
 ## Testing Requirements
 
-- [ ] Mock benchmarks compile without zk feature
-- [ ] Real benchmarks compile with `--features zk`
-- [ ] Both can run: `cargo bench --features zk`
+- [ ] Benchmarks compile with `--features zk`
 - [ ] Mock shows ~0ms (instant)
 - [ ] Real shows actual proving time
 
