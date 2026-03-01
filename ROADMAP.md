@@ -46,7 +46,34 @@ The foundation for a blockchain SQL database has been established with hexary Me
 
 ---
 
-## Phase 2: Protocol Enhancement (PLANNED)
+## Phase 2: Zero-Knowledge Proofs (PLANNED)
+
+**Goal:** Integrate STWO/Cairo for proof compression, confidential queries, and L2 scaling
+
+### Planned RFCs
+
+| RFC | Title | Status | Priority |
+|-----|-------|--------|----------|
+| RFC-0201 | STWO and Cairo Integration | Draft | High |
+| RFC-0202 | Compressed Proof Format | Draft | High |
+| RFC-0203 | Confidential Query Operations | Draft | Medium |
+| RFC-0204 | L2 Rollup Protocol | Draft | High |
+
+### Key Features
+
+- **STWO Integration** - Circle STARK prover/verifier in Rust
+- **Cairo Programs** - Full Cairo programs for core operations
+- **Proof Compression** - Aggregate HexaryProofs into single STARK proof
+- **Confidential Queries** - Private database operations with ZK proofs
+- **L2 Rollup** - Off-chain execution with on-chain verification
+
+### Timeline Estimate
+
+Q2-Q3 2025
+
+---
+
+## Phase 3: Protocol Enhancement (FUTURE)
 
 **Goal:** Extend consensus mechanism with block production and validation
 
@@ -54,10 +81,10 @@ The foundation for a blockchain SQL database has been established with hexary Me
 
 | RFC | Title | Status | Priority |
 |-----|-------|--------|----------|
-| RFC-0201 | Block Production & Proposer Selection | Draft | High |
-| RFC-0202 | Block Validation & Fork Choice | Draft | High |
-| RPC-0203 | Network Protocol & Gossip | Draft | Medium |
-| RPC-0204 | Signature Schemes & Validator Keys | Draft | High |
+| RFC-0301 | Block Production & Proposer Selection | Draft | High |
+| RFC-0302 | Block Validation & Fork Choice | Draft | High |
+| RFC-0303 | Network Protocol & Gossip | Draft | Medium |
+| RFC-0304 | Signature Schemes & Validator Keys | Draft | High |
 
 ### Key Features
 
@@ -69,61 +96,35 @@ The foundation for a blockchain SQL database has been established with hexary Me
 
 ### Timeline Estimate
 
-Q2-Q3 2025
+Q4 2025 - Q1 2026
 
 ---
 
-## Phase 3: Scaling & Optimizations (FUTURE)
+## Phase 4: Advanced Optimizations (FUTURE)
 
-**Goal:** Improve throughput, reduce proof sizes, enhance performance
+**Goal:** Further scalability and advanced features
 
 ### Planned RFCs
 
 | RFC | Title | Status | Priority |
 |-----|-------|--------|----------|
-| RFC-0301 | Proof Compression & SNARK Verification | Draft | Medium |
-| RFC-0302 | State Pruning & Archive Access | Draft | Low |
-| RFC-0303 | Parallel Transaction Execution | Draft | High |
-| RFC-0304 | Database Sharding | Draft | Low |
+| RFC-0401 | State Pruning & Archive Access | Draft | Low |
+| RFC-0402 | Parallel Transaction Execution | Draft | High |
+| RFC-0403 | Database Sharding | Draft | Low |
+| RFC-0404 | Cross-Chain Bridges | Draft | Medium |
+| RFC-0405 | Light Client SPV Mode | Draft | High |
 
 ### Key Features
 
-- **SNARK Proofs** - Compress multiple proofs into single verification
 - **State Pruning** - Archive old state, reduce storage
 - **Parallel Execution** - Execute non-conflicting transactions in parallel
 - **Database Sharding** - Horizontal scaling for large datasets
+- **Cross-Chain Bridges** - Interoperability with other blockchains
+- **SPV Mode** - Light client verification without full nodes
 
 ### Timeline Estimate
 
 2026
-
----
-
-## Phase 4: Advanced Features (FUTURE)
-
-**Goal:** Add advanced blockchain and database capabilities
-
-### Planned RFCs
-
-| RFC | Title | Status | Priority |
-|-----|-------|--------|----------|
-| RFC-0401 | Cross-Chain Bridges | Draft | Medium |
-| RFC-0402 | Light Client SPV Mode | Draft | High |
-| RFC-0403 | State Channels | Draft | Medium |
-| RFC-0404 | Encrypted Database Operations | Draft | Low |
-| RFC-0405 | SQL Smart Contract Language | Draft | High |
-
-### Key Features
-
-- **Cross-Chain Bridges** - Interoperability with other blockchains
-- **SPV Mode** - Light client verification without full nodes
-- **State Channels** - Off-chain computation with on-chain settlement
-- **Encryption** - Confidential database operations
-- **Smart Contracts** - SQL-based programmable logic
-
-### Timeline Estimate
-
-2026-2027
 
 ---
 
@@ -168,6 +169,11 @@ Q2-Q3 2025
    - Efficient proof verification
    - Standard hexary proof format
 
+3. **[ZK Proofs for Scalability and Privacy](docs/use-cases/zk-proofs-scalability.md)** - Next phase
+   - Proof compression for bandwidth efficiency
+   - Confidential queries for private data operations
+   - L2 rollup for high-throughput applications
+
 ---
 
 ## Related RFCs
@@ -180,8 +186,10 @@ Q2-Q3 2025
 
 ### Draft RFCs
 
-- **[RFC-0201](rfcs/0201-block-production.md)** - Block Production (Phase 2)
-- **[RFC-0202](rfcs/0202-block-validation.md)** - Block Validation (Phase 2)
+- **[RFC-0201](rfcs/0201-stwo-cairo-integration.md)** - STWO/Cairo Integration (Phase 2)
+- **[RFC-0202](rfcs/0202-compressed-proofs.md)** - Compressed Proofs (Phase 2)
+- **[RFC-0203](rfcs/0203-confidential-queries.md)** - Confidential Queries (Phase 2)
+- **[RFC-0204](rfcs/0204-l2-rollup.md)** - L2 Rollup (Phase 2)
 
 ---
 
@@ -205,6 +213,13 @@ Q2-Q3 2025
 - **Flexibility** - Handles sparse trie structures
 - **Efficiency** - 5-10x smaller than binary proofs
 
+### Why STWO and Cairo?
+
+- **STWO** - Circle STARK prover/verifier written in Rust
+- **Cairo** - Turing-complete language for provable programs
+- **Native Integration** - Direct Rust linking for performance
+- **Cairo VM Verification** - On-chain verification via Cairo contracts
+
 ---
 
 ## Success Metrics
@@ -222,9 +237,10 @@ Q2-Q3 2025
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Blocks per second | >100 | 📋 Planned |
+| Proof size (100 rows) | <10 KB | 📋 Planned |
+| Verification time | <100ms | 📋 Planned |
+| L2 TPS | >1000 | 📋 Planned |
 | Finality time | <1 minute | 📋 Planned |
-| Validator count | >4 | 📋 Planned |
 
 ---
 

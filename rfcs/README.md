@@ -54,6 +54,13 @@ Draft → Discussion → Accepted → Implemented → Superseded
 
 Draft RFCs are being discussed and are not yet accepted.
 
+| Number | Title | Status | Date |
+|--------|-------|--------|------|
+| [RFC-0201](0201-stwo-cairo-integration.md) | STWO and Cairo Integration | Draft | Mar 2025 |
+| [RFC-0202](0202-compressed-proofs.md) | Compressed Proof Format | Draft | Mar 2025 |
+| [RFC-0203](0203-confidential-queries.md) | Confidential Query Operations | Draft | Mar 2025 |
+| [RFC-0204](0204-l2-rollup.md) | L2 Rollup Protocol | Draft | Mar 2025 |
+
 ## Archived RFCs
 
 Rejected, superseded, or withdrawn RFCs are stored in `archived/`.
