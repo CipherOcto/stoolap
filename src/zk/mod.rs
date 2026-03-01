@@ -42,6 +42,10 @@ pub mod proof;
 #[cfg(feature = "zk")]
 pub mod bundled;
 
+#[cfg(test)]
+#[cfg(feature = "zk")]
+mod tests;
+
 #[cfg(feature = "zk")]
 pub use cairo::{CairoProgram, CairoProgramHash, CairoProgramRegistry, CompileError, RegistryError};
 #[cfg(feature = "zk")]
