@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Mock benchmarks for STARK proof generation and verification
+//! Benchmarks for STARK proof generation and verification
 //!
 //! Run with: cargo bench --bench stark_proof --features zk
 //!
 //! Note: The zk feature requires the stwo crate which currently has
 //! compilation issues with recent Rust nightly versions.
-//! These benchmarks use mock proof generation for testing purposes.
+//! These benchmarks include both mock and real proof generation for testing purposes.
 
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 
 #[cfg(feature = "zk")]
 mod mock_benches {
     use super::*;
-    use stoolap::zk::{CairoProgram, STWOProver};
+    use stoolap::zk::{CairoProgram, STWOProver, STWOVerifier};
 
     fn generate_batch_inputs(size: usize) -> Vec<u8> {
         // Generate inputs for batch size
@@ -82,6 +82,73 @@ mod mock_benches {
 
                 b.iter(|| {
                     prover.verify(&proof, &inputs);
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+#[cfg(feature = "zk")]
+mod real_benches {
+    use super::*;
+    use stoolap::zk::{CairoProgram, STWOProver, STWOVerifier};
+
+    fn generate_batch_inputs(size: usize) -> Vec<u8> {
+        // Generate inputs for batch size
+        let mut inputs = Vec::new();
+        for i in 1..=size {
+            inputs.extend_from_slice(&i.to_le_bytes());
+        }
+        inputs
+    }
+
+    pub fn bench_real_proof_generation_merkle_batch(c: &mut Criterion) {
+        let mut group = c.benchmark_group("stark_real_proof_generation_merkle_batch");
+
+        for size in [10, 100, 1000].iter() {
+            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+                let prover = STWOProver::new();
+                let inputs = generate_batch_inputs(size);
+
+                let program = CairoProgram {
+                    hash: [0u8; 32],
+                    source: String::new(),
+                    sierra: vec![],
+                    casm: vec![],
+                    version: 2_06_00,
+                };
+
+                b.iter(|| {
+                    prover.generate_real_proof(&program, &inputs);
+                });
+            });
+        }
+        group.finish();
+    }
+
+    pub fn bench_real_proof_verification_merkle_batch(c: &mut Criterion) {
+        let mut group = c.benchmark_group("stark_real_proof_verification_merkle_batch");
+
+        for size in [10, 100, 1000].iter() {
+            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+                let prover = STWOProver::new();
+                let verifier = STWOVerifier::new();
+                let inputs = generate_batch_inputs(size);
+
+                let program = CairoProgram {
+                    hash: [0u8; 32],
+                    source: String::new(),
+                    sierra: vec![],
+                    casm: vec![],
+                    version: 2_06_00,
+                };
+
+                // Generate real proof first
+                let proof = prover.generate_real_proof(&program, &inputs).unwrap();
+
+                b.iter(|| {
+                    verifier.verify(&proof, &inputs);
                 });
             });
         }
@@ -149,6 +216,8 @@ criterion_group! {
     targets =
         mock_benches::bench_mock_proof_generation_merkle_batch,
         mock_benches::bench_mock_proof_verification_merkle_batch,
+        real_benches::bench_real_proof_generation_merkle_batch,
+        real_benches::bench_real_proof_verification_merkle_batch,
 }
 
 #[cfg(not(feature = "zk"))]
