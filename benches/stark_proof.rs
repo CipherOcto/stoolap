@@ -193,212 +193,8 @@ mod mock_benches {
     }
 }
 
-#[cfg(feature = "zk")]
-mod real_benches {
-    use super::*;
-    use stoolap::zk::{CairoProgram, STWOProver};
-
-    fn generate_batch_inputs(size: usize) -> Vec<u8> {
-        // Generate inputs for batch size
-        let mut inputs = Vec::new();
-        for i in 1..=size {
-            inputs.extend_from_slice(&i.to_le_bytes());
-        }
-        inputs
-    }
-
-    pub fn bench_real_proof_generation_merkle_batch(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_generation_merkle_batch");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Note: Real proof generation requires a compiled Cairo program.
-                // For now, this will fail gracefully with an empty program.
-                // Real benchmarks require full STWO integration with valid CASM.
-                b.iter(|| {
-                    prover.generate_real_proof(&program, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-
-    pub fn bench_real_proof_verification_merkle_batch(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_verification_merkle_batch");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Generate real proof first (may fail if program is not compiled)
-                // For real benchmarks, a valid Cairo program with CASM is required
-                let proof = match prover.generate_real_proof(&program, &inputs) {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // Skip benchmark iteration if real proof generation fails
-                        // (e.g., when Cairo program is empty/not compiled)
-                        std::hint::black_box(&inputs);
-                        return;
-                    }
-                };
-
-                // Use prover.verify() for verification (same prover instance works)
-                b.iter(|| {
-                    prover.verify(&proof, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-
-    pub fn bench_real_proof_generation_hexary_verify(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_generation_hexary_verify");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Note: Real proof generation requires a compiled Cairo program.
-                // For now, this will fail gracefully with an empty program.
-                // Real benchmarks require full STWO integration with valid CASM.
-                b.iter(|| {
-                    prover.generate_real_proof(&program, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-
-    pub fn bench_real_proof_verification_hexary_verify(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_verification_hexary_verify");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Generate real proof first (may fail if program is not compiled)
-                // For real benchmarks, a valid Cairo program with CASM is required
-                let proof = match prover.generate_real_proof(&program, &inputs) {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // Skip benchmark iteration if real proof generation fails
-                        // (e.g., when Cairo program is empty/not compiled)
-                        std::hint::black_box(&inputs);
-                        return;
-                    }
-                };
-
-                // Use prover.verify() for verification (same prover instance works)
-                b.iter(|| {
-                    prover.verify(&proof, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-
-    pub fn bench_real_proof_generation_state_transition(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_generation_state_transition");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Note: Real proof generation requires a compiled Cairo program.
-                // For now, this will fail gracefully with an empty program.
-                // Real benchmarks require full STWO integration with valid CASM.
-                b.iter(|| {
-                    prover.generate_real_proof(&program, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-
-    pub fn bench_real_proof_verification_state_transition(c: &mut Criterion) {
-        let mut group = c.benchmark_group("stark_real_proof_verification_state_transition");
-
-        for size in [10, 100, 1000].iter() {
-            group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-                let prover = STWOProver::new();
-                let inputs = generate_batch_inputs(size);
-
-                let program = CairoProgram {
-                    hash: [0u8; 32],
-                    source: String::new(),
-                    sierra: vec![],
-                    casm: vec![],
-                    version: 2_06_00,
-                };
-
-                // Generate real proof first (may fail if program is not compiled)
-                // For real benchmarks, a valid Cairo program with CASM is required
-                let proof = match prover.generate_real_proof(&program, &inputs) {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // Skip benchmark iteration if real proof generation fails
-                        // (e.g., when Cairo program is empty/not compiled)
-                        std::hint::black_box(&inputs);
-                        return;
-                    }
-                };
-
-                // Use prover.verify() for verification (same prover instance works)
-                b.iter(|| {
-                    prover.verify(&proof, &inputs);
-                });
-            });
-        }
-        group.finish();
-    }
-}
+// Real STWO benchmarks moved to stwo-bench sub-crate
+// See stwo-bench/ directory for real proof benchmarks
 
 // Stub benchmarks for when zk feature is not available
 // These allow the benchmark to compile even when stwo has issues
@@ -537,19 +333,16 @@ criterion_group! {
         // merkle_batch
         mock_benches::bench_mock_proof_generation_merkle_batch,
         mock_benches::bench_mock_proof_verification_merkle_batch,
-        real_benches::bench_real_proof_generation_merkle_batch,
-        real_benches::bench_real_proof_verification_merkle_batch,
         // hexary_verify
         mock_benches::bench_mock_proof_generation_hexary_verify,
         mock_benches::bench_mock_proof_verification_hexary_verify,
-        real_benches::bench_real_proof_generation_hexary_verify,
-        real_benches::bench_real_proof_verification_hexary_verify,
         // state_transition
         mock_benches::bench_mock_proof_generation_state_transition,
         mock_benches::bench_mock_proof_verification_state_transition,
-        real_benches::bench_real_proof_generation_state_transition,
-        real_benches::bench_real_proof_verification_state_transition,
 }
+
+// Real STWO benchmarks moved to stwo-bench sub-crate
+// Run with: cd stwo-bench && cargo bench
 
 #[cfg(not(feature = "zk"))]
 criterion_group! {
