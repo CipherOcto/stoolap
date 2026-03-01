@@ -18,7 +18,7 @@
 //! database rows with cryptographic proofs.
 
 use crate::determ::DetermRow;
-use crate::trie::proof::{merkle_root, MerkleProof, HexaryProof, ProofLevel, pack_nibbles, hash_16_children};
+use crate::trie::proof::{HexaryProof, ProofLevel, pack_nibbles, hash_16_children};
 
 /// Represents a state difference between two trie states
 ///
@@ -613,100 +613,6 @@ impl RowTrie {
         }
     }
 
-    /// Generate a Merkle proof for a row
-    pub fn get_proof(&self, row_id: i64) -> Option<MerkleProof> {
-        let key = encode_row_id(row_id);
-        let mut proof = MerkleProof::new();
-        let mut siblings = Vec::new();
-        let mut path = Vec::new();
-
-        let row_hash = self.do_get_proof(
-            self.root.as_ref().map(|r| r.as_ref()),
-            &key,
-            0,
-            &mut siblings,
-            &mut path,
-            row_id,
-        )?;
-
-        proof.set_value_hash(row_hash);
-        proof.set_root(self.get_root());
-        proof.siblings = siblings;
-        proof.path = path;
-
-        Some(proof)
-    }
-
-    fn do_get_proof(
-        &self,
-        node: Option<&RowNode>,
-        key: &[u8],
-        depth: usize,
-        siblings: &mut Vec<[u8; 32]>,
-        path: &mut Vec<u8>,
-        target_row_id: i64,
-    ) -> Option<[u8; 32]> {
-        match node {
-            None => None,
-            Some(RowNode::Leaf { row_id, row_hash, .. }) => {
-                // Verify the row_id matches
-                if *row_id != target_row_id {
-                    return None;
-                }
-                // Check if we've consumed the key (remaining nibbles are all padding zeros)
-                if depth >= key.len() || key[depth..].iter().all(|&x| x == 0) {
-                    Some(*row_hash)
-                } else {
-                    None
-                }
-            }
-            Some(RowNode::Branch { children, .. }) => {
-                if depth >= key.len() {
-                    return None;
-                }
-                let nibble = key[depth] as usize;
-                path.push(0); // We're going down this branch
-
-                // Collect sibling hashes
-                for (i, child) in children.iter().enumerate() {
-                    if i != nibble {
-                        if let Some(c) = child {
-                            siblings.push(c.hash());
-                        } else {
-                            siblings.push([0u8; 32]);
-                        }
-                    }
-                }
-
-                self.do_get_proof(
-                    children[nibble].as_ref().map(|c| c.as_ref()),
-                    key,
-                    depth + 1,
-                    siblings,
-                    path,
-                    target_row_id,
-                )
-            }
-            Some(RowNode::Extension { prefix, child, .. }) => {
-                // Check if the key starting at depth has the extension's prefix
-                if depth + prefix.len() <= key.len() {
-                    let key_prefix = &key[depth..depth + prefix.len()];
-                    if key_prefix == &prefix[..] {
-                        return self.do_get_proof(
-                            Some(child.as_ref()),
-                            key,
-                            depth + prefix.len(),
-                            siblings,
-                            path,
-                            target_row_id,
-                        );
-                    }
-                }
-                None
-            }
-        }
-    }
-
     /// Generate a hexary Merkle proof for a row
     ///
     /// This method creates a compact proof that can be used to verify the inclusion
@@ -752,7 +658,7 @@ impl RowTrie {
         let mut proof = HexaryProof::with_value_hash(row_hash);
         proof.levels = levels;
         proof.set_root(self.get_root());
-        proof.set_path(pack_nibbles(&path_nibbles));
+        proof.set_path(path_nibbles); // set_path now does the packing internally
 
         Some(proof)
     }

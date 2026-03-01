@@ -66,6 +66,7 @@ pub struct ProofLevel {
 /// * `levels` - Proof levels from root to leaf
 /// * `root` - Expected Merkle root
 /// * `path` - Nibble path (2 nibbles packed per byte, LSB first)
+/// * `path_nibble_count` - Number of nibbles in the path (needed for odd-length paths)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HexaryProof {
     /// Hash of the value being proven
@@ -80,6 +81,9 @@ pub struct HexaryProof {
     /// Nibble path (2 nibbles packed per byte, LSB first)
     /// If path length is odd, last byte uses only low nibble
     pub path: Vec<u8>,
+
+    /// Number of nibbles in the path (needed to correctly unpack odd-length paths)
+    pub path_nibble_count: usize,
 }
 
 impl HexaryProof {
@@ -100,6 +104,7 @@ impl HexaryProof {
             levels: Vec::new(),
             root: [0u8; 32],
             path: Vec::new(),
+            path_nibble_count: 0,
         }
     }
 
@@ -124,6 +129,7 @@ impl HexaryProof {
             levels: Vec::new(),
             root: [0u8; 32],
             path: Vec::new(),
+            path_nibble_count: 0,
         }
     }
 
@@ -178,11 +184,12 @@ impl HexaryProof {
     /// use stoolap::trie::proof::HexaryProof;
     ///
     /// let mut proof = HexaryProof::new();
-    /// proof.set_path(vec![0x35]);
-    /// assert_eq!(proof.path, vec![0x35]);
+    /// proof.set_path(vec![5]);
+    /// assert_eq!(proof.path, vec![0x50]);
     /// ```
     pub fn set_path(&mut self, path: Vec<u8>) {
-        self.path = path;
+        self.path_nibble_count = path.len();
+        self.path = pack_nibbles(&path);
     }
 
     /// Verify the hexary Merkle proof
@@ -220,17 +227,32 @@ impl HexaryProof {
         }
 
         // Unpack the path to get individual nibbles
-        let nibbles = unpack_nibbles(&self.path);
+        let full_nibbles = unpack_nibbles(&self.path);
+        // Truncate to the actual path length (important for odd-length paths)
+        let nibbles = &full_nibbles[..self.path_nibble_count.min(full_nibbles.len())];
 
         // Start with the value hash
         let mut current_hash = self.value_hash;
 
         // Verify each level from bottom (leaf) to top (root)
         // levels are stored root-to-leaf, so we iterate in reverse
-        for (level_idx, level) in self.levels.iter().enumerate().rev() {
+        for (rev_idx, level) in self.levels.iter().enumerate().rev() {
+            // rev_idx gives us the position from the end
+            // levels = [root, leaf], so rev() gives us [(1, leaf), (0, root)]
+            // rev_idx=1 means leaf (last), rev_idx=0 means root (first)
+
             // Get the path nibble for this level
-            let path_nibble = if level_idx < nibbles.len() {
-                nibbles[level_idx]
+            // Nibbles are ordered root-to-leaf: [ext_nibble, level_nibble, ...]
+            // Extension nibbles come first, then level nibbles
+            // Number of extension nibbles = total_nibbles - num_levels
+            let ext_nibbles = nibbles.len().saturating_sub(self.levels.len());
+
+            // For level at position rev_idx from the end (0-indexed from leaf),
+            // we need the nibble at position ext_nibbles + rev_idx
+            let nibble_idx = ext_nibbles + rev_idx;
+
+            let path_nibble = if nibble_idx < nibbles.len() {
+                nibbles[nibble_idx]
             } else {
                 // If we've exhausted the path, use 0 (shouldn't happen in valid proofs)
                 0
@@ -729,7 +751,8 @@ impl SolanaSerialize for HexaryProof {
         // Root hash (32 bytes)
         out.extend_from_slice(&self.root);
 
-        // Path length (u8) + path data
+        // Path nibble count (u8) + path length (u8) + path data
+        out.push(self.path_nibble_count as u8);
         out.push(self.path.len() as u8);
         out.extend_from_slice(&self.path);
 
@@ -766,6 +789,13 @@ impl SolanaSerialize for HexaryProof {
         }
         let root = data[cursor..cursor + 32].try_into().unwrap();
         cursor += 32;
+
+        // Path nibble count
+        if data.len() < cursor + 1 {
+            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+        }
+        let path_nibble_count = data[cursor] as usize;
+        cursor += 1;
 
         // Path length
         if data.len() < cursor + 1 {
@@ -822,6 +852,7 @@ impl SolanaSerialize for HexaryProof {
             levels,
             root,
             path,
+            path_nibble_count,
         })
     }
 }
@@ -984,6 +1015,7 @@ mod tests {
             ],
             root: [3u8; 32],
             path: vec![0x35], // nibbles [5]
+            path_nibble_count: 1,
         };
 
         assert_eq!(proof.value_hash, [1u8; 32]);
@@ -1030,8 +1062,11 @@ mod tests {
     #[test]
     fn test_hexary_proof_set_path() {
         let mut proof = HexaryProof::new();
-        proof.set_path(vec![0x35, 0xAB]);
-        assert_eq!(proof.path, vec![0x35, 0xAB]);
+        // set_path now takes unpacked nibbles and packs them internally
+        proof.set_path(vec![5, 11]);
+        // [5, 11] packs to [0xB5] (5 in low, 11=0xB in high)
+        assert_eq!(proof.path, vec![0xB5]);
+        assert_eq!(proof.path_nibble_count, 2);
     }
 
     #[test]
@@ -1179,7 +1214,7 @@ mod tests {
         proof.value_hash = value_hash;
         proof.add_level(bitmap, siblings);
         proof.set_root(expected_root);
-        proof.set_path(pack_nibbles(&[5])); // nibble 5 packed
+        proof.set_path(vec![5]); // set_path now packs internally
 
         assert!(proof.verify());
     }
@@ -1209,21 +1244,21 @@ mod tests {
         proof.add_level(level1_bitmap, level1_siblings); // Root level first
         proof.add_level(level0_bitmap, level0_siblings); // Leaf level
         proof.set_root(expected_root);
-        proof.set_path(pack_nibbles(&[12, 5])); // nibbles [12, 5] packed
+        proof.set_path(vec![12, 5]); // set_path now packs internally
 
         assert!(proof.verify());
     }
 
     #[test]
     fn test_hexary_proof_verify_invalid_root() {
-        use crate::trie::proof::{HexaryProof, pack_nibbles};
+        use crate::trie::proof::HexaryProof;
 
         // Create a proof with wrong root
         let mut proof = HexaryProof::new();
         proof.value_hash = [1u8; 32];
         proof.add_level(0b1000000000001000, vec![[2u8; 32]]);
         proof.set_root([99u8; 32]); // Wrong root
-        proof.set_path(pack_nibbles(&[1])); // nibble 1
+        proof.set_path(vec![1]); // set_path now packs internally
 
         assert!(!proof.verify());
     }
@@ -1242,6 +1277,7 @@ mod tests {
             ],
             root: [4u8; 32],
             path: vec![0x35, 0xC3],
+            path_nibble_count: 4, // 2 bytes * 2 nibbles
         };
 
         let serialized = original.serialize();
@@ -1260,12 +1296,14 @@ mod tests {
                 levels: vec![],
                 root: [1u8; 32],
                 path: vec![],
+                path_nibble_count: 0,
             },
             HexaryProof {
                 value_hash: [2u8; 32],
                 levels: vec![],
                 root: [2u8; 32],
                 path: vec![],
+                path_nibble_count: 0,
             },
         ];
 
@@ -1278,6 +1316,7 @@ mod tests {
                 levels: vec![],
                 root: [99u8; 32], // Wrong
                 path: vec![],
+                path_nibble_count: 0,
             },
         ];
 
@@ -1295,12 +1334,14 @@ mod tests {
                 levels: vec![],
                 root: [1u8; 32],
                 path: vec![],
+                path_nibble_count: 0,
             },
             HexaryProof {
                 value_hash: [2u8; 32],
                 levels: vec![],
                 root: [2u8; 32],
                 path: vec![],
+                path_nibble_count: 0,
             },
         ];
 
@@ -1313,6 +1354,7 @@ mod tests {
                 levels: vec![],
                 root: [99u8; 32], // Wrong
                 path: vec![],
+                path_nibble_count: 0,
             },
         ];
 

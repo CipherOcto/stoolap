@@ -131,7 +131,7 @@ fn test_row_trie_get() {
 }
 
 #[test]
-fn test_row_trie_get_proof() {
+fn test_row_trie_get_hexary_proof() {
     let mut trie = RowTrie::new();
 
     // Create test rows
@@ -151,23 +151,44 @@ fn test_row_trie_get_proof() {
     trie.insert(1, row1);
     trie.insert(2, row2);
 
-    // Get proof for existing row
-    let proof = trie.get_proof(1);
+    // Verify both rows exist
+    assert!(trie.get(1).is_some(), "Row 1 should exist");
+    assert!(trie.get(2).is_some(), "Row 2 should exist");
+
+    // Get hexary proof for existing row
+    let proof = trie.get_hexary_proof(1);
     assert!(proof.is_some());
 
     let proof = proof.unwrap();
     assert_eq!(proof.root, trie.get_root());
 
-    // TODO: Proof verification requires hexary trie support
-    // The current MerkleProof format is designed for binary trees (left/right),
-    // but RowTrie is a hexary (16-way) trie. The proof format needs to be
-    // extended to support 16-way branching, or the trie needs to be converted
-    // to a binary format for proof generation.
-    //
-    // assert!(proof.verify());
+    // Debug
+    println!("Row 1 - Proof levels: {}", proof.levels.len());
+    println!("Row 1 - Path nibbles: {:?}", proof.path);
+    println!("Row 1 - Path nibble count: {}", proof.path_nibble_count);
+    println!("Row 1 - Unpacked path: {:?}", {
+        let mut result = Vec::new();
+        for &byte in &proof.path {
+            result.push(byte & 0x0F);
+            result.push((byte >> 4) & 0x0F);
+        }
+        result
+    });
+    if !proof.levels.is_empty() {
+        println!("Row 1 - Level 0 bitmap: {:b}", proof.levels[0].bitmap);
+    }
+
+    // Verify the proof
+    assert!(proof.verify(), "Proof should verify for row 1");
+
+    // Also test proof for row 2
+    let proof2 = trie.get_hexary_proof(2);
+    assert!(proof2.is_some());
+    let proof2 = proof2.unwrap();
+    assert!(proof2.verify(), "Proof should verify for row 2");
 
     // Get proof for non-existing row
-    let proof_non_existing = trie.get_proof(999);
+    let proof_non_existing = trie.get_hexary_proof(999);
     assert!(proof_non_existing.is_none());
 }
 

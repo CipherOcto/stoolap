@@ -16,6 +16,8 @@ use crate::trie::proof::{hash_pair, merkle_root, MerkleProof};
 use crate::trie::row_trie::RowTrie;
 use crate::determ::{DetermRow, DetermValue};
 
+// Tests for deprecated MerkleProof - kept for documentation purposes
+#[allow(deprecated)]
 #[test]
 fn test_merkle_root_empty() {
     let leaves: &[[u8; 32]] = &[];
@@ -24,6 +26,7 @@ fn test_merkle_root_empty() {
     assert_eq!(root, [0u8; 32]);
 }
 
+#[allow(deprecated)]
 #[test]
 fn test_merkle_root_single() {
     let leaves = [[1u8; 32]];
@@ -32,6 +35,7 @@ fn test_merkle_root_single() {
     assert_eq!(root, [1u8; 32]);
 }
 
+#[allow(deprecated)]
 #[test]
 fn test_merkle_root_two() {
     let leaf1 = [1u8; 32];
@@ -43,6 +47,7 @@ fn test_merkle_root_two() {
     assert_eq!(root, expected);
 }
 
+#[allow(deprecated)]
 #[test]
 fn test_merkle_proof_verify() {
     // Create a Merkle tree with 4 leaves
@@ -154,6 +159,22 @@ fn test_row_trie_get_hexary_proof_branch_siblings() {
     let proof = proof.unwrap();
     assert_eq!(proof.value_hash, row16.hash());
     assert_eq!(proof.root, root2);
+
+    // Debug
+    println!("Row 16 - Proof levels: {}", proof.levels.len());
+    println!("Row 16 - Path nibbles: {:?}", proof.path);
+    println!("Row 16 - Unpacked path: {:?}", {
+        let mut result = Vec::new();
+        for &byte in &proof.path {
+            result.push(byte & 0x0F);
+            result.push((byte >> 4) & 0x0F);
+        }
+        result
+    });
+    if !proof.levels.is_empty() {
+        println!("Row 16 - Level 0 bitmap: {:b}", proof.levels[0].bitmap);
+    }
+
     assert!(proof.verify(), "Proof should verify");
 }
 

@@ -21,9 +21,15 @@ pub mod proof;
 pub mod row_trie;
 pub mod schema_trie;
 
-pub use proof::{MerkleProof, merkle_root};
+pub use proof::{HexaryProof, ProofLevel};
 pub use row_trie::{RowTrie, RowNode, StateDiff};
 pub use schema_trie::{SchemaTrie, TableSchema, ColumnDef};
+
+// Re-export hexary proof utility functions
+pub use proof::{
+    hash_16_children, pack_nibbles, unpack_nibbles, reconstruct_children,
+    SolanaSerialize, SerializationError
+};
 
 #[cfg(test)]
 mod tests;
