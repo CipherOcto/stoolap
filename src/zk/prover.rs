@@ -218,7 +218,7 @@ impl STWOProver {
         let prover = stwo_cairo_prover::CairoProver::new();
 
         // Compile program if needed
-        let compiled = program.compile_to_casm()
+        let compiled = CairoProgram::compile_to_casm(&program.sierra)
             .map_err(|e| ProverError::CompilationFailed(e.to_string()))?;
 
         // Generate proof
