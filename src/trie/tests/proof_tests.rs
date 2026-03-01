@@ -116,7 +116,7 @@ fn test_row_trie_get_hexary_proof_multiple_rows() {
     let row1 = DetermRow::from_values(vec![DetermValue::integer(1)]);
     let row256 = DetermRow::from_values(vec![DetermValue::integer(256)]);
 
-    let (_root1, _) = trie.insert(1, row1);
+    let _ = trie.insert(1, row1);
     let (root2, _) = trie.insert(256, row256.clone());
 
     // Verify row 256 exists
@@ -129,11 +129,6 @@ fn test_row_trie_get_hexary_proof_multiple_rows() {
 
     let proof = proof.unwrap();
     assert_eq!(proof.value_hash, row256.hash());
-
-    // Debug: check levels and path
-    println!("Proof levels: {}", proof.levels.len());
-    println!("Path nibbles: {:?}", proof.path);
-
     assert!(proof.verify(), "Proof should verify");
 }
 
@@ -159,22 +154,6 @@ fn test_row_trie_get_hexary_proof_branch_siblings() {
     let proof = proof.unwrap();
     assert_eq!(proof.value_hash, row16.hash());
     assert_eq!(proof.root, root2);
-
-    // Debug
-    println!("Row 16 - Proof levels: {}", proof.levels.len());
-    println!("Row 16 - Path nibbles: {:?}", proof.path);
-    println!("Row 16 - Unpacked path: {:?}", {
-        let mut result = Vec::new();
-        for &byte in &proof.path {
-            result.push(byte & 0x0F);
-            result.push((byte >> 4) & 0x0F);
-        }
-        result
-    });
-    if !proof.levels.is_empty() {
-        println!("Row 16 - Level 0 bitmap: {:b}", proof.levels[0].bitmap);
-    }
-
     assert!(proof.verify(), "Proof should verify");
 }
 

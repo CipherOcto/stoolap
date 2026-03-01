@@ -162,22 +162,6 @@ fn test_row_trie_get_hexary_proof() {
     let proof = proof.unwrap();
     assert_eq!(proof.root, trie.get_root());
 
-    // Debug
-    println!("Row 1 - Proof levels: {}", proof.levels.len());
-    println!("Row 1 - Path nibbles: {:?}", proof.path);
-    println!("Row 1 - Path nibble count: {}", proof.path_nibble_count);
-    println!("Row 1 - Unpacked path: {:?}", {
-        let mut result = Vec::new();
-        for &byte in &proof.path {
-            result.push(byte & 0x0F);
-            result.push((byte >> 4) & 0x0F);
-        }
-        result
-    });
-    if !proof.levels.is_empty() {
-        println!("Row 1 - Level 0 bitmap: {:b}", proof.levels[0].bitmap);
-    }
-
     // Verify the proof
     assert!(proof.verify(), "Proof should verify for row 1");
 
