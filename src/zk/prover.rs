@@ -201,6 +201,38 @@ impl STWOProver {
             public_inputs: vec![],
         })
     }
+
+    /// Generate a real STARK proof using STWO prover
+    ///
+    /// This method uses the STWO Cairo prover to generate a real STARK proof
+    /// for a Cairo program execution.
+    #[cfg(feature = "zk")]
+    fn generate_real_proof(
+        &self,
+        program: &CairoProgram,
+        inputs: &[u8],
+    ) -> Result<StarkProof, ProverError> {
+        use stwo_cairo_prover::CairoProver;
+
+        // Use STWO to generate real proof
+        let prover = stwo_cairo_prover::CairoProver::new();
+
+        // Compile program if needed
+        let compiled = program.compile_to_casm()
+            .map_err(|e| ProverError::CompilationFailed(e.to_string()))?;
+
+        // Generate proof
+        let proof_output = prover.prove(&compiled, inputs)
+            .map_err(|e| ProverError::ProvingFailed(e.to_string()))?;
+
+        Ok(StarkProof {
+            program_hash: program.hash,
+            inputs: inputs.to_vec(),
+            outputs: proof_output.outputs,
+            proof: proof_output.proof,
+            public_inputs: proof_output.public_inputs,
+        })
+    }
 }
 
 impl Default for STWOProver {
@@ -226,6 +258,8 @@ pub enum ProverError {
     ProverNotFound,
     /// Invalid program state
     InvalidProgramState(String),
+    /// Proving failed
+    ProvingFailed(String),
 }
 
 impl std::fmt::Display for ProverError {
@@ -238,6 +272,7 @@ impl std::fmt::Display for ProverError {
             ProverError::InputsTooLarge(size) => write!(f, "Inputs too large: {} bytes", size),
             ProverError::ProverNotFound => write!(f, "STWO prover not found"),
             ProverError::InvalidProgramState(msg) => write!(f, "Invalid program state: {}", msg),
+            ProverError::ProvingFailed(msg) => write!(f, "Proving failed: {}", msg),
         }
     }
 }
