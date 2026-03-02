@@ -1,3 +1,0 @@
-cargo:rerun-if-changed=hexary_verify.cairo
-cargo:rerun-if-changed=merkle_batch.cairo
-cargo:rerun-if-changed=state_transition.cairo
