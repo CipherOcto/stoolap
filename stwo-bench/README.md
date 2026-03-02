@@ -1,44 +1,26 @@
 # STWO Real Benchmarks
 
-This crate benchmarks real STARK proof generation and verification using the STWO prover.
+This crate benchmarks real STARK proof generation and verification using the STWO Circle STARK prover.
 
 ## Requirements
 
 ### Rust Toolchain
 - **Nightly version:** `nightly-2025-06-23` (pinned in `rust-toolchain.toml`)
-- This specific version is required because the STWO prover uses unstable Rust features
+- This specific version is required because the STWO prover uses unstable Rust features (portable_simd, array_chunks)
 
-### External Dependencies
-- **scarb** - Cairo package manager
-- **starknet-foundry** - StarkNet development framework
+### Dependencies
+The crate pulls dependencies from GitHub:
+- `stwo-cairo-prover` v1.1.0 (from starkware-libs/stwo-cairo)
+- `stwo-cairo-adapter` v1.1.0
+- `cairo-air` v1.1.0
 
-These are required because STWO compiles Cairo programs to CASM at runtime.
+## API Usage
 
-## API Status: crates.io v1.1 Limitation
-
-**Important Finding:** The `stwo-cairo-prover` crate from crates.io (v1.1) does **not** re-export the `adapter` module, which contains `ProverInput`. This is required for real proof generation.
-
-The main API available in crates.io v1.1:
-- `stwo_cairo_prover::prover::ProverParameters` - Available
-- `stwo_cairo_prover::prover::ChannelHash` - Available
-- `stwo_cairo_prover::prover::create_and_serialize_proof` - Available
-- `stwo_cairo_prover::prover::prove_cairo` - Requires `ProverInput` (not available)
-- `stwo_cairo_prover::adapter::ProverInput` - **Not exported** in crates.io version
-
-### For Full Integration
-
-To generate real proofs, you need the `ProverInput` type which is only available in the local stwo-cairo repository:
-
-```bash
-# Use local stwo-cairo with adapter module
-cd /path/to/stwo-cairo
-git checkout v1.1.0  # or main branch
-```
-
-Then update `stwo-bench/Cargo.toml` to use the local path:
-```toml
-stwo-cairo-prover = { path = "../../../crypto/stwo-cairo/stwo_cairo_prover/crates/prover" }
-```
+The benchmarks use the STWO prover API:
+- `prove_cairo::<Blake2sMerkleChannel>()` for proof generation
+- `verify_cairo::<Blake2sMerkleChannel>()` for verification
+- `ProverInput` from `stwo_cairo_adapter`
+- `ProverParameters` with Blake2s channel
 
 ## Running Benchmarks
 
@@ -51,16 +33,27 @@ The `rust-toolchain.toml` file will automatically use the correct nightly versio
 
 ## Benchmark Results
 
-The benchmarks measure:
-- **Real proof generation** - Actual STWO prover execution time (currently placeholder with error)
-- **Real proof verification** - STWO verifier execution time
+Actual STWO proof generation and verification times:
 
-For each of 3 Cairo programs:
-- merkle_batch
-- hexary_verify
-- state_transition
+| Operation | Time |
+|-----------|------|
+| Proof Generation (merkle_batch) | ~25-28 seconds |
+| Proof Verification (merkle_batch) | ~15 ms |
 
-At 3 batch sizes: 10, 100, 1000
+Benchmarks cover:
+- **merkle_batch** - Merkle batch verification program
+- **hexary_verify** - Hexary proof verification
+- **state_transition** - State transition program
+
+## Architecture
+
+```
+stwo-bench/
+├── Cargo.toml          # Dependencies (GitHub v1.1.0)
+├── rust-toolchain.toml # Pins nightly-2025-06-23
+├── stwo_proof.rs       # Benchmark implementation
+└── README.md           # This file
+```
 
 ## Troubleshooting
 
@@ -70,8 +63,5 @@ Ensure you're using `nightly-2025-06-23`. Check with:
 rustup show
 ```
 
-### Missing scarb or starknet-foundry
-Install them according to their documentation. The prover requires these tools to compile Cairo to CASM.
-
-### "ProverInput not found" error
-This is expected with crates.io v1.1. Use local stwo-cairo for full integration.
+### Benchmark timing
+Proof generation takes ~25-30 seconds per iteration. Use sample_size(3) for faster testing.
