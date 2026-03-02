@@ -398,26 +398,31 @@ impl RowTrie {
                     ));
                     RowNode::new_extension(prefix, *new_child)
                 } else {
-                    // Need to split the extension
-                    // For simplicity, convert to branch
+                    // Need to split the extension - key and prefix diverge at this depth
+                    // The old child already contains the existing row(s)
+                    // We just need to place it at the right branch position
                     let mut branch = RowNode::new_branch();
-                    let child = Box::new(Self::do_insert_static(
-                        Some(*child),
-                        &prefix[1..],
-                        depth + 1,
-                        row_id,
-                        row,
-                    ));
-                    if let Some(first_nibble) = prefix.first() {
-                        let idx = *first_nibble as usize;
-                        if let RowNode::Branch {
-                            ref mut children,
-                            ..
-                        } = branch
-                        {
-                            children[idx] = Some(child);
+
+                    // Old path: put the existing child at branch[prefix[0]]
+                    if let Some(first_prefix_nibble) = prefix.first() {
+                        let old_idx = *first_prefix_nibble as usize;
+                        // Clone the child into the branch at old position
+                        if let RowNode::Branch { ref mut children, .. } = branch {
+                            children[old_idx] = Some(child.clone());
                         }
                     }
+
+                    // New path: insert new leaf at branch[key[depth]]
+                    let new_idx = if depth < key.len() {
+                        key[depth] as usize
+                    } else {
+                        0
+                    };
+                    let new_leaf = RowNode::new_leaf(row_id, row);
+                    if let RowNode::Branch { ref mut children, .. } = branch {
+                        children[new_idx] = Some(Box::new(new_leaf));
+                    }
+
                     branch
                 }
             }
@@ -819,6 +824,38 @@ mod tests {
         let mut diff = StateDiff::new();
         diff.inserted.push((1, [1u8; 32]));
         assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn test_sequential_row_ids_1_to_100() {
+        use crate::determ::{DetermRow, DetermValue};
+
+        let mut trie = RowTrie::new();
+
+        // Insert sequential rows 1-100
+        for i in 1..=100 {
+            let row = DetermRow::from_values(vec![DetermValue::integer(i * 10)]);
+            trie.insert(i, row);
+        }
+
+        // Verify all hashes exist - regression test for extension split bug
+        for i in 1..=100 {
+            assert!(
+                trie.get_hash(i).is_some(),
+                "Should be able to get hash for row {}",
+                i
+            );
+        }
+
+        // Verify all rows can be retrieved
+        for i in 1..=100 {
+            let row = trie.get(i);
+            assert!(row.is_some(), "Should be able to get row {}", i);
+            if let Some(r) = row {
+                assert_eq!(r.len(), 1, "Row {} should have 1 value", i);
+                assert_eq!(r[0], DetermValue::integer(i * 10), "Row {} value mismatch", i);
+            }
+        }
     }
 
     #[test]
