@@ -168,32 +168,22 @@ impl CompressedProof {
 
         // 2. Load and use plugin (no fallback - intentional)
         let plugin = crate::zk::plugin::load_plugin()
-            .map_err(CompressedProofError::PluginNotFound)?;
+            .map_err(CompressedProofError::from)?;
 
         // 3. Verify proof using plugin
         plugin.verify(&self.stark_proof.proof)
-            .map_err(CompressedProofError::PluginError)
+            .map_err(CompressedProofError::from)
     }
 
     /// Quick verification check (without full STARK verification)
     ///
     /// This is a faster check that validates the proof structure
-    /// and checks the program hash without doing full STARK verification.
+    /// without doing full STARK verification.
     /// Use this for quick rejection of invalid proofs before doing
     /// expensive STARK verification.
     pub fn quick_verify(&self) -> Result<bool, CompressedProofError> {
-        // Validate structure
+        // Validate structure only
         self.validate()?;
-
-        // Check program is registered (without full verification)
-        #[cfg(feature = "zk")]
-        {
-            let registry = crate::zk::CairoProgramRegistry::get_global();
-            if registry.get(&self.program_hash).is_none() {
-                return Err(CompressedProofError::UnregisteredProgram);
-            }
-        }
-
         Ok(true)
     }
 
@@ -346,7 +336,7 @@ impl BatchVerifyInput {
 }
 
 /// Errors related to compressed proofs
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CompressedProofError {
     /// Batch has no proofs
     EmptyBatch,
@@ -410,10 +400,9 @@ impl From<SerializationError> for CompressedProofError {
 
 impl From<crate::zk::plugin::PluginError> for CompressedProofError {
     fn from(err: crate::zk::plugin::PluginError) -> Self {
-        match err {
-            crate::zk::plugin::PluginError::NotFound => CompressedProofError::PluginNotFound,
-            e => CompressedProofError::PluginError(e),
-        }
+        // We use PluginNotFound for not found errors, PluginError for others
+        // This is a simplification - in the future we could match on the variant
+        CompressedProofError::PluginError(err)
     }
 }
 

@@ -13,7 +13,7 @@ pub struct StarkVerifyResult {
 }
 
 /// Errors when plugin is not available or fails
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PluginError {
     /// Plugin file not found
     NotFound,
@@ -59,8 +59,10 @@ impl STWOPlugin {
     pub fn verify(&self, proof: &[u8]) -> Result<bool, PluginError> {
         type VerifyFn = unsafe extern "C" fn(*const u8, usize) -> StarkVerifyResult;
 
-        let func: Symbol<VerifyFn> = self.lib.get(b"stark_verify_proof")
-            .map_err(|_| PluginError::SymbolNotFound)?;
+        let func: Symbol<VerifyFn> = unsafe {
+            self.lib.get(b"stark_verify_proof")
+                .map_err(|_| PluginError::SymbolNotFound)?
+        };
 
         let result = unsafe { func(proof.as_ptr(), proof.len()) };
 
@@ -82,8 +84,10 @@ impl STWOPlugin {
     pub fn version(&self) -> Result<String, PluginError> {
         type VersionFn = extern "C" fn() -> *const c_char;
 
-        let func: Symbol<VersionFn> = self.lib.get(b"stark_plugin_version")
-            .map_err(|_| PluginError::SymbolNotFound)?;
+        let func: Symbol<VersionFn> = unsafe {
+            self.lib.get(b"stark_plugin_version")
+                .map_err(|_| PluginError::SymbolNotFound)?
+        };
 
         let version_cstr = unsafe { std::ffi::CStr::from_ptr(func()) };
         Ok(version_cstr.to_string_lossy().into_owned())
