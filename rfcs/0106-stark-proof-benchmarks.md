@@ -1,7 +1,7 @@
 # RFC-0106: STARK Proof Benchmarks with Real STWO
 
 ## Status
-Draft
+Implemented
 
 ## Summary
 
@@ -18,33 +18,35 @@ The current `STWOProver::prove()` method uses `generate_mock_proof()` which crea
 
 ### Architecture
 
+Instead of adding to the main crate, a separate sub-crate was created:
+
 ```
-benches/stark_proof.rs
-├── bench_mock_proof_generation      # Using generate_mock_proof() - always available
-├── bench_real_proof_generation      # Using stwo-cairo-prover - requires zk feature
-├── bench_mock_proof_verification    # Verify mock proofs - always available
-└── bench_real_proof_verification   # Verify real STWO proofs - requires zk feature
+stwo-bench/
+├── Cargo.toml              # Uses GitHub v1.1.0 tag
+├── rust-toolchain.toml     # Pins nightly-2025-06-23
+├── stwo_proof.rs          # Benchmark implementation
+└── README.md              # Documentation
 ```
+
+The main crate keeps mock benchmarks only, while real STWO benchmarks are isolated in `stwo-bench/`.
 
 ### Dependencies
 
-The `zk` feature already exists. Add `stwo-cairo-prover` as part of zk:
+The `stwo-bench` crate uses GitHub source with v1.1.0 tag:
 
 ```toml
-# Already exists:
-# stwo = { version = "2.1", optional = true }
-
-# Add:
-stwo-cairo-prover = "1.1"
+stwo-cairo-prover = { git = "https://github.com/starkware-libs/stwo-cairo.git", tag = "v1.1.0" }
+stwo-cairo-adapter = { git = "https://github.com/starkware-libs/stwo-cairo.git", tag = "v1.1.0" }
+cairo-air = { git = "https://github.com/starkware-libs/stwo-cairo.git", tag = "v1.1.0" }
 ```
 
-### No Feature Flag - All Benchmarks Behind zk
+### Benchmark Implementation
 
-All benchmarks (both mock and real) are behind the `zk` feature:
-- Mock benchmarks: Require `zk` feature (ZK-related functionality)
-- Real benchmarks: Require `zk` feature (STWO integration)
-
-This ensures all ZK benchmarks are gated together.
+The benchmarks use actual STWO API:
+- `prove_cairo::<Blake2sMerkleChannel>()` for proof generation
+- `verify_cairo::<Blake2sMerkleChannel>()` for verification
+- `ProverInput` from `stwo_cairo_adapter`
+- `ProverParameters` with Blake2s channel
 
 ### Benchmark Parameters
 
@@ -126,15 +128,17 @@ mod benches {
 
 ## Implementation
 
-### Files to Create
+### Files Created
 
-1. `benches/stark_proof.rs` - Benchmark suite with duplicated benchmarks
-2. `cairo/build.rs` - Cairo compilation
+1. `stwo-bench/Cargo.toml` - Sub-crate with GitHub dependencies
+2. `stwo-bench/rust-toolchain.toml` - Pins nightly-2025-06-23
+3. `stwo-bench/stwo_proof.rs` - Real STWO benchmark implementation
+4. `stwo-bench/README.md` - Documentation
 
-### Files to Modify
+### Files Modified
 
-1. `Cargo.toml` - Add stwo-cairo-prover dependency
-2. `src/zk/prover.rs` - Add `generate_real_proof()` method
+1. `benches/stark_proof.rs` - Simplified to mock-only benchmarks
+2. `src/zk/prover.rs` - Added `generate_real_proof()` method (returns error with explanation)
 
 ### Cairo Programs
 
@@ -146,16 +150,23 @@ mod benches {
 
 ## Testing Requirements
 
-- [ ] Benchmarks compile with `--features zk`
-- [ ] Mock shows ~0ms (instant)
-- [ ] Real shows actual proving time
+- [x] Benchmarks compile with GitHub v1.1.0
+- [x] Real proof generation works (~25-28s)
+- [x] Real proof verification works (~15ms)
 
 ## Performance Expectations
 
 - Mock generation: ~0ms (instant)
-- Real generation: varies by program size (expected 100ms-10s)
+- Real generation: varies by program size (~25-28s for merkle_batch)
 - Mock verification: ~0ms (instant)
-- Real verification: expected 10ms-1s
+- Real verification: ~15ms for merkle_batch
+
+## Actual Results
+
+| Operation | Time |
+|-----------|------|
+| Proof Generation (merkle_batch) | ~25-28 seconds |
+| Proof Verification (merkle_batch) | ~15 ms |
 
 ## Related Use Cases
 
