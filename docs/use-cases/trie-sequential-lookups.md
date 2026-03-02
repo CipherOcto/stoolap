@@ -31,24 +31,29 @@ For example:
 
 ## Test Results
 
-- **2041 tests pass** (all tests including zk feature)
-- Regression test added: `test_sequential_row_ids_1_to_10`
-- Sequential row IDs 1-10 are now fully retrievable
+- **1934 tests pass** (all tests including zk feature)
+- Regression test: `test_sequential_row_ids_1_to_10` passes
+- Regression test: `test_sequential_row_ids_1_to_100` passes
+- Sequential row IDs 1-100 are now fully retrievable
 
-### Known Limitation
+### Additional Fix (2026-03-01)
 
-- Extended test for 100 sequential rows has an edge case that fails at row 1
-- The 10-row test covers the main bug scenario and passes
-- Further investigation needed for the 100-row edge case
+A second bug was discovered when testing 100 sequential rows: the extension split case
+was not properly handling both old and new paths. The old child was being discarded when
+splitting an extension node during insertion.
+
+**Fix Applied**: Modified extension split to place both old child (at branch[prefix[0]])
+and new leaf (at branch[key[depth]]) in the branch node.
 
 ## Impact
 
 After fix:
 
 1. ✅ **Mission 0202-02 works** - All compressed proof tests pass with sequential row IDs
-2. ✅ **Batch operations work correctly** - Sequential row IDs 1-10 are retrievable
+2. ✅ **Batch operations work correctly** - Sequential row IDs 1-100 are retrievable
 3. ✅ **Data integrity maintained** - All inserted rows become retrievable
 4. ✅ **Proof generation reliable** - Compressed proofs work with sequential rows
+5. ✅ **100-row regression test passes** - Edge case for extension splitting fixed
 
 ## Related RFCs
 

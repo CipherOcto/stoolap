@@ -80,14 +80,39 @@ All three traversal functions needed changes:
 
 ### Test Results
 
-- **2041 tests pass** (all tests including zk feature)
-- Regression test added: `test_sequential_row_ids_1_to_10`
-- Sequential row IDs 1-10 now fully retrievable
+- **1934 tests pass** (all tests including zk feature)
+- Regression test: `test_sequential_row_ids_1_to_10` passes
+- Regression test: `test_sequential_row_ids_1_to_100` passes
+- Sequential row IDs 1-100 now fully retrievable
+
+### Additional Fix (2026-03-01)
+
+A second bug was discovered when testing 100 sequential rows: the extension split case
+was not properly handling both old and new paths. When inserting a Row that diverges from
+an existing extension prefix, the old child was being discarded.
+
+**The Second Bug**: In the else branch that splits an extension:
+```rust
+// Old code - BUG: only inserted new row, discarded old child
+let child = Box::new(Self::do_insert_static(Some(*child), &prefix[1..], depth + 1, row_id, row));
+// Only placed at prefix[0], never handled new row's position
+```
+
+**The Fix**: Place both old child AND new leaf in the branch:
+```rust
+// Old path: at branch[prefix[0]]
+if let RowNode::Branch { ref mut children, .. } = branch {
+    children[prefix[0] as usize] = Some(child.clone());
+}
+// New path: at branch[key[depth]]
+if let RowNode::Branch { ref mut children, .. } = branch {
+    children[key[depth] as usize] = Some(Box::new(new_leaf));
+}
+```
 
 ### Known Limitation
 
-- Extended test for 100 sequential rows has edge case - deferred
-- The 10-row test covers main bug scenario
+- **RESOLVED**: Extended test for 100 sequential rows now passes
 
 ## Rationale
 
