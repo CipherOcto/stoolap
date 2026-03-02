@@ -1,18 +1,18 @@
 # Mission: Pedersen Commitment Scheme
 
 ## Status
-Open
+Completed
 
 ## RFC
 RFC-0203: Confidential Query Operations
 
 ## Acceptance Criteria
-- [ ] Implement `pedersen_commit()` function
-- [ ] Implement `open_commitment()` function
-- [ ] Define `Commitment` type alias
-- [ ] Add batch commitment function
-- [ ] Add tests for commitment binding property
-- [ ] Add tests for commitment hiding property
+- [x] Implement `pedersen_commit()` function
+- [x] Implement `open_commitment()` function
+- [x] Define `Commitment` type alias
+- [x] Add batch commitment function
+- [x] Add tests for commitment binding property
+- [x] Add tests for commitment hiding property
 
 ## Dependencies
 - RFC-0201 (STWO Integration) - Complete
@@ -22,63 +22,46 @@ RFC-0203: Confidential Query Operations
 
 ## Implementation Notes
 
-**Files to Create:**
-- `src/zk/commitment.rs` - Commitment scheme
+### Files Created
+- `src/zk/commitment.rs` - Pedersen commitment implementation
 
-**Types and Functions:**
+### Features
+- `commitment` feature - Uses starknet-crypto (stable compatible)
+- Separate from `zk` feature which requires nightly Rust
+
+### Types
 ```rust
 pub type Commitment = [u8; 32];
-
-pub fn pedersen_commit(value: i64, randomness: u64) -> Commitment {
-    // C = g^value * h^randomness
-    let g = GENERATOR_G;
-    let h = GENERATOR_H;
-    let point = g.mul(value).add(h.mul(randomness));
-    point.to_bytes()
-}
-
-pub fn open_commitment(
-    commitment: &Commitment,
-    value: i64,
-    randomness: u64,
-) -> bool {
-    pedersen_commit(value, randomness) == *commitment
-}
-
-pub fn pedersen_commit_batch(values: &[i64]) -> Vec<Commitment> {
-    values.iter()
-        .map(|&v| pedersen_commit(v, thread_rng().gen()))
-        .collect()
-}
 ```
 
-**Constants:**
+### Functions
 ```rust
-const GENERATOR_G: Point = /* ... */;
-const GENERATOR_H: Point = /* ... */;
+pub fn pedersen_commit(value: i64, randomness: u64) -> Commitment
+pub fn open_commitment(commitment: &Commitment, value: i64, randomness: u64) -> bool
+pub fn pedersen_commit_batch(values: &[i64]) -> Vec<Commitment>
+pub fn open_commitment_batch(commitments: &[Commitment], values: &[i64], randomness: &[u64]) -> bool
 ```
 
-**Tests:**
-```rust
-#[test]
-fn test_commitment_binding() {
-    // Can't open commitment to different value
-}
-
-#[test]
-fn test_commitment_hiding() {
-    // Same value commits to different outputs
-}
-```
+### Tests (10 total)
+- test_commitment_deterministic
+- test_commitment_hiding
+- test_commitment_binding
+- test_commitment_different_values
+- test_batch_commitment
+- test_batch_open
+- test_commitment_zero
+- test_commitment_negative_values
+- test_commitment_large_values
+- test_load_plugin_not_found
 
 ## Claimant
-Open
+Claude Agent
 
 ## Pull Request
-TBD
+#106 (merged)
 
 ## Commits
-TBD
+- 6078923 - feat: Implement Pedersen commitment scheme (mission 0203-01)
 
 ## Completion Date
-TBD
+2026-03-02
