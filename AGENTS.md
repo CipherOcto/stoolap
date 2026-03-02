@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **stoolap_chain** (9417 symbols, 39219 relationships, 300 execution flows).
+This project is indexed by GitNexus as **stoolap** (9611 symbols, 40033 relationships, 300 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
