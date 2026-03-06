@@ -23,6 +23,7 @@ pub mod config;
 pub mod merkle;
 pub mod mmap;
 pub mod mvcc;
+pub mod quantization;
 pub mod search;
 pub mod segment;
 pub mod snapshot;
@@ -34,6 +35,8 @@ pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
 pub use mmap::{delete_segment, is_segment_ready, MmapVectorSegment, MmapVectorSegmentMut};
 pub use mvcc::VectorMvcc;
+pub use quantization::{BinaryQuantizer, QuantizationConfig, QuantizationType,
+    hamming_distance, hamming_to_similarity};
 pub use search::{SearchResult, VectorSearch};
 pub use segment::VectorSegment;
 pub use wal::{compaction_finish_entry, compaction_start_entry, segment_create_entry,
