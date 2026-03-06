@@ -54,11 +54,20 @@ pub struct VectorMvcc {
     active_segment_id: RwLock<Option<u64>>,
     version_tracker: RwLock<VersionTracker>,
     config: VectorConfig,
+    /// WAL logger for persistence
+    wal: Option<super::wal_logger::VectorWalLogger>,
+    /// Table name for WAL logging
+    table_name: String,
 }
 
 impl VectorMvcc {
-    /// Create new VectorMVCC
+    /// Create new VectorMVCC (backward compatible)
     pub fn new(config: VectorConfig) -> Self {
+        Self::with_wal(config, None, "vectors".to_string())
+    }
+
+    /// Create new VectorMVCC with WAL logging
+    pub fn with_wal(config: VectorConfig, wal: Option<super::wal_logger::VectorWalLogger>, table_name: String) -> Self {
         let tracker = VersionTracker {
             locations: HashMap::new(),
             deleted: I64Set::new(),
@@ -80,6 +89,8 @@ impl VectorMvcc {
             active_segment_id: RwLock::new(Some(first_id)),
             version_tracker: RwLock::new(tracker),
             config,
+            wal,
+            table_name,
         }
     }
 
@@ -98,6 +109,11 @@ impl VectorMvcc {
                                 .write()
                                 .locations
                                 .insert(vector_id, (seg_id, idx));
+
+                            // WAL logging
+                            if let Some(ref wal) = self.wal {
+                                let _ = wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
+                            }
                             return Ok(());
                         }
                     }
@@ -116,8 +132,8 @@ impl VectorMvcc {
 
     /// Delete a vector (soft delete via tombstone)
     pub fn delete(&self, vector_id: i64) -> Result<()> {
-        // Check if vector exists
-        {
+        // Check if vector exists and get segment_id
+        let segment_id = {
             let tracker = self.version_tracker.read();
             if !tracker.locations.contains_key(&vector_id) {
                 return Err(Error::SegmentNotFound);
@@ -126,11 +142,17 @@ impl VectorMvcc {
             if tracker.deleted.contains(vector_id) {
                 return Ok(()); // Already deleted
             }
-        }
+            tracker.locations.get(&vector_id).map(|(s, _)| *s)
+        };
 
         // Mark as deleted in tombstone set
         let mut tracker = self.version_tracker.write();
         tracker.deleted.insert(vector_id);
+
+        // WAL logging
+        if let (Some(seg_id), Some(ref wal)) = (segment_id, &self.wal) {
+            let _ = wal.log_delete(&self.table_name, vector_id, seg_id);
+        }
 
         Ok(())
     }
