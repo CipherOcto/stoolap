@@ -1056,6 +1056,21 @@ impl MVCCEngine {
                     let _ = store.truncate_all();
                 }
             }
+            // Vector operations - handled by vector-specific recovery
+            // These are placeholder handlers for WAL recovery compatibility
+            WALOperationType::VectorInsert
+            | WALOperationType::VectorUpdate
+            | WALOperationType::VectorDelete
+            | WALOperationType::SegmentCreate
+            | WALOperationType::SegmentMerge
+            | WALOperationType::IndexBuild
+            | WALOperationType::CompactionStart
+            | WALOperationType::CompactionFinish
+            | WALOperationType::SnapshotCommit => {
+                // Vector operations are logged for crash recovery
+                // Full vector WAL recovery requires VectorMvcc integration
+                // This will be implemented in Phase 2
+            }
         }
 
         Ok(())

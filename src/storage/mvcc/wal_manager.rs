@@ -174,6 +174,16 @@ pub enum WALOperationType {
     CreateView = 11,
     DropView = 12,
     TruncateTable = 13,
+    // Vector operations (14-25)
+    VectorInsert = 14,
+    VectorUpdate = 15,
+    VectorDelete = 16,
+    SegmentCreate = 17,
+    SegmentMerge = 18,
+    IndexBuild = 19,
+    CompactionStart = 20,
+    CompactionFinish = 21,
+    SnapshotCommit = 22,
 }
 
 impl WALOperationType {
@@ -193,6 +203,15 @@ impl WALOperationType {
             11 => Some(WALOperationType::CreateView),
             12 => Some(WALOperationType::DropView),
             13 => Some(WALOperationType::TruncateTable),
+            14 => Some(WALOperationType::VectorInsert),
+            15 => Some(WALOperationType::VectorUpdate),
+            16 => Some(WALOperationType::VectorDelete),
+            17 => Some(WALOperationType::SegmentCreate),
+            18 => Some(WALOperationType::SegmentMerge),
+            19 => Some(WALOperationType::IndexBuild),
+            20 => Some(WALOperationType::CompactionStart),
+            21 => Some(WALOperationType::CompactionFinish),
+            22 => Some(WALOperationType::SnapshotCommit),
             _ => None,
         }
     }
@@ -215,6 +234,22 @@ impl WALOperationType {
     /// Check if this is a commit or rollback
     pub fn is_transaction_end(&self) -> bool {
         matches!(self, WALOperationType::Commit | WALOperationType::Rollback)
+    }
+
+    /// Check if this is a vector operation
+    pub fn is_vector(&self) -> bool {
+        matches!(
+            self,
+            WALOperationType::VectorInsert
+                | WALOperationType::VectorUpdate
+                | WALOperationType::VectorDelete
+                | WALOperationType::SegmentCreate
+                | WALOperationType::SegmentMerge
+                | WALOperationType::IndexBuild
+                | WALOperationType::CompactionStart
+                | WALOperationType::CompactionFinish
+                | WALOperationType::SnapshotCommit
+        )
     }
 }
 
@@ -2546,7 +2581,16 @@ mod tests {
             WALOperationType::from_u8(13),
             Some(WALOperationType::TruncateTable)
         );
-        assert_eq!(WALOperationType::from_u8(14), None); // Invalid value
+        assert_eq!(WALOperationType::from_u8(14), Some(WALOperationType::VectorInsert));
+        assert_eq!(WALOperationType::from_u8(15), Some(WALOperationType::VectorUpdate));
+        assert_eq!(WALOperationType::from_u8(16), Some(WALOperationType::VectorDelete));
+        assert_eq!(WALOperationType::from_u8(17), Some(WALOperationType::SegmentCreate));
+        assert_eq!(WALOperationType::from_u8(18), Some(WALOperationType::SegmentMerge));
+        assert_eq!(WALOperationType::from_u8(19), Some(WALOperationType::IndexBuild));
+        assert_eq!(WALOperationType::from_u8(20), Some(WALOperationType::CompactionStart));
+        assert_eq!(WALOperationType::from_u8(21), Some(WALOperationType::CompactionFinish));
+        assert_eq!(WALOperationType::from_u8(22), Some(WALOperationType::SnapshotCommit));
+        assert_eq!(WALOperationType::from_u8(23), None); // Invalid value
 
         assert!(WALOperationType::CreateTable.is_ddl());
         assert!(WALOperationType::CreateView.is_ddl());
