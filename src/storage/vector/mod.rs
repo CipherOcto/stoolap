@@ -26,6 +26,7 @@ pub mod mvcc;
 pub mod search;
 pub mod segment;
 pub mod wal;
+pub mod wal_logger;
 
 pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
@@ -36,3 +37,4 @@ pub use segment::VectorSegment;
 pub use wal::{compaction_finish_entry, compaction_start_entry, segment_create_entry,
     segment_merge_entry, vector_delete_entry, vector_insert_entry, vector_update_entry,
     VectorWalData};
+pub use wal_logger::{VectorWalEntry, VectorWalLogger};
