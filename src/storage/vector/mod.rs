@@ -21,16 +21,22 @@
 
 pub mod config;
 pub mod merkle;
+pub mod mmap;
 pub mod mvcc;
 pub mod search;
 pub mod segment;
+pub mod snapshot;
 pub mod wal;
+pub mod wal_logger;
+pub mod wal_recovery;
 
 pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
+pub use mmap::{delete_segment, is_segment_ready, MmapVectorSegment, MmapVectorSegmentMut};
 pub use mvcc::VectorMvcc;
 pub use search::{SearchResult, VectorSearch};
 pub use segment::VectorSegment;
 pub use wal::{compaction_finish_entry, compaction_start_entry, segment_create_entry,
     segment_merge_entry, vector_delete_entry, vector_insert_entry, vector_update_entry,
     VectorWalData};
+pub use wal_logger::{VectorWalEntry, VectorWalLogger};
