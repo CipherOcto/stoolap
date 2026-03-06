@@ -166,6 +166,15 @@ impl VectorSegment {
         self.vector_ids.iter().position(|&id| id == vector_id)
     }
 
+    /// Get embedding by vector ID (for re-ranking)
+    pub fn get_embedding_by_id(&self, vector_id: i64) -> Option<&[f32]> {
+        if let Some(idx) = self.find_by_vector_id(vector_id) {
+            self.get_embedding(idx)
+        } else {
+            None
+        }
+    }
+
     /// Mark segment as immutable
     pub fn make_immutable(&mut self) {
         self.is_immutable = true;

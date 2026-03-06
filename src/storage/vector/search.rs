@@ -95,6 +95,7 @@ impl VectorSearch {
 
         for segment in segments {
             for i in 0..segment.count {
+                // Check segment's internal deleted flag
                 if segment.is_deleted(i) {
                     continue;
                 }
@@ -102,6 +103,10 @@ impl VectorSearch {
                 if let Some(embedding) = segment.get_embedding(i) {
                     let distance = cosine_distance(query, embedding);
                     if let Some(vector_id) = segment.get_vector_id(i) {
+                        // Also check MVCC-level tombstone set
+                        if self.mvcc.is_deleted(vector_id) {
+                            continue;
+                        }
                         results.push(SearchResult {
                             id: vector_id,
                             distance,
@@ -162,6 +167,24 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f64 {
 
     // Cosine distance = 1 - cosine similarity
     1.0 - (dot / denom)
+}
+
+/// Re-rank candidates with exact distance computation
+///
+/// Layer 2 of three-layer verification:
+/// - Layer 1: HNSW fast search (returns approximate top-K)
+/// - Layer 2: Software float re-rank (verifies with exact distance)
+/// - Layer 3: Merkle proof generation
+pub fn rerank(query: &[f32], candidates: &mut [SearchResult], segment: &VectorSegment) {
+    // Re-compute exact distances for all candidates
+    for candidate in candidates.iter_mut() {
+        if let Some(embedding) = segment.get_embedding_by_id(candidate.id) {
+            candidate.distance = cosine_distance(query, embedding);
+        }
+    }
+
+    // Re-sort by exact distance
+    candidates.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
 }
 
 #[cfg(test)]
