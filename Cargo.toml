@@ -128,7 +128,7 @@ tempfile = "3.9"
 dhat = "0.3"
 
 [features]
-default = ["cli", "parallel"]
+default = ["cli", "parallel", "vector"]
 parallel = ["dep:rayon"]
 wasm = []  # Excludes parallel + persistence; for wasm32 builds
 cli = ["clap", "rustyline", "comfy-table", "dirs"]
@@ -139,6 +139,7 @@ mimalloc = ["dep:mimalloc"]
 semantic = ["candle-core", "candle-nn", "candle-transformers", "tokenizers", "hf-hub"]
 zk = ["dep:blake3", "dep:which", "dep:tempfile", "dep:hex"]  # ZK types and plugin loader (stable compatible)
 commitment = ["dep:starknet-crypto", "dep:blake3"]  # Pedersen commitments + confidential queries (stable compatible)
+vector = ["dep:blake3"]  # Vector storage with Merkle verification
 
 [[example]]
 name = "benchmark_sqlite"

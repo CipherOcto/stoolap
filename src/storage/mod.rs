@@ -28,6 +28,9 @@ pub mod mvcc;
 pub mod statistics;
 pub mod traits;
 
+#[cfg(feature = "vector")]
+pub mod vector;
+
 // Re-export main expression types at storage level for convenience
 pub use expression::{
     AndExpr, BetweenExpr, CastExpr, ComparisonExpr, CompoundExpr, Expression, InListExpr, NotExpr,
