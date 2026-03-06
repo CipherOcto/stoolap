@@ -66,6 +66,56 @@ pub fn binary_cosine_similarity(a: &[u8], b: &[u8], dimension: usize) -> f32 {
     1.0 - 2.0 * (distance as f32 / dimension as f32)
 }
 
+/// Compute squared Euclidean distance between two quantized vectors
+///
+/// Used for SQ (Scalar Quantization) distance calculation.
+/// Returns squared distance (sqrt not needed for ranking).
+///
+/// # Arguments
+/// * `a` - First quantized vector (decoded to f32)
+/// * `b` - Second quantized vector (decoded to f32)
+///
+/// # Returns
+/// Squared Euclidean distance
+pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(a.len(), b.len(), "Vectors must have same length");
+    let mut sum = 0.0;
+    for i in 0..a.len() {
+        let diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+    sum
+}
+
+/// Compute cosine similarity between two vectors
+///
+/// # Arguments
+/// * `a` - First vector
+/// * `b` - Second vector
+///
+/// # Returns
+/// Cosine similarity in range [-1, 1]
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(a.len(), b.len(), "Vectors must have same length");
+
+    let mut dot_product = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+
+    for i in 0..a.len() {
+        dot_product += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+
+    let denominator = (norm_a * norm_b).sqrt();
+    if denominator == 0.0 {
+        return 0.0;
+    }
+
+    dot_product / denominator
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

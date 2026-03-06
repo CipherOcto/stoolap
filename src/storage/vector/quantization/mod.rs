@@ -16,13 +16,15 @@
 //!
 //! Provides compression for vector storage:
 //! - Binary Quantization (BQ): 1 bit per dimension, 32x compression
-//! - Scalar Quantization (SQ): 4 bits per dimension, 4x compression
+//! - Scalar Quantization (SQ): 1 byte per dimension, 4x compression
 //! - Product Quantization (PQ): Sub-vector quantization, 4-64x configurable
 
 pub mod config;
 pub mod quantizer;
+pub mod scalar;
 pub mod distance;
 
 pub use config::{QuantizationConfig, QuantizationType};
 pub use quantizer::BinaryQuantizer;
-pub use distance::{hamming_distance, hamming_to_similarity};
+pub use scalar::ScalarQuantizer;
+pub use distance::{hamming_distance, hamming_to_similarity, euclidean_distance};
