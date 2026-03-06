@@ -27,6 +27,7 @@ pub mod search;
 pub mod segment;
 pub mod wal;
 pub mod wal_logger;
+pub mod wal_recovery;
 
 pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
