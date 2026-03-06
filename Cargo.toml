@@ -101,6 +101,7 @@ sha2 = "0.10.9"
 # Note: Full STWO support moved to stwo-plugin crate (requires nightly to build)
 # The zk feature here provides types and stubs only - use plugin for actual proofs
 blake3 = { version = "1.5", optional = true }
+memmap2 = { version = "0.9", optional = true }
 which = { version = "7.0", optional = true }
 tempfile = { version = "3.9", optional = true }
 starknet-crypto = { version = "0.6", optional = true }
@@ -139,7 +140,7 @@ mimalloc = ["dep:mimalloc"]
 semantic = ["candle-core", "candle-nn", "candle-transformers", "tokenizers", "hf-hub"]
 zk = ["dep:blake3", "dep:which", "dep:tempfile", "dep:hex"]  # ZK types and plugin loader (stable compatible)
 commitment = ["dep:starknet-crypto", "dep:blake3"]  # Pedersen commitments + confidential queries (stable compatible)
-vector = ["dep:blake3"]  # Vector storage with Merkle verification
+vector = ["dep:blake3", "dep:memmap2", "dep:tempfile"]  # Vector storage with Merkle + mmap
 
 [[example]]
 name = "benchmark_sqlite"

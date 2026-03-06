@@ -21,6 +21,7 @@
 
 pub mod config;
 pub mod merkle;
+pub mod mmap;
 pub mod mvcc;
 pub mod search;
 pub mod segment;
@@ -28,6 +29,7 @@ pub mod wal;
 
 pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
+pub use mmap::{delete_segment, is_segment_ready, MmapVectorSegment, MmapVectorSegmentMut};
 pub use mvcc::VectorMvcc;
 pub use search::{SearchResult, VectorSearch};
 pub use segment::VectorSegment;
