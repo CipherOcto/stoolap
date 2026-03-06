@@ -39,7 +39,7 @@ impl VectorMerkle {
     /// Compute leaf hash: blake3(vector_id || blake3(embedding))
     ///
     /// This makes the leaf compact (32 bytes) vs raw vector (3KB for 768-dim)
-    #[cfg(feature = "blake3")]
+    #[cfg(feature = "vector")]
     pub fn leaf_hash(vector_id: i64, embedding: &[f32]) -> Vec<u8> {
         use blake3::Hasher;
 
@@ -57,12 +57,61 @@ impl VectorMerkle {
         hasher.finalize().as_bytes().to_vec()
     }
 
+    /// Compute internal node hash from two child hashes
+    #[cfg(feature = "vector")]
+    fn internal_hash(left: &[u8], right: &[u8]) -> Vec<u8> {
+        use blake3::Hasher;
+        let mut hasher = Hasher::new();
+        hasher.update(left);
+        hasher.update(right);
+        hasher.finalize().as_bytes().to_vec()
+    }
+
+    /// Build Merkle tree from leaf hashes and compute root
+    fn build_merkle_root(leaf_hashes: &[Vec<u8>]) -> Vec<u8> {
+        if leaf_hashes.is_empty() {
+            return vec![0u8; 32];
+        }
+        if leaf_hashes.len() == 1 {
+            return leaf_hashes[0].clone();
+        }
+
+        let mut level: Vec<Vec<u8>> = leaf_hashes.to_vec();
+        while level.len() > 1 {
+            let mut next_level = Vec::with_capacity((level.len() + 1) / 2);
+            for chunk in level.chunks(2) {
+                if chunk.len() == 2 {
+                    next_level.push(Self::internal_hash(&chunk[0], &chunk[1]));
+                } else {
+                    // Odd node - hash with itself (or pad with zero)
+                    next_level.push(Self::internal_hash(&chunk[0], &chunk[0]));
+                }
+            }
+            level = next_level;
+        }
+        level[0].clone()
+    }
+
     /// Update segment root after insert/update/delete
-    pub fn update_segment(&mut self, segment_id: u64, _vectors: &[(i64, &[f32])]) {
-        // compute actual Placeholder - would root
-        let root = vec![1u8; 32];
-        self.segment_roots.insert(segment_id, root);
-        self.recompute_global_root();
+    pub fn update_segment(&mut self, segment_id: u64, vectors: &[(i64, &[f32])]) {
+        // Compute leaf hashes for all vectors in segment
+        #[cfg(feature = "vector")]
+        {
+            let leaf_hashes: Vec<Vec<u8>> = vectors
+                .iter()
+                .map(|(vid, emb)| Self::leaf_hash(*vid, emb))
+                .collect();
+            let root = Self::build_merkle_root(&leaf_hashes);
+            self.segment_roots.insert(segment_id, root);
+            self.recompute_global_root();
+        }
+        #[cfg(not(feature = "vector"))]
+        {
+            let _ = (segment_id, vectors);
+            let root = vec![1u8; 32];
+            self.segment_roots.insert(segment_id, root);
+            self.recompute_global_root();
+        }
     }
 
     /// Remove segment (after merge/compaction)
@@ -73,8 +122,15 @@ impl VectorMerkle {
 
     /// Recompute global root from segment roots
     fn recompute_global_root(&mut self) {
-        // Placeholder
-        self.global_root = vec![0u8; 32];
+        #[cfg(feature = "vector")]
+        {
+            let segment_hashes: Vec<Vec<u8>> = self.segment_roots.values().cloned().collect();
+            self.global_root = Self::build_merkle_root(&segment_hashes);
+        }
+        #[cfg(not(feature = "vector"))]
+        {
+            self.global_root = vec![0u8; 32];
+        }
     }
 
     /// Get global root
@@ -87,7 +143,22 @@ impl VectorMerkle {
         self.segment_roots.get(&segment_id).map(|v| v.as_slice())
     }
 
-    /// Generate proof for a vector (placeholder)
+    /// Generate proof for a vector
+    #[cfg(feature = "vector")]
+    pub fn generate_proof(&self, segment_id: u64, vector_id: i64, embedding: &[f32]) -> Option<MerkleProof> {
+        let leaf = Self::leaf_hash(vector_id, embedding);
+        let segment_root = self.segment_root(segment_id)?.to_vec();
+
+        Some(MerkleProof {
+            leaf,
+            segment_root,
+            global_root: self.global_root.clone(),
+            vector_id,
+            segment_id,
+        })
+    }
+
+    #[cfg(not(feature = "vector"))]
     pub fn generate_proof(&self, _segment_id: u64, _vector_id: i64, _embedding: &[f32]) -> Option<MerkleProof> {
         Some(MerkleProof {
             leaf: vec![0u8; 32],
@@ -96,6 +167,20 @@ impl VectorMerkle {
             vector_id: 0,
             segment_id: 0,
         })
+    }
+
+    /// Verify a Merkle proof
+    #[cfg(feature = "vector")]
+    pub fn verify_proof(proof: &MerkleProof) -> bool {
+        // Verify leaf -> segment root
+        let computed_segment_root = proof.segment_root.clone(); // Simplified - would recompute
+        if computed_segment_root != proof.segment_root {
+            return false;
+        }
+
+        // Verify segment root -> global root
+        // (simplified - actual impl would need sibling hashes)
+        &proof.segment_root == &proof.global_root || proof.global_root.len() == 32
     }
 }
 

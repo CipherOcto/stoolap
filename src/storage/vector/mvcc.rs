@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use super::config::VectorConfig;
 use super::segment::VectorSegment;
+use crate::common::I64Set;
 use crate::core::{Error, Result};
 
 /// State of a vector segment
@@ -40,8 +41,10 @@ enum SegmentState {
 /// Version tracker for in-place updates
 #[derive(Default)]
 struct VersionTracker {
-    /// vector_id -> (segment_id, version)
-    locations: HashMap<i64, (u64, u64)>,
+    /// vector_id -> (segment_id, index_in_segment)
+    locations: HashMap<i64, (u64, usize)>,
+    /// Soft-deleted vector IDs (tombstones)
+    deleted: I64Set,
     next_segment_id: u64,
 }
 
@@ -58,6 +61,7 @@ impl VectorMvcc {
     pub fn new(config: VectorConfig) -> Self {
         let tracker = VersionTracker {
             locations: HashMap::new(),
+            deleted: I64Set::new(),
             next_segment_id: 1,
         };
 
@@ -89,11 +93,11 @@ impl VectorMvcc {
                 match state {
                     SegmentState::Active(segment) => {
                         if let Some(seg) = Arc::get_mut(segment) {
-                            seg.push(vector_id, &embedding)?;
+                            let idx = seg.push(vector_id, &embedding)?;
                             self.version_tracker
                                 .write()
                                 .locations
-                                .insert(vector_id, (seg_id, 1));
+                                .insert(vector_id, (seg_id, idx));
                             return Ok(());
                         }
                     }
@@ -110,9 +114,31 @@ impl VectorMvcc {
         self.insert(vector_id, new_embedding)
     }
 
-    /// Delete a vector
-    pub fn delete(&self, _vector_id: i64) -> Result<()> {
-        Err(Error::NotSupported("Vector delete not yet implemented".to_string()))
+    /// Delete a vector (soft delete via tombstone)
+    pub fn delete(&self, vector_id: i64) -> Result<()> {
+        // Check if vector exists
+        {
+            let tracker = self.version_tracker.read();
+            if !tracker.locations.contains_key(&vector_id) {
+                return Err(Error::SegmentNotFound);
+            }
+            // Check if already deleted
+            if tracker.deleted.contains(vector_id) {
+                return Ok(()); // Already deleted
+            }
+        }
+
+        // Mark as deleted in tombstone set
+        let mut tracker = self.version_tracker.write();
+        tracker.deleted.insert(vector_id);
+
+        Ok(())
+    }
+
+    /// Check if a vector is deleted
+    pub fn is_deleted(&self, vector_id: i64) -> bool {
+        let tracker = self.version_tracker.read();
+        tracker.deleted.contains(vector_id)
     }
 
     /// Get all visible segments for reading
@@ -205,5 +231,34 @@ mod tests {
 
         let segments = mvcc.visible_segments();
         assert_eq!(segments.len(), 1);
+    }
+
+    #[test]
+    fn test_delete() {
+        let config = VectorConfig::new(3);
+        let mvcc = VectorMvcc::new(config);
+
+        mvcc.insert(1, vec![1.0, 2.0, 3.0]).unwrap();
+        mvcc.insert(2, vec![4.0, 5.0, 6.0]).unwrap();
+
+        assert_eq!(mvcc.total_vector_count(), 2);
+
+        // Delete vector 1
+        mvcc.delete(1).unwrap();
+        assert!(mvcc.is_deleted(1));
+        assert!(!mvcc.is_deleted(2));
+
+        // Deleting again should be idempotent
+        mvcc.delete(1).unwrap();
+        assert!(mvcc.is_deleted(1));
+    }
+
+    #[test]
+    fn test_delete_nonexistent() {
+        let config = VectorConfig::new(3);
+        let mvcc = VectorMvcc::new(config);
+
+        let result = mvcc.delete(999);
+        assert!(result.is_err());
     }
 }
