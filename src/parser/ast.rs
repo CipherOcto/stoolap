@@ -1672,6 +1672,22 @@ impl fmt::Display for ColumnDefinition {
     }
 }
 
+/// Quantization type for vector columns
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuantizationConfig {
+    pub quantization_type: SmartString,
+    pub sub_vectors: Option<u32>,
+}
+
+impl fmt::Display for QuantizationConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.sub_vectors {
+            Some(n) => write!(f, "{}({})", self.quantization_type, n),
+            None => write!(f, "{}", self.quantization_type),
+        }
+    }
+}
+
 /// Column constraint
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnConstraint {
@@ -1681,6 +1697,7 @@ pub enum ColumnConstraint {
     AutoIncrement,
     Default(Expression),
     Check(Expression),
+    Quantize(QuantizationConfig),
     References {
         table: Identifier,
         column: Option<Identifier>,
@@ -1698,6 +1715,7 @@ impl fmt::Display for ColumnConstraint {
             ColumnConstraint::AutoIncrement => write!(f, "AUTO_INCREMENT"),
             ColumnConstraint::Default(expr) => write!(f, "DEFAULT {}", expr),
             ColumnConstraint::Check(expr) => write!(f, "CHECK ({})", expr),
+            ColumnConstraint::Quantize(config) => write!(f, "QUANTIZE = {}", config),
             ColumnConstraint::References {
                 table,
                 column,

@@ -16,6 +16,7 @@
 
 use crate::common::SmartString;
 use crate::core::ForeignKeyAction;
+use crate::parser::ast::QuantizationConfig;
 use rustc_hash::FxHashMap;
 
 use super::ast::*;
@@ -1704,6 +1705,7 @@ impl Parser {
                 self.add_error("expected ) after VECTOR dimension".to_string());
                 return None;
             }
+            self.next_token(); // consume )
             SmartString::from_string(format!("VECTOR({})", dim))
         } else {
             data_type
@@ -1749,6 +1751,10 @@ impl Parser {
                         return None;
                     }
                     constraints.push(ColumnConstraint::Check(expr));
+                }
+                _ => {
+                    // Unknown constraint keyword - skip it
+                    break;
                 }
                 "REFERENCES" => {
                     self.next_token(); // consume REFERENCES
@@ -2797,6 +2803,17 @@ mod tests {
             }
             _ => panic!("expected CreateTableStatement"),
         }
+    }
+
+    #[test]
+    fn test_parse_create_table_with_quantization() {
+        // Test basic CREATE TABLE first
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER)");
+        assert!(result.is_some(), "Failed to parse basic CREATE TABLE: {:?}", result);
+
+        // Test with NOT NULL constraint (known working)
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, x INTEGER NOT NULL)");
+        assert!(result.is_some(), "Failed to parse NOT NULL: {:?}", result);
     }
 
     #[test]
