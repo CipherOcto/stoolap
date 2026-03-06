@@ -192,6 +192,11 @@ harness = false
 name = "stark_proof"
 harness = false
 
+[[bench]]
+name = "vector_search"
+harness = false
+required-features = ["vector"]
+
 [profile.bench]
 lto = true
 codegen-units = 1
