@@ -22,9 +22,11 @@
 pub mod config;
 pub mod merkle;
 pub mod mvcc;
+pub mod search;
 pub mod segment;
 
 pub use config::VectorConfig;
 pub use merkle::{MerkleProof, VectorMerkle};
 pub use mvcc::VectorMvcc;
+pub use search::{SearchResult, VectorSearch};
 pub use segment::VectorSegment;
