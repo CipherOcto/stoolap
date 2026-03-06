@@ -211,6 +211,10 @@ pub enum Error {
     #[error("column index {index} out of bounds")]
     ColumnIndexOutOfBounds { index: usize },
 
+    /// Generic index out of bounds
+    #[error("index {0} out of bounds for size {1}")]
+    IndexOutOfBounds(usize, usize),
+
     // =========================================================================
     // WAL errors
     // =========================================================================
@@ -258,6 +262,26 @@ pub enum Error {
     /// Segment not found (internal storage error)
     #[error("segment not found")]
     SegmentNotFound,
+
+    /// No active segment for vector operations
+    #[error("no active segment for vector operations")]
+    NoActiveSegment,
+
+    /// Segment is full
+    #[error("segment {0} is full")]
+    SegmentFull(u64),
+
+    /// Segment is immutable
+    #[error("segment {0} is immutable")]
+    SegmentImmutable(u64),
+
+    /// Segment is being merged
+    #[error("segment {0} is being merged")]
+    SegmentMerging(u64),
+
+    /// Invalid vector dimension
+    #[error("invalid vector dimension: expected {expected}, got {got}")]
+    InvalidVectorDimension { expected: usize, got: usize },
 
     /// Expression evaluation failed
     #[error("expression evaluation failed")]
