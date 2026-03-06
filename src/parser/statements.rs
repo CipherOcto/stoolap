@@ -1705,7 +1705,7 @@ impl Parser {
                 self.add_error("expected ) after VECTOR dimension".to_string());
                 return None;
             }
-            self.next_token(); // consume )
+            // Don't call next_token() here - cur_token is now ) and peek_token is the next token (QUANTIZE or comma)
             SmartString::from_string(format!("VECTOR({})", dim))
         } else {
             data_type
@@ -1751,6 +1751,55 @@ impl Parser {
                         return None;
                     }
                     constraints.push(ColumnConstraint::Check(expr));
+                }
+                "QUANTIZE" => {
+                    // Consume QUANTIZE
+                    self.next_token();
+                    // Expect = (which is an Operator, not Punctuator!)
+                    if !self.peek_token_is_operator("=") {
+                        self.add_error("expected = after QUANTIZE".to_string());
+                        return None;
+                    }
+                    self.next_token(); // consume =
+
+                    // Parse quantization type: BQ, SQ, PQ - just check for Identifier
+                    // Keywords like BQ/SQ/PQ should work as identifiers
+                    let qtype = if self.peek_token_is(TokenType::Identifier) || self.peek_token_is(TokenType::Keyword) {
+                        self.next_token();
+                        self.cur_token.literal.to_uppercase()
+                    } else {
+                        self.add_error("expected quantization type (BQ, SQ, or PQ)".to_string());
+                        return None;
+                    };
+
+                    if qtype != "BQ" && qtype != "SQ" && qtype != "PQ" {
+                        self.add_error(format!("invalid quantization type: {}", qtype));
+                        return None;
+                    }
+
+                    // Optional sub-vector count for PQ
+                    let sub_vectors = if self.peek_token_is_punctuator("(") {
+                        self.next_token(); // consume (
+                        if !self.expect_peek(TokenType::Integer) {
+                            self.add_error("expected sub-vector count".to_string());
+                            return None;
+                        }
+                        self.next_token();
+                        let n: u32 = self.cur_token.literal.parse().unwrap_or(8);
+                        if !self.expect_peek(TokenType::Punctuator) || self.cur_token.literal != ")" {
+                            self.add_error("expected ) after sub-vector count".to_string());
+                            return None;
+                        }
+                        self.next_token(); // consume )
+                        Some(n)
+                    } else {
+                        None
+                    };
+
+                    constraints.push(ColumnConstraint::Quantize(QuantizationConfig {
+                        quantization_type: qtype.into(),
+                        sub_vectors,
+                    }));
                 }
                 _ => {
                     // Unknown constraint keyword - skip it
@@ -2807,13 +2856,29 @@ mod tests {
 
     #[test]
     fn test_parse_create_table_with_quantization() {
-        // Test basic CREATE TABLE first
+        // Test basic CREATE TABLE
         let result = parse_stmt("CREATE TABLE emb (id INTEGER)");
-        assert!(result.is_some(), "Failed to parse basic CREATE TABLE: {:?}", result);
+        assert!(result.is_some(), "Failed to parse basic CREATE TABLE");
 
-        // Test with NOT NULL constraint (known working)
+        // Test with NOT NULL
         let result = parse_stmt("CREATE TABLE emb (id INTEGER, x INTEGER NOT NULL)");
-        assert!(result.is_some(), "Failed to parse NOT NULL: {:?}", result);
+        assert!(result.is_some(), "Failed to parse NOT NULL");
+
+        // Test VECTOR without QUANTIZE
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(768))");
+        assert!(result.is_some(), "Failed to parse VECTOR(768)");
+
+        // Test VECTOR with QUANTIZE = BQ
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(768) QUANTIZE = BQ)");
+        assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = BQ");
+
+        // Test VECTOR with QUANTIZE = SQ
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(384) QUANTIZE = SQ)");
+        assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = SQ");
+
+        // Test VECTOR with QUANTIZE = PQ (without sub-vector count)
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ)");
+        assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = PQ");
     }
 
     #[test]
