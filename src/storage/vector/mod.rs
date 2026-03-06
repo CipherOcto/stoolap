@@ -25,6 +25,7 @@ pub mod mmap;
 pub mod mvcc;
 pub mod search;
 pub mod segment;
+pub mod snapshot;
 pub mod wal;
 pub mod wal_logger;
 pub mod wal_recovery;
