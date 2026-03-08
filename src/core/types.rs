@@ -52,12 +52,16 @@ pub enum DataType {
     /// Vector of f32 values for similarity search
     /// Dimensions are stored in SchemaColumn.vector_dimensions
     Vector = 7,
+
+    /// Deterministic Floating Point (DFP) per RFC-0104
+    /// 128-bit fixed-precision with deterministic rounding
+    DeterministicFloat = 8,
 }
 
 impl DataType {
-    /// Returns true if this type is numeric (INTEGER or FLOAT)
+    /// Returns true if this type is numeric (INTEGER, FLOAT, or DFP)
     pub fn is_numeric(&self) -> bool {
-        matches!(self, DataType::Integer | DataType::Float)
+        matches!(self, DataType::Integer | DataType::Float | DataType::DeterministicFloat)
     }
 
     /// Returns true if this type can be compared for ordering
@@ -82,6 +86,7 @@ impl DataType {
             5 => Some(DataType::Timestamp),
             6 => Some(DataType::Json),
             7 => Some(DataType::Vector),
+            8 => Some(DataType::DeterministicFloat),
             _ => None,
         }
     }
@@ -98,6 +103,7 @@ impl fmt::Display for DataType {
             DataType::Timestamp => write!(f, "TIMESTAMP"),
             DataType::Json => write!(f, "JSON"),
             DataType::Vector => write!(f, "VECTOR"),
+            DataType::DeterministicFloat => write!(f, "DFP"),
         }
     }
 }
@@ -119,6 +125,7 @@ impl FromStr for DataType {
             "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => Ok(DataType::Timestamp),
             "JSON" | "JSONB" => Ok(DataType::Json),
+            "DFP" | "DETERMINISTICFLOAT" => Ok(DataType::DeterministicFloat),
             _ => Err(Error::InvalidColumnType),
         }
     }

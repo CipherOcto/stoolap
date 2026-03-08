@@ -123,7 +123,7 @@ impl MVCCTable {
             DataType::Boolean => IndexType::Bitmap,
 
             // Numeric types - use BTree for range query support
-            DataType::Integer | DataType::Float | DataType::Timestamp => IndexType::BTree,
+            DataType::Integer | DataType::Float | DataType::Timestamp | DataType::DeterministicFloat => IndexType::BTree,
 
             // Vector columns - use HNSW for approximate nearest neighbor search
             DataType::Vector => IndexType::Hnsw,

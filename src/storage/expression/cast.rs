@@ -76,6 +76,10 @@ impl CastExpr {
                 format!("{:?}", value),
                 "VECTOR",
             )),
+            DataType::DeterministicFloat => Err(crate::core::Error::type_conversion(
+                format!("{:?}", value),
+                "DFP",
+            )),
             DataType::Null => Ok(Value::null(DataType::Null)),
         }
     }
