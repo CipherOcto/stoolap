@@ -23,6 +23,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use octo_determin::{Dfp, DfpClass, DfpEncoding};
 
 use super::error::{Error, Result};
 use super::types::DataType;
@@ -178,6 +179,23 @@ impl Value {
         let mut bytes = Vec::with_capacity(1 + raw_f32_bytes.len());
         bytes.push(DataType::Vector as u8);
         bytes.extend_from_slice(&raw_f32_bytes);
+        Value::Extension(CompactArc::from(bytes))
+    }
+
+    /// Create a DFP (Deterministic Floating Point) value from Dfp struct
+    pub fn dfp(dfp: Dfp) -> Self {
+        let encoding = DfpEncoding::from_dfp(&dfp).to_bytes();
+        let mut bytes = Vec::with_capacity(1 + 24);
+        bytes.push(DataType::DeterministicFloat as u8);
+        bytes.extend_from_slice(&encoding);
+        Value::Extension(CompactArc::from(bytes))
+    }
+
+    /// Create a DFP value from 24-byte encoding
+    pub fn dfp_from_encoding(encoding: &[u8; 24]) -> Self {
+        let mut bytes = Vec::with_capacity(1 + 24);
+        bytes.push(DataType::DeterministicFloat as u8);
+        bytes.extend_from_slice(encoding);
         Value::Extension(CompactArc::from(bytes))
     }
 
@@ -363,6 +381,34 @@ impl Value {
         }
     }
 
+    /// Extract DFP as Dfp struct (decodes 24-byte DfpEncoding from Extension payload)
+    pub fn as_dfp(&self) -> Option<Dfp> {
+        match self {
+            Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                let encoding_bytes: [u8; 24] = data[1..25].try_into().ok()?;
+                Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
+            }
+            _ => None,
+        }
+    }
+
+    /// Convert value to DFP (deterministic floating-point)
+    pub fn to_dfp(&self) -> Option<Dfp> {
+        match self {
+            Value::Integer(i) => Some(Dfp::from_i64(*i)),
+            Value::Float(f) => Some(Dfp::from_f64(*f)),
+            Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                self.as_dfp()
+            }
+            _ => None,
+        }
+    }
+
+    /// Convert value to DFP or return default
+    pub fn coerce_to_dfp(&self) -> Dfp {
+        self.to_dfp().unwrap_or(Dfp::nan())
+    }
+
     // =========================================================================
     // Comparison
     // =========================================================================
@@ -388,8 +434,15 @@ impl Value {
             return self.compare_same_type(other);
         }
 
-        // Cross-type numeric comparison (integer vs float)
+        // Cross-type numeric comparison (integer vs float vs DFP)
         if self.data_type().is_numeric() && other.data_type().is_numeric() {
+            // If both are DFP, use DFP comparison for deterministic results
+            if self.data_type() == DataType::DeterministicFloat && other.data_type() == DataType::DeterministicFloat {
+                if let (Some(dfp1), Some(dfp2)) = (self.as_dfp(), other.as_dfp()) {
+                    return Ok(compare_dfp(&dfp1, &dfp2));
+                }
+            }
+            // Otherwise, convert to f64 for comparison
             let v1 = self.as_float64().unwrap();
             let v2 = other.as_float64().unwrap();
             return Ok(compare_floats(v1, v2));
@@ -573,7 +626,20 @@ impl Value {
     /// - Boolean column receiving Integer/String → converts to Boolean
     ///
     /// Returns the coerced value, or NULL if coercion fails.
+    ///
+    /// NOTE: FLOAT→DFP is blocked in implicit coerce. Use cast_to_type() for explicit CAST.
     pub fn coerce_to_type(&self, target_type: DataType) -> Value {
+        // For implicit coercion, block FLOAT→DFP
+        if target_type == DataType::DeterministicFloat {
+            if let Value::Float(_) = self {
+                return Value::Null(target_type);
+            }
+        }
+        self.cast_to_type(target_type)
+    }
+
+    /// Explicit cast - allows all conversions including FLOAT→DFP
+    pub fn cast_to_type(&self, target_type: DataType) -> Value {
         // NULL stays NULL (with target type hint)
         if self.is_null() {
             return Value::Null(target_type);
@@ -595,6 +661,14 @@ impl Value {
                         .map(Value::Integer)
                         .unwrap_or(Value::Null(target_type)),
                     Value::Boolean(b) => Value::Integer(if *b { 1 } else { 0 }),
+                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                        // DFP -> Integer (truncate)
+                        if let Some(dfp) = self.as_dfp() {
+                            Value::Integer(dfp.to_f64() as i64)
+                        } else {
+                            Value::Null(target_type)
+                        }
+                    }
                     _ => Value::Null(target_type),
                 }
             }
@@ -608,6 +682,33 @@ impl Value {
                         .map(Value::Float)
                         .unwrap_or(Value::Null(target_type)),
                     Value::Boolean(b) => Value::Float(if *b { 1.0 } else { 0.0 }),
+                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                        // DFP -> Float
+                        if let Some(dfp) = self.as_dfp() {
+                            Value::Float(dfp.to_f64())
+                        } else {
+                            Value::Null(target_type)
+                        }
+                    }
+                    _ => Value::Null(target_type),
+                }
+            }
+            DataType::DeterministicFloat => {
+                // Convert to DFP (Deterministic Floating Point)
+                match self {
+                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                        // Already DFP
+                        self.clone()
+                    }
+                    Value::Integer(v) => Value::dfp(Dfp::from_i64(*v)),
+                    Value::Float(v) => Value::dfp(Dfp::from_f64(*v)),
+                    Value::Text(s) => {
+                        // Try to parse as f64 first, then convert to DFP
+                        s.parse::<f64>()
+                            .map(|f| Value::dfp(Dfp::from_f64(f)))
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Boolean(b) => Value::dfp(Dfp::from_f64(if *b { 1.0 } else { 0.0 })),
                     _ => Value::Null(target_type),
                 }
             }
@@ -626,6 +727,14 @@ impl Value {
                             std::str::from_utf8(&data[1..]).unwrap_or(""),
                         ))
                     }
+                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                        // DFP -> Text
+                        if let Some(dfp) = self.as_dfp() {
+                            Value::Text(SmartString::from_string(dfp.to_string()))
+                        } else {
+                            Value::Null(target_type)
+                        }
+                    }
                     Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                         Value::Text(SmartString::from_string(format_vector_bytes(&data[1..])))
                     }
@@ -639,6 +748,14 @@ impl Value {
                     Value::Boolean(b) => Value::Boolean(*b),
                     Value::Integer(v) => Value::Boolean(*v != 0),
                     Value::Float(v) => Value::Boolean(*v != 0.0),
+                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                        // DFP -> Boolean (true if not zero)
+                        if let Some(dfp) = self.as_dfp() {
+                            Value::Boolean(dfp.to_f64() != 0.0)
+                        } else {
+                            Value::Null(target_type)
+                        }
+                    }
                     Value::Text(s) => {
                         // OPTIMIZATION: Use eq_ignore_ascii_case to avoid allocation
                         let s_ref: &str = s.as_ref();
@@ -1414,6 +1531,58 @@ fn compare_floats(a: f64, b: f64) -> Ordering {
         (true, false) => Ordering::Greater,
         (false, true) => Ordering::Less,
         (false, false) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+    }
+}
+
+/// Compare two DFP values with proper special value handling
+fn compare_dfp(a: &Dfp, b: &Dfp) -> Ordering {
+    // Handle NaN: treat as greater than all other values for consistency
+    use DfpClass::*;
+    match (a.class, b.class) {
+        (NaN, NaN) => Ordering::Equal,
+        (NaN, _) => Ordering::Greater,
+        (_, NaN) => Ordering::Less,
+        (Zero, Zero) | (Zero, _) | (_, Zero) |
+        (Infinity, Infinity) | (Infinity, _) | (_, Infinity) |
+        (Normal, Normal) | (Normal, _) | (_, Normal) => {
+            // Compare signs first
+            if a.sign != b.sign {
+                return if a.sign { Ordering::Less } else { Ordering::Greater };
+            }
+
+            // Both same sign - compare magnitudes
+            let cmp = compare_dfp_magnitude(a, b);
+
+            // If both negative, flip the result
+            if a.sign { cmp.reverse() } else { cmp }
+        }
+    }
+}
+
+/// Compare magnitude of two DFP values (absolute value comparison)
+fn compare_dfp_magnitude(a: &Dfp, b: &Dfp) -> Ordering {
+    use DfpClass::*;
+
+    match (a.class, b.class) {
+        // Zero vs anything
+        (Zero, Zero) => Ordering::Equal,
+        (Zero, _) => Ordering::Less,
+        (_, Zero) => Ordering::Greater,
+        // Infinity vs finite
+        (Infinity, Infinity) => Ordering::Equal,
+        (Infinity, _) => Ordering::Greater,
+        (_, Infinity) => Ordering::Less,
+        // NaN should have been handled earlier, but include for exhaustiveness
+        (NaN, _) | (_, NaN) => Ordering::Equal,
+        // Normal vs Normal - compare using exponent and mantissa
+        (Normal, Normal) => {
+            // First compare exponents
+            if a.exponent != b.exponent {
+                return if a.exponent > b.exponent { Ordering::Greater } else { Ordering::Less };
+            }
+            // Same exponent - compare mantissas
+            a.mantissa.cmp(&b.mantissa)
+        }
     }
 }
 

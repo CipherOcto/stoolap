@@ -1784,9 +1784,10 @@ impl Parser {
                             self.add_error("expected sub-vector count".to_string());
                             return None;
                         }
-                        self.next_token();
+                        // After expect_peek, cur_token is now the Integer, peek is )
                         let n: u32 = self.cur_token.literal.parse().unwrap_or(8);
-                        if !self.expect_peek(TokenType::Punctuator) || self.cur_token.literal != ")" {
+                        // Don't call next_token() here - peek_token is )
+                        if !self.peek_token_is_punctuator(")") {
                             self.add_error("expected ) after sub-vector count".to_string());
                             return None;
                         }
@@ -2879,6 +2880,10 @@ mod tests {
         // Test VECTOR with QUANTIZE = PQ (without sub-vector count)
         let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ)");
         assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = PQ");
+
+        // Test VECTOR with QUANTIZE = PQ(8)
+        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ(8))");
+        assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = PQ(8)");
     }
 
     #[test]

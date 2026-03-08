@@ -30,6 +30,7 @@ use super::ops::{CompareOp, Op};
 use super::program::Program;
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Result, Row, Value, NULL_VALUE};
+use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, Dfp, DfpEncoding};
 
 /// Stack value that can be borrowed (from row/constants) or owned (from operations)
 type StackValue<'a> = Cow<'a, Value>;
@@ -1520,7 +1521,8 @@ impl ExprVM {
                 // =============================================================
                 Op::Cast(target_type) => {
                     let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = v.coerce_to_type(*target_type);
+                    // Use cast_to_type for explicit CAST - allows FLOAT→DFP
+                    let result = v.cast_to_type(*target_type);
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -3183,8 +3185,70 @@ impl ExprVM {
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_op(*x, *y))),
             (Value::Integer(x), Value::Float(y)) => Ok(Value::Float(float_op(*x as f64, *y))),
             (Value::Float(x), Value::Integer(y)) => Ok(Value::Float(float_op(*x, *y as f64))),
+            // DFP arithmetic - deterministic floating-point
+            (Value::Extension(a), Value::Extension(b)) => {
+                let dfp_a = Self::extract_dfp_from_extension(a);
+                let dfp_b = Self::extract_dfp_from_extension(b);
+                if let (Some(dfp_a), Some(dfp_b)) = (dfp_a, dfp_b) {
+                    let result = match int_op {
+                        ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
+                        ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
+                        ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
+                        ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                        ArithmeticOp::Mod => {
+                            // DFP modulo via division and multiplication
+                            let quotient = dfp_div(dfp_a, dfp_b);
+                            dfp_sub(dfp_a, dfp_mul(quotient, dfp_b))
+                        }
+                    };
+                    Ok(Value::dfp(result))
+                } else {
+                    // Check if mixing with non-DFP Extension (like Vector or Json)
+                    let type_a = a.first().copied();
+                    let type_b = b.first().copied();
+                    if type_a == Some(DataType::Vector as u8) || type_b == Some(DataType::Vector as u8) {
+                        return Err(crate::core::Error::Type("cannot perform arithmetic on Vector type".to_string()));
+                    }
+                    if type_a == Some(DataType::Json as u8) || type_b == Some(DataType::Json as u8) {
+                        return Err(crate::core::Error::Type("cannot perform arithmetic on JSON type".to_string()));
+                    }
+                    Ok(Value::Null(DataType::DeterministicFloat))
+                }
+            }
+            // ERROR: FLOAT cannot be used in deterministic context (with DFP)
+            (Value::Float(_), Value::Extension(b)) => {
+                if Self::extract_dfp_from_extension(b).is_some() {
+                    return Err(crate::core::Error::Type(
+                        "FLOAT cannot be used in deterministic context: use DFP or CAST(value AS DFP)".to_string()
+                    ));
+                }
+                Ok(Value::Null(DataType::DeterministicFloat))
+            }
+            (Value::Extension(a), Value::Float(_)) => {
+                if Self::extract_dfp_from_extension(a).is_some() {
+                    return Err(crate::core::Error::Type(
+                        "FLOAT cannot be used in deterministic context: use DFP or CAST(value AS DFP)".to_string()
+                    ));
+                }
+                Ok(Value::Null(DataType::DeterministicFloat))
+            }
+            // ERROR: Mixing FLOAT with other numeric types in deterministic context
+            (Value::Float(_), Value::Integer(_)) | (Value::Integer(_), Value::Float(_)) => {
+                Ok(Value::Null(DataType::Float))
+            }
             _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::Float)),
             _ => Ok(Value::Null(DataType::Null)),
+        }
+    }
+
+    /// Extract DFP from Extension data
+    #[inline]
+    fn extract_dfp_from_extension(data: &crate::common::CompactArc<[u8]>) -> Option<Dfp> {
+        if data.first().copied() == Some(DataType::DeterministicFloat as u8) {
+            let encoding_bytes: [u8; 24] = data[1..25].try_into().ok()?;
+            Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
+        } else {
+            None
         }
     }
 

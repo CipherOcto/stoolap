@@ -47,6 +47,9 @@ rayon = { version = "1.11", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Deterministic Floating-Point (DFP) per RFC-0104
+octo-determin = { path = "../../ai/cipherocto/determin" }
+
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
 
@@ -155,6 +158,9 @@ name = "semantic_search"
 required-features = ["semantic"]
 
 [profile.release]
+# RFC-0104: Disable overflow checks for deterministic floating-point (DFP)
+# DFP uses saturating arithmetic, not wrapping
+overflow-checks = false
 lto = true
 codegen-units = 1
 panic = "abort"
@@ -201,6 +207,14 @@ required-features = ["vector"]
 [profile.bench]
 lto = true
 codegen-units = 1
+
+# Test profile: inherits from release for DFP determinism
+# Run with: cargo test --profile test
+[profile.test]
+inherits = "release"
+overflow-checks = false  # RFC-0104: Required for deterministic floating-point
+lto = "thin"             # Faster compilation for tests
+codegen-units = 16       # Parallel codegen
 
 # CI test profile: faster compile, less disk usage
 [profile.ci]
