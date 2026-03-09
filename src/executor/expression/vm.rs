@@ -894,6 +894,84 @@ impl ExprVM {
                 }
 
                 // =============================================================
+                // DQA (DETERMINISTIC QUANT) OPERATIONS
+                // =============================================================
+                Op::DqaAdd => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = self.arithmetic_op_quant(&a, &b, ArithmeticOp::Add)?;
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaSub => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = self.arithmetic_op_quant(&a, &b, ArithmeticOp::Sub)?;
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaMul => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = self.arithmetic_op_quant(&a, &b, ArithmeticOp::Mul)?;
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaDiv => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = self.arithmetic_op_quant(&a, &b, ArithmeticOp::Div)?;
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaNeg => {
+                    let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = if let Some(dqa) = Self::extract_dqa_from_value(&v) {
+                        match octo_determin::dqa::dqa_negate(dqa) {
+                            Ok(neg) => Value::quant(neg),
+                            Err(_) => Value::Null(DataType::Quant),
+                        }
+                    } else {
+                        Value::Null(DataType::Quant)
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaAbs => {
+                    let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = if let Some(dqa) = Self::extract_dqa_from_value(&v) {
+                        match octo_determin::dqa::dqa_abs(dqa) {
+                            Ok(abs) => Value::quant(abs),
+                            Err(_) => Value::Null(DataType::Quant),
+                        }
+                    } else {
+                        Value::Null(DataType::Quant)
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DqaCmp => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = if let (Some(dqa_a), Some(dqa_b)) = (
+                        Self::extract_dqa_from_value(&a),
+                        Self::extract_dqa_from_value(&b),
+                    ) {
+                        Value::Integer(octo_determin::dqa::dqa_cmp(dqa_a, dqa_b) as i64)
+                    } else {
+                        Value::Null(DataType::Integer)
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                // =============================================================
                 // BITWISE OPERATIONS (inlined for performance)
                 // =============================================================
                 Op::BitAnd => {
@@ -3305,6 +3383,15 @@ impl ExprVM {
             }
         } else {
             None
+        }
+    }
+
+    /// Extract DQA from Value (convenience wrapper)
+    #[inline]
+    fn extract_dqa_from_value(value: &Value) -> Option<Dqa> {
+        match value {
+            Value::Extension(ext) => Self::extract_dqa_from_extension(ext),
+            _ => None,
         }
     }
 

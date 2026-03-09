@@ -495,6 +495,24 @@ pub enum Op {
     Neg,
 
     // =========================================================================
+    // DQA (Deterministic Quant Arithmetic) OPERATIONS
+    // =========================================================================
+    /// DQA addition: a + b (scales aligned per RFC-0105)
+    DqaAdd,
+    /// DQA subtraction: a - b
+    DqaSub,
+    /// DQA multiplication: a * b
+    DqaMul,
+    /// DQA division: a / b
+    DqaDiv,
+    /// DQA unary negation: -a
+    DqaNeg,
+    /// DQA absolute value: |a|
+    DqaAbs,
+    /// DQA comparison: returns -1, 0, or 1
+    DqaCmp,
+
+    // =========================================================================
     // BITWISE OPERATIONS
     // =========================================================================
     BitAnd,
@@ -881,6 +899,13 @@ impl std::fmt::Debug for Op {
             Op::Div => write!(f, "Div"),
             Op::Mod => write!(f, "Mod"),
             Op::Neg => write!(f, "Neg"),
+            Op::DqaAdd => write!(f, "DqaAdd"),
+            Op::DqaSub => write!(f, "DqaSub"),
+            Op::DqaMul => write!(f, "DqaMul"),
+            Op::DqaDiv => write!(f, "DqaDiv"),
+            Op::DqaNeg => write!(f, "DqaNeg"),
+            Op::DqaAbs => write!(f, "DqaAbs"),
+            Op::DqaCmp => write!(f, "DqaCmp"),
             Op::BitAnd => write!(f, "BitAnd"),
             Op::BitOr => write!(f, "BitOr"),
             Op::BitXor => write!(f, "BitXor"),

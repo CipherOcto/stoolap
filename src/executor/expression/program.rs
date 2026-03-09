@@ -246,6 +246,11 @@ impl Program {
                 | Op::Mul
                 | Op::Div
                 | Op::Mod
+                | Op::DqaAdd
+                | Op::DqaSub
+                | Op::DqaMul
+                | Op::DqaDiv
+                | Op::DqaCmp
                 | Op::BitAnd
                 | Op::BitOr
                 | Op::BitXor
@@ -280,6 +285,8 @@ impl Program {
                 | Op::IsNotFalse
                 | Op::Not
                 | Op::Neg
+                | Op::DqaNeg
+                | Op::DqaAbs
                 | Op::BitNot
                 | Op::Like(_, _)
                 | Op::LikeEscape(_, _, _)
