@@ -1707,6 +1707,34 @@ impl Parser {
             }
             // Don't call next_token() here - cur_token is now ) and peek_token is the next token (QUANTIZE or comma)
             SmartString::from_string(format!("VECTOR({})", dim))
+        // Handle DQA(scale) syntax — scale is stored in SchemaColumn.quant_scale
+        } else if data_type == "DQA" && self.peek_token_is_punctuator("(") {
+            self.next_token(); // consume (
+            if self.peek_token.token_type != TokenType::Integer {
+                self.add_error(
+                    "DQA requires a scale between 0 and 18, e.g. DQA(6)".to_string(),
+                );
+                return None;
+            }
+            self.next_token(); // consume scale number
+            let scale_str = &self.cur_token.literal;
+            let scale: u8 = match scale_str.parse::<u8>() {
+                Ok(s) if s <= 18 => s,
+                _ => {
+                    self.add_error(format!(
+                        "DQA scale must be between 0 and 18, got '{}'",
+                        scale_str
+                    ));
+                    return None;
+                }
+            };
+            // Consume closing )
+            if !self.expect_peek(TokenType::Punctuator) || self.cur_token.literal != ")" {
+                self.add_error("expected ) after DQA scale".to_string());
+                return None;
+            }
+            // Set quant_scale on the column via a workaround: embed in data_type string
+            SmartString::from_string(format!("DQA({})", scale))
         } else {
             data_type
         };

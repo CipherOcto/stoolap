@@ -80,6 +80,10 @@ impl CastExpr {
                 format!("{:?}", value),
                 "DFP",
             )),
+            DataType::Quant => Err(crate::core::Error::type_conversion(
+                format!("{:?}", value),
+                "DQA",
+            )),
             DataType::Null => Ok(Value::null(DataType::Null)),
         }
     }

@@ -3032,13 +3032,14 @@ impl Engine for MVCCEngine {
         nullable: bool,
         default_expr: Option<&str>,
         vector_dimensions: u16,
+        quant_scale: u8,
     ) -> Result<()> {
         if self.should_skip_wal() {
             return Ok(());
         }
 
         // Serialize: operation_type(1) + table_name_len(2) + table_name + column_name_len(2) + column_name
-        //          + data_type(1) + [IF Vector: vec_dims(2)] + nullable(1) + default_expr_len(2) + default_expr
+        //          + data_type(1) + [IF Vector: vec_dims(2)] + [IF Quant: scale(1)] + nullable(1) + default_expr_len(2) + default_expr
         let mut data = Vec::new();
         data.push(1u8); // Operation type: AddColumn = 1
 
@@ -3050,10 +3051,13 @@ impl Engine for MVCCEngine {
         data.extend_from_slice(&(column_name.len() as u16).to_le_bytes());
         data.extend_from_slice(column_name.as_bytes());
 
-        // Data type (1 byte, + 2 bytes dimension for Vector)
+        // Data type (1 byte, + 2 bytes dimension for Vector, + 1 byte for Quant)
         data.push(data_type.as_u8());
         if data_type == DataType::Vector {
             data.extend_from_slice(&vector_dimensions.to_le_bytes());
+        }
+        if data_type == DataType::Quant {
+            data.push(quant_scale);
         }
 
         // Nullable

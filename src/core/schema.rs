@@ -61,6 +61,9 @@ pub struct SchemaColumn {
 
     /// Number of dimensions for VECTOR columns (0 = not a vector column)
     pub vector_dimensions: u16,
+
+    /// Decimal scale for DQA/Quant columns (0-18, 0 = not a quant column)
+    pub quant_scale: u8,
 }
 
 impl SchemaColumn {
@@ -86,12 +89,19 @@ impl SchemaColumn {
             default_value: None,
             check_expr: None,
             vector_dimensions: 0,
+            quant_scale: 0,
         }
     }
 
     /// Set vector dimensions (for VECTOR columns)
     pub fn with_vector_dimensions(mut self, dims: u16) -> Self {
         self.vector_dimensions = dims;
+        self
+    }
+
+    /// Set quant scale (for DQA columns)
+    pub fn with_quant_scale(mut self, scale: u8) -> Self {
+        self.quant_scale = scale;
         self
     }
 
@@ -121,6 +131,7 @@ impl SchemaColumn {
             default_value: None,
             check_expr,
             vector_dimensions: 0,
+            quant_scale: 0,
         }
     }
 
@@ -151,6 +162,7 @@ impl SchemaColumn {
             default_value,
             check_expr,
             vector_dimensions: 0,
+            quant_scale: 0,
         }
     }
 
@@ -174,6 +186,8 @@ impl fmt::Display for SchemaColumn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.data_type == DataType::Vector && self.vector_dimensions > 0 {
             write!(f, "{} VECTOR({})", self.name, self.vector_dimensions)?;
+        } else if self.data_type == DataType::Quant && self.quant_scale > 0 {
+            write!(f, "{} DQA({})", self.name, self.quant_scale)?;
         } else {
             write!(f, "{} {}", self.name, self.data_type)?;
         }
@@ -821,6 +835,14 @@ impl SchemaBuilder {
     pub fn set_last_vector_dimensions(mut self, dims: u16) -> Self {
         if let Some(col) = self.columns.last_mut() {
             col.vector_dimensions = dims;
+        }
+        self
+    }
+
+    /// Set quant scale on the last added column
+    pub fn set_last_quant_scale(mut self, scale: u8) -> Self {
+        if let Some(col) = self.columns.last_mut() {
+            col.quant_scale = scale;
         }
         self
     }

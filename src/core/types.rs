@@ -56,12 +56,17 @@ pub enum DataType {
     /// Deterministic Floating Point (DFP) per RFC-0104
     /// 128-bit fixed-precision with deterministic rounding
     DeterministicFloat = 8,
+
+    /// Deterministic Quant Arithmetic (DQA) per RFC-0105
+    /// 64-bit scaled integer with bounded range (0-18 decimal places)
+    /// Scale is stored in SchemaColumn.quant_scale
+    Quant = 9,
 }
 
 impl DataType {
-    /// Returns true if this type is numeric (INTEGER, FLOAT, or DFP)
+    /// Returns true if this type is numeric (INTEGER, FLOAT, DFP, or DQA)
     pub fn is_numeric(&self) -> bool {
-        matches!(self, DataType::Integer | DataType::Float | DataType::DeterministicFloat)
+        matches!(self, DataType::Integer | DataType::Float | DataType::DeterministicFloat | DataType::Quant)
     }
 
     /// Returns true if this type can be compared for ordering
@@ -87,6 +92,7 @@ impl DataType {
             6 => Some(DataType::Json),
             7 => Some(DataType::Vector),
             8 => Some(DataType::DeterministicFloat),
+            9 => Some(DataType::Quant),
             _ => None,
         }
     }
@@ -104,6 +110,7 @@ impl fmt::Display for DataType {
             DataType::Json => write!(f, "JSON"),
             DataType::Vector => write!(f, "VECTOR"),
             DataType::DeterministicFloat => write!(f, "DFP"),
+            DataType::Quant => write!(f, "DQA"),
         }
     }
 }
@@ -116,6 +123,10 @@ impl FromStr for DataType {
         // Handle VECTOR or VECTOR(N) format — dimension is stored in SchemaColumn
         if upper.starts_with("VECTOR") {
             return Ok(DataType::Vector);
+        }
+        // Handle DQA or DQA(n) format — scale is stored in SchemaColumn.quant_scale
+        if upper.starts_with("DQA") {
+            return Ok(DataType::Quant);
         }
         match upper.as_str() {
             "NULL" => Ok(DataType::Null),

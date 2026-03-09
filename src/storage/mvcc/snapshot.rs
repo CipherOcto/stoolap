@@ -366,10 +366,13 @@ fn serialize_snapshot_schema(schema: &Schema) -> Vec<u8> {
         buf.extend_from_slice(&(col.name.len() as u16).to_le_bytes());
         buf.extend_from_slice(col.name.as_bytes());
 
-        // Data type (1 byte, + 2 bytes dimension for Vector)
+        // Data type (1 byte, + 2 bytes dimension for Vector, + 1 byte for Quant)
         buf.push(col.data_type.as_u8());
         if col.data_type == DataType::Vector {
             buf.extend_from_slice(&col.vector_dimensions.to_le_bytes());
+        }
+        if col.data_type == DataType::Quant {
+            buf.push(col.quant_scale);
         }
 
         // Nullable (1 byte)
@@ -490,6 +493,12 @@ fn deserialize_snapshot_schema(data: &[u8]) -> Result<Schema> {
             vector_dimensions = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap());
             pos += 2;
         }
+        // For Quant type, read 1-byte scale
+        let mut quant_scale: u8 = 0;
+        if data_type == DataType::Quant && pos < data.len() {
+            quant_scale = data[pos];
+            pos += 1;
+        }
 
         // Nullable
         if pos >= data.len() {
@@ -584,6 +593,7 @@ fn deserialize_snapshot_schema(data: &[u8]) -> Result<Schema> {
             default_value: None,
             check_expr,
             vector_dimensions,
+            quant_scale,
         });
     }
 

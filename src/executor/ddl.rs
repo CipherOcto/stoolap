@@ -249,6 +249,14 @@ impl Executor {
                 }
             }
 
+            // Store quant scale in SchemaColumn if this is a DQA type
+            if data_type == DataType::Quant {
+                let scale = crate::executor::utils::parse_quant_scale(&col_def.data_type);
+                if scale > 0 {
+                    schema_builder = schema_builder.set_last_quant_scale(scale);
+                }
+            }
+
             // Track UNIQUE columns for index creation
             if is_unique && !is_primary_key {
                 unique_columns.push(col_name.to_string());
@@ -950,6 +958,11 @@ impl Executor {
                     } else {
                         0
                     };
+                    let quant_scale = if data_type == DataType::Quant {
+                        crate::executor::utils::parse_quant_scale(&col_def.data_type)
+                    } else {
+                        0
+                    };
                     self.engine.record_alter_table_add_column(
                         table_name,
                         &col_def.name.value,
@@ -957,6 +970,7 @@ impl Executor {
                         nullable,
                         default_expr.as_deref(),
                         vector_dimensions,
+                        quant_scale,
                     )?;
                 } else {
                     return Err(Error::InvalidArgument(

@@ -168,6 +168,7 @@ pub trait Engine: Send + Sync {
         nullable: bool,
         default_expr: Option<&str>,
         vector_dimensions: u16,
+        quant_scale: u8,
     ) -> Result<()> {
         // Default implementation does nothing (for in-memory engines)
         let _ = (
@@ -177,6 +178,7 @@ pub trait Engine: Send + Sync {
             nullable,
             default_expr,
             vector_dimensions,
+            quant_scale,
         );
         Ok(())
     }

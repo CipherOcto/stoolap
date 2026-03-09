@@ -218,6 +218,12 @@ pub struct ExprVM {
     /// Reusable buffer for function arguments (avoids allocation per call)
     /// Uses SmallVec to avoid heap allocation for functions with <= 8 args
     args_buffer: SmallVec<[Value; ARGS_BUFFER_CAPACITY]>,
+
+    /// Deterministic mode: enforces DFP-only arithmetic, rejects FLOAT
+    /// When enabled:
+    /// - INT is implicitly promoted to DFP in arithmetic operations
+    /// - FLOAT mixed with DFP produces compile error
+    deterministic: bool,
 }
 
 impl ExprVM {
@@ -227,6 +233,7 @@ impl ExprVM {
         Self {
             stack: SmallVec::new(),
             args_buffer: SmallVec::new(),
+            deterministic: false,
         }
     }
 
@@ -236,7 +243,27 @@ impl ExprVM {
         Self {
             stack: SmallVec::with_capacity(capacity),
             args_buffer: SmallVec::new(),
+            deterministic: false,
         }
+    }
+
+    /// Create a deterministic VM that enforces DFP-only arithmetic
+    pub fn deterministic() -> Self {
+        Self {
+            stack: SmallVec::new(),
+            args_buffer: SmallVec::new(),
+            deterministic: true,
+        }
+    }
+
+    /// Check if running in deterministic mode
+    pub fn is_deterministic(&self) -> bool {
+        self.deterministic
+    }
+
+    /// Enable deterministic mode
+    pub fn set_deterministic(&mut self, deterministic: bool) {
+        self.deterministic = deterministic;
     }
 
     /// Execute a program and return the result
@@ -795,7 +822,7 @@ impl ExprVM {
                             // Parse interval string - pass references directly to avoid clone
                             self.timestamp_add_interval(&a, &b, true)
                         }
-                        _ => Self::arithmetic_op(&a, &b, ArithmeticOp::Add, |x, y| x + y)?,
+                        _ => self.arithmetic_op(&a, &b, ArithmeticOp::Add, |x, y| x + y)?,
                     };
                     self.stack.push(result);
                     pc += 1;
@@ -820,7 +847,7 @@ impl ExprVM {
                             // Parse interval string - pass references directly to avoid clone
                             self.timestamp_add_interval(&a, &b, false)
                         }
-                        _ => Self::arithmetic_op(&a, &b, ArithmeticOp::Sub, |x, y| x - y)?,
+                        _ => self.arithmetic_op(&a, &b, ArithmeticOp::Sub, |x, y| x - y)?,
                     };
                     self.stack.push(result);
                     pc += 1;
@@ -829,7 +856,7 @@ impl ExprVM {
                 Op::Mul => {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = Self::arithmetic_op(&a, &b, ArithmeticOp::Mul, |x, y| x * y)?;
+                    let result = self.arithmetic_op(&a, &b, ArithmeticOp::Mul, |x, y| x * y)?;
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -3150,10 +3177,15 @@ impl ExprVM {
     }
 
     #[inline]
-    fn arithmetic_op<FF>(a: &Value, b: &Value, int_op: ArithmeticOp, float_op: FF) -> Result<Value>
+    fn arithmetic_op<FF>(&self, a: &Value, b: &Value, int_op: ArithmeticOp, float_op: FF) -> Result<Value>
     where
         FF: Fn(f64, f64) -> f64,
     {
+        // Deterministic mode: INT promotes to DFP, FLOAT causes error with DFP
+        if self.deterministic {
+            return self.arithmetic_op_deterministic(a, b, int_op);
+        }
+
         match (a, b) {
             (Value::Integer(x), Value::Integer(y)) => {
                 // Use checked operations to detect overflow and return an error
@@ -3249,6 +3281,96 @@ impl ExprVM {
             Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
         } else {
             None
+        }
+    }
+
+    /// Deterministic arithmetic: INT → DFP promotion, rejects FLOAT
+    #[inline]
+    fn arithmetic_op_deterministic(&self, a: &Value, b: &Value, int_op: ArithmeticOp) -> Result<Value> {
+        // In deterministic mode:
+        // - Integer + Integer → DFP (promotion)
+        // - Integer + DFP → DFP (promotion)
+        // - DFP + DFP → DFP
+        // - Float + anything → ERROR
+
+        // Handle FLOAT errors first
+        match (a, b) {
+            (Value::Float(_), _) | (_, Value::Float(_)) => {
+                return Err(crate::core::Error::Type(
+                    "FLOAT not allowed in deterministic mode: use DFP or CAST(value AS DFP)".to_string()
+                ));
+            }
+            _ => {}
+        }
+
+        // Convert integers to DFP for arithmetic
+        let to_dfp = |x: &Value| -> Dfp {
+            match x {
+                Value::Integer(i) => Dfp::from_i64(*i),
+                Value::Extension(ext) => {
+                    Self::extract_dfp_from_extension(ext).unwrap_or_else(Dfp::nan)
+                }
+                _ => Dfp::nan(),
+            }
+        };
+
+        // Helper to extract DFP from Extension
+        let extract_dfp = |ext: &crate::common::CompactArc<[u8]>| -> Dfp {
+            Self::extract_dfp_from_extension(ext).unwrap_or_else(Dfp::nan)
+        };
+
+        match (a, b) {
+            // Integer + Integer → DFP (promotion)
+            (Value::Integer(x), Value::Integer(y)) => {
+                let dfp_a = Dfp::from_i64(*x);
+                let dfp_b = Dfp::from_i64(*y);
+                let result = match int_op {
+                    ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
+                    ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
+                    ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
+                    ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                    ArithmeticOp::Mod => {
+                        let q = dfp_div(dfp_a, dfp_b);
+                        dfp_sub(dfp_a, dfp_mul(q, dfp_b))
+                    }
+                };
+                Ok(Value::dfp(result))
+            }
+            // Integer + DFP → DFP
+            (Value::Integer(_), Value::Extension(_)) | (Value::Extension(_), Value::Integer(_)) => {
+                let dfp_a = to_dfp(a);
+                let dfp_b = to_dfp(b);
+                let result = match int_op {
+                    ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
+                    ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
+                    ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
+                    ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                    ArithmeticOp::Mod => {
+                        let q = dfp_div(dfp_a, dfp_b);
+                        dfp_sub(dfp_a, dfp_mul(q, dfp_b))
+                    }
+                };
+                Ok(Value::dfp(result))
+            }
+            // DFP + DFP → DFP
+            (Value::Extension(a), Value::Extension(b)) => {
+                let dfp_a = Self::extract_dfp_from_extension(a).unwrap_or_else(Dfp::nan);
+                let dfp_b = Self::extract_dfp_from_extension(b).unwrap_or_else(Dfp::nan);
+                let result = match int_op {
+                    ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
+                    ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
+                    ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
+                    ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                    ArithmeticOp::Mod => {
+                        let q = dfp_div(dfp_a, dfp_b);
+                        dfp_sub(dfp_a, dfp_mul(q, dfp_b))
+                    }
+                };
+                Ok(Value::dfp(result))
+            }
+            // Null handling
+            _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::DeterministicFloat)),
+            _ => Ok(Value::Null(DataType::DeterministicFloat)),
         }
     }
 

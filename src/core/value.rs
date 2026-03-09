@@ -605,6 +605,15 @@ impl Value {
                             Value::Null(data_type)
                         }
                     }
+                    DataType::Quant => {
+                        // DQA support - downcast from string representation
+                        if let Some(s) = v.downcast_ref::<String>() {
+                            // Parse as DQA when implemented
+                            Value::Null(data_type)
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
                     DataType::Null => Value::Null(DataType::Null),
                 }
             }
@@ -817,6 +826,24 @@ impl Value {
                     _ => Value::Null(target_type),
                 }
             }
+            DataType::Quant => {
+                // Convert to DQA - cast from Float or Integer
+                match self {
+                    Value::Float(v) => {
+                        // TODO: Convert f64 to DQA when octo-determin is integrated
+                        Value::Null(target_type)
+                    }
+                    Value::Integer(v) => {
+                        // TODO: Convert i64 to DQA when octo-determin is integrated
+                        Value::Null(target_type)
+                    }
+                    Value::Text(s) => {
+                        // TODO: Parse string as DQA when octo-determin is integrated
+                        Value::Null(target_type)
+                    }
+                    _ => Value::Null(target_type),
+                }
+            }
             DataType::Json => {
                 // Convert to JSON
                 match self {
@@ -849,6 +876,13 @@ impl Value {
                         Value::Null(target_type)
                     }
                 }
+                _ => Value::Null(target_type),
+            },
+            DataType::Quant => match self {
+                // DQA casts - placeholder until octo-determin integration
+                Value::Float(v) => Value::Null(target_type),
+                Value::Integer(v) => Value::Null(target_type),
+                Value::Text(s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::Null => Value::Null(DataType::Null),
@@ -972,6 +1006,13 @@ impl Value {
                         Value::Null(target_type)
                     }
                 }
+                _ => Value::Null(target_type),
+            },
+            DataType::Quant => match self {
+                // DQA casts - placeholder until octo-determin integration
+                Value::Float(v) => Value::Null(target_type),
+                Value::Integer(v) => Value::Null(target_type),
+                Value::Text(s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::DeterministicFloat => match self {
