@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use octo_determin::{Dfp, DfpClass, DfpEncoding};
+use octo_determin::{Dfp, DfpClass, DfpEncoding, Dqa};
 
 use super::error::{Error, Result};
 use super::types::DataType;
@@ -196,6 +196,17 @@ impl Value {
         let mut bytes = Vec::with_capacity(1 + 24);
         bytes.push(DataType::DeterministicFloat as u8);
         bytes.extend_from_slice(encoding);
+        Value::Extension(CompactArc::from(bytes))
+    }
+
+    /// Create a Quant (DQA) value from Dqa struct
+    pub fn quant(dqa: Dqa) -> Self {
+        let mut bytes = Vec::with_capacity(1 + 16);
+        bytes.push(DataType::Quant as u8);
+        // DqaEncoding is 16 bytes: value(i64) + scale(u8) + reserved[7]
+        bytes.extend_from_slice(&dqa.value.to_be_bytes());
+        bytes.push(dqa.scale);
+        // reserved bytes are already zero (Vec::with_capacity initializes to 0)
         Value::Extension(CompactArc::from(bytes))
     }
 

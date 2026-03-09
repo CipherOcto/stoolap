@@ -31,6 +31,7 @@ use super::program::Program;
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Result, Row, Value, NULL_VALUE};
 use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, Dfp, DfpEncoding};
+use octo_determin::dqa::{dqa_assign_to_column, dqa_add, dqa_div, dqa_mul, dqa_sub, Dqa};
 
 /// Stack value that can be borrowed (from row/constants) or owned (from operations)
 type StackValue<'a> = Cow<'a, Value>;
@@ -3181,6 +3182,11 @@ impl ExprVM {
     where
         FF: Fn(f64, f64) -> f64,
     {
+        // Quant (DQA) type takes precedence - use DQA arithmetic
+        if Self::is_quant_value(a) || Self::is_quant_value(b) {
+            return self.arithmetic_op_quant(a, b, int_op);
+        }
+
         // Deterministic mode: INT promotes to DFP, FLOAT causes error with DFP
         if self.deterministic {
             return self.arithmetic_op_deterministic(a, b, int_op);
@@ -3284,6 +3290,24 @@ impl ExprVM {
         }
     }
 
+    /// Extract DQA from Extension data
+    #[inline]
+    fn extract_dqa_from_extension(data: &crate::common::CompactArc<[u8]>) -> Option<Dqa> {
+        if data.first().copied() == Some(DataType::Quant as u8) {
+            // DqaEncoding is 16 bytes: value(i64) + scale(u8) + reserved[7]
+            if data.len() >= 17 {
+                let value_bytes: [u8; 8] = data[1..9].try_into().ok()?;
+                let scale = data[9];
+                let value = i64::from_be_bytes(value_bytes);
+                Some(Dqa { value, scale })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Deterministic arithmetic: INT → DFP promotion, rejects FLOAT
     #[inline]
     fn arithmetic_op_deterministic(&self, a: &Value, b: &Value, int_op: ArithmeticOp) -> Result<Value> {
@@ -3371,6 +3395,107 @@ impl ExprVM {
             // Null handling
             _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::DeterministicFloat)),
             _ => Ok(Value::Null(DataType::DeterministicFloat)),
+        }
+    }
+
+    /// Check if value is Quant type
+    #[inline]
+    fn is_quant_value(value: &Value) -> bool {
+        match value {
+            Value::Extension(ext) => ext.first().copied() == Some(DataType::Quant as u8),
+            _ => false,
+        }
+    }
+
+    /// Quant arithmetic: DQA operations with scale alignment
+    #[inline]
+    fn arithmetic_op_quant(&self, a: &Value, b: &Value, int_op: ArithmeticOp) -> Result<Value> {
+        // Extract DQA values from both operands
+        let extract_dqa = |value: &Value| -> Option<Dqa> {
+            match value {
+                Value::Extension(ext) => Self::extract_dqa_from_extension(ext),
+                _ => None,
+            }
+        };
+
+        // Helper to convert Integer to Dqa with scale 0
+        let int_to_dqa = |i: i64| Dqa { value: i, scale: 0 };
+
+        // Helper to convert DqaError to crate::core::Error
+        let map_err = |e: octo_determin::dqa::DqaError| -> crate::core::Error {
+            match e {
+                octo_determin::dqa::DqaError::Overflow => {
+                    crate::core::Error::internal("DQA overflow")
+                }
+                octo_determin::dqa::DqaError::DivisionByZero => {
+                    crate::core::Error::internal("DQA division by zero")
+                }
+                octo_determin::dqa::DqaError::InvalidScale => {
+                    crate::core::Error::internal("DQA invalid scale")
+                }
+                octo_determin::dqa::DqaError::InvalidInput => {
+                    crate::core::Error::internal("DQA invalid input")
+                }
+                octo_determin::dqa::DqaError::InvalidEncoding => {
+                    crate::core::Error::internal("DQA invalid encoding")
+                }
+            }
+        };
+
+        match (a, b) {
+            // DQA + DQA → DQA
+            (Value::Extension(ext_a), Value::Extension(ext_b)) => {
+                let dqa_a = extract_dqa(a);
+                let dqa_b = extract_dqa(b);
+
+                if let (Some(dqa_a), Some(dqa_b)) = (dqa_a, dqa_b) {
+                    let result = match int_op {
+                        ArithmeticOp::Add => dqa_add(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Sub => dqa_sub(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mul => dqa_mul(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Div => dqa_div(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mod => {
+                            let q = dqa_div(dqa_a, dqa_b).map_err(map_err)?;
+                            dqa_sub(dqa_a, dqa_mul(q, dqa_b).map_err(map_err)?).map_err(map_err)?
+                        }
+                    };
+                    Ok(Value::quant(result))
+                } else {
+                    Ok(Value::Null(DataType::Quant))
+                }
+            }
+            // Integer + DQA → DQA (promote Integer to scale 0)
+            (Value::Integer(i), Value::Extension(_)) | (Value::Extension(_), Value::Integer(i)) => {
+                let dqa_a = if matches!(a, Value::Integer(_)) {
+                    int_to_dqa(*i)
+                } else {
+                    extract_dqa(a).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?
+                };
+                let dqa_b = if matches!(b, Value::Integer(_)) {
+                    int_to_dqa(*i)
+                } else {
+                    extract_dqa(b).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?
+                };
+
+                if let (Some(dqa_a), Some(dqa_b)) = (Some(dqa_a), Some(dqa_b)) {
+                    let result = match int_op {
+                        ArithmeticOp::Add => dqa_add(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Sub => dqa_sub(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mul => dqa_mul(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Div => dqa_div(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mod => {
+                            let q = dqa_div(dqa_a, dqa_b).map_err(map_err)?;
+                            dqa_sub(dqa_a, dqa_mul(q, dqa_b).map_err(map_err)?).map_err(map_err)?
+                        }
+                    };
+                    Ok(Value::quant(result))
+                } else {
+                    Ok(Value::Null(DataType::Quant))
+                }
+            }
+            // Null handling
+            _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::Quant)),
+            _ => Ok(Value::Null(DataType::Quant)),
         }
     }
 

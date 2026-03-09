@@ -2699,6 +2699,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "octo-determin"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3854,6 +3862,7 @@ dependencies = [
  "memchr",
  "memmap2",
  "mimalloc",
+ "octo-determin",
  "ordered-float",
  "parking_lot",
  "proptest",
