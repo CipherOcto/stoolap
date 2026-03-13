@@ -14,8 +14,6 @@
 
 //! Binary Quantization implementation
 
-use crate::core::Result;
-
 /// Binary Quantizer: maps f32 vectors to bitstreams
 ///
 /// Encoding: positive values → 1, negative/zero → 0

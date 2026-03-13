@@ -17,8 +17,8 @@
 //! Provides persistent storage for vector segments using memory-mapped files.
 //! Follows Qdrant's approach: typed wrappers, crash-safe file format.
 
-use memmap2::{Mmap, MmapMut};
-use std::fs::{self, File, OpenOptions};
+use memmap2::Mmap;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
 

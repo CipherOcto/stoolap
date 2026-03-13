@@ -16,7 +16,7 @@
 //!
 //! This module provides fraud proof functionality for challenging invalid batches.
 
-use super::types::{Address, FraudProof, RollupBatch, RollupState};
+use super::types::{Address, FraudProof, RollupState};
 
 /// Gas cost for processing a fraud proof
 pub const FRAUD_PROOF_GAS: u64 = 50_000;

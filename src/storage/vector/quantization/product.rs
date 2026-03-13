@@ -17,8 +17,6 @@
 //! PQ splits vectors into sub-vectors and quantizes each using k-means.
 //! Provides 4-64x compression with configurable sub-vectors and codebook size.
 
-use std::collections::HashMap;
-
 /// Product Quantizer: splits vectors into sub-vectors, quantizes each
 ///
 /// Compression is achieved by:

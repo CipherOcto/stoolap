@@ -18,7 +18,7 @@
 
 use super::gas::{GasMeter, GasPrice};
 use crate::core::{Error, Result};
-use crate::determ::{DetermRow, DetermValue};
+use crate::determ::DetermRow;
 use crate::trie::{RowTrie, SchemaTrie, TableSchema};
 use std::collections::BTreeMap;
 
@@ -183,6 +183,7 @@ impl ExecutionContext {
 mod tests {
     use super::*;
     use crate::core::DataType;
+    use crate::determ::DetermValue;
     use crate::trie::ColumnDef;
 
     #[test]

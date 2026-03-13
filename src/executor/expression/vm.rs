@@ -30,8 +30,8 @@ use super::ops::{CompareOp, Op};
 use super::program::Program;
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Result, Row, Value, NULL_VALUE};
-use octo_determin::dqa::{dqa_add, dqa_assign_to_column, dqa_div, dqa_mul, dqa_sub, Dqa};
-use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, Dfp, DfpEncoding};
+use octo_determin::dqa::{dqa_add, dqa_div, dqa_mul, dqa_sub, Dqa};
+use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sub, Dfp, DfpEncoding};
 
 /// Stack value that can be borrowed (from row/constants) or owned (from operations)
 type StackValue<'a> = Cow<'a, Value>;

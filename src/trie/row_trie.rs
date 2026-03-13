@@ -17,9 +17,8 @@
 //! This module provides a Merkle trie structure for storing and verifying
 //! database rows with cryptographic proofs.
 
-use crate::determ::{DetermRow, DetermValue};
-use crate::trie::proof::{hash_16_children, pack_nibbles, HexaryProof, ProofLevel};
-use rand::Rng;
+use crate::determ::DetermRow;
+use crate::trie::proof::{hash_16_children, HexaryProof, ProofLevel};
 
 /// Represents a state difference between two trie states
 ///
@@ -1039,7 +1038,7 @@ mod tests {
 
     #[test]
     fn test_sequential_row_ids_1_to_100() {
-        use crate::determ::{DetermRow, DetermValue};
+        use crate::determ::DetermRow;
 
         let mut trie = RowTrie::new();
 
@@ -1076,7 +1075,7 @@ mod tests {
 
     #[test]
     fn test_sequential_row_ids_1_to_10() {
-        use crate::determ::{DetermRow, DetermValue};
+        use crate::determ::DetermRow;
 
         let mut trie = RowTrie::new();
 
