@@ -220,6 +220,19 @@ impl Parser {
             }
         }
 
+        // Parse FOR UPDATE clause (pessimistic row locking)
+        if self.peek_token_is_keyword("FOR") {
+            self.next_token(); // consume FOR
+            if self.peek_token_is_keyword("UPDATE") {
+                self.next_token(); // consume UPDATE
+                stmt.for_update = true;
+            } else {
+                // FOR without UPDATE - likely a different usage, restore state
+                self.add_error("expected UPDATE after FOR".to_string());
+                return None;
+            }
+        }
+
         self.current_clause.clear();
         Some(stmt)
     }
@@ -3000,5 +3013,76 @@ mod tests {
             }
             _ => panic!("expected SelectStatement"),
         }
+    }
+
+    #[test]
+    fn test_parse_for_update() {
+        // Test FOR UPDATE alone
+        let stmt = parse_stmt("SELECT * FROM users FOR UPDATE").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(select.for_update);
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+
+        // Test FOR UPDATE with ORDER BY
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id FOR UPDATE").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(select.for_update);
+                assert!(!select.order_by.is_empty());
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+
+        // Test FOR UPDATE with LIMIT
+        let stmt = parse_stmt("SELECT * FROM users LIMIT 10 FOR UPDATE").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(select.for_update);
+                assert!(select.limit.is_some());
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+
+        // Test FOR UPDATE with OFFSET
+        let stmt = parse_stmt("SELECT * FROM users OFFSET 5 FOR UPDATE").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(select.for_update);
+                assert!(select.offset.is_some());
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+
+        // Test full clause order: ORDER BY, LIMIT, OFFSET, FOR UPDATE
+        let stmt =
+            parse_stmt("SELECT * FROM users ORDER BY id LIMIT 10 OFFSET 5 FOR UPDATE").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(!select.order_by.is_empty());
+                assert!(select.limit.is_some());
+                assert!(select.offset.is_some());
+                assert!(select.for_update);
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+
+        // Test without FOR UPDATE (should be false)
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id LIMIT 10 OFFSET 5").unwrap();
+        match stmt {
+            Statement::Select(select) => {
+                assert!(!select.for_update);
+            }
+            _ => panic!("expected SelectStatement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_for_update_error() {
+        // Test FOR without UPDATE should error
+        let result = parse_stmt("SELECT * FROM users FOR");
+        assert!(result.is_none(), "FOR without UPDATE should fail");
     }
 }

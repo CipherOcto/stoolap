@@ -219,6 +219,7 @@ impl fmt::Display for Token {
 /// SQL keywords (case-insensitive)
 pub static KEYWORDS: &[&str] = &[
     "SELECT",
+    "FOR",
     "FROM",
     "WHERE",
     "INSERT",
