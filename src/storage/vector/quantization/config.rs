@@ -39,7 +39,7 @@ impl QuantizationType {
         match self {
             QuantizationType::Binary => dimension as f32 / 8.0, // 32x for 768-dim
             QuantizationType::Scalar => dimension as f32 / (dimension / 2) as f32, // 4x
-            QuantizationType::Product => 32.0, // default PQ
+            QuantizationType::Product => 32.0,                  // default PQ
         }
     }
 }

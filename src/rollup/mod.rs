@@ -17,18 +17,18 @@
 //! This module provides data structures and utilities for L2 rollup operations,
 //! including batch submission, state management, and withdrawal handling.
 
-pub mod types;
 pub mod execution;
-pub mod submission;
 pub mod fraud;
+pub mod submission;
+pub mod types;
 pub mod withdrawal;
 
 pub use types::{
-    FraudProof, RollupBatch, RollupOperation, RollupState, Withdrawal,
-    ADDRESS_SIZE, BATCH_INTERVAL, CHALLENGE_PERIOD, MAX_BATCH_SIZE, SEQUENCER_BOND,
+    FraudProof, RollupBatch, RollupOperation, RollupState, Withdrawal, ADDRESS_SIZE,
+    BATCH_INTERVAL, CHALLENGE_PERIOD, MAX_BATCH_SIZE, SEQUENCER_BOND,
 };
 
 pub use execution::{ExecutionResult, RollupError, RollupResult};
-pub use submission::{SubmissionContext, SubmissionError, SubmissionResult_};
 pub use fraud::{ChallengeContext, ChallengeResult, FraudError, FraudResult};
+pub use submission::{SubmissionContext, SubmissionError, SubmissionResult_};
 pub use withdrawal::{WithdrawalContext, WithdrawalError, WithdrawalOpResult};

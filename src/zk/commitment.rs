@@ -82,7 +82,8 @@ pub fn pedersen_commit_batch(values: &[i64]) -> Vec<Commitment> {
     use rand::Rng;
 
     let mut rng = rand::thread_rng();
-    values.iter()
+    values
+        .iter()
         .map(|&v| {
             let randomness: u64 = rng.gen();
             pedersen_commit(v, randomness)
@@ -108,7 +109,8 @@ pub fn open_commitment_batch(
         return false;
     }
 
-    commitments.iter()
+    commitments
+        .iter()
         .zip(values.iter())
         .zip(randomness.iter())
         .all(|((c, &v), &r)| open_commitment(c, v, r))
@@ -131,7 +133,10 @@ mod tests {
         // Same value with different randomness should produce different commitments
         let c1 = pedersen_commit(42, 1);
         let c2 = pedersen_commit(42, 2);
-        assert_ne!(c1, c2, "Different randomness should produce different commitment");
+        assert_ne!(
+            c1, c2,
+            "Different randomness should produce different commitment"
+        );
     }
 
     #[test]
@@ -152,7 +157,10 @@ mod tests {
         // Different values should produce different commitments
         let c1 = pedersen_commit(1, 100);
         let c2 = pedersen_commit(2, 100);
-        assert_ne!(c1, c2, "Different values should produce different commitments");
+        assert_ne!(
+            c1, c2,
+            "Different values should produce different commitments"
+        );
     }
 
     #[test]
@@ -166,7 +174,11 @@ mod tests {
         let mut unique: Vec<_> = commitments.iter().collect();
         unique.sort();
         unique.dedup();
-        assert_eq!(unique.len(), values.len(), "All batch commitments should be unique");
+        assert_eq!(
+            unique.len(),
+            values.len(),
+            "All batch commitments should be unique"
+        );
     }
 
     #[test]
@@ -177,7 +189,8 @@ mod tests {
         let values = vec![10i64, 20, 30];
         let randomness: Vec<u64> = (0..3).map(|_| rng.gen()).collect();
 
-        let commitments: Vec<Commitment> = values.iter()
+        let commitments: Vec<Commitment> = values
+            .iter()
             .zip(randomness.iter())
             .map(|(&v, &r)| pedersen_commit(v, r))
             .collect();
@@ -187,11 +200,19 @@ mod tests {
 
         // Should fail with wrong values
         let wrong_values = vec![11i64, 20, 30];
-        assert!(!open_commitment_batch(&commitments, &wrong_values, &randomness));
+        assert!(!open_commitment_batch(
+            &commitments,
+            &wrong_values,
+            &randomness
+        ));
 
         // Should fail with wrong randomness
         let wrong_randomness: Vec<u64> = (0..3).map(|_| rng.gen()).collect();
-        assert!(!open_commitment_batch(&commitments, &values, &wrong_randomness));
+        assert!(!open_commitment_batch(
+            &commitments,
+            &values,
+            &wrong_randomness
+        ));
     }
 
     #[test]
@@ -205,7 +226,10 @@ mod tests {
         // Test with negative values (i64 can be negative)
         let c1 = pedersen_commit(-1, 100);
         let c2 = pedersen_commit(-100, 100);
-        assert_ne!(c1, c2, "Different negative values should produce different commitments");
+        assert_ne!(
+            c1, c2,
+            "Different negative values should produce different commitments"
+        );
     }
 
     #[test]

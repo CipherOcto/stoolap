@@ -24,23 +24,20 @@ use crate::zk::cairo::{CairoProgram, CairoProgramHash, CairoProgramRegistry};
 
 /// Hash for state_transition.cairo program
 pub const STATE_TRANSITION_HASH: CairoProgramHash = [
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
-    0x1f, 0x20,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
 ];
 
 /// Hash for hexary_verify.cairo program
 pub const HEXARY_VERIFY_HASH: CairoProgramHash = [
-    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
-    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e,
-    0x3f, 0x40,
+    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
 ];
 
 /// Hash for merkle_batch.cairo program
 pub const MERKLE_BATCH_HASH: CairoProgramHash = [
-    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
-    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e,
-    0x5f, 0x60,
+    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+    0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
 ];
 
 // Bundled CASM bytecode
@@ -74,9 +71,9 @@ pub fn register_bundled_programs(registry: &mut CairoProgramRegistry) -> Result<
         casm: STATE_TRANSITION_CASM.to_vec(),
         version: 2, // Cairo 2.0
     };
-    registry
-        .register(state_transition)
-        .map_err(|e| BundledError::RegistrationFailed("state_transition".to_string(), e.to_string()))?;
+    registry.register(state_transition).map_err(|e| {
+        BundledError::RegistrationFailed("state_transition".to_string(), e.to_string())
+    })?;
 
     // Register hexary_verify.cairo
     let hexary_verify = CairoProgram {
@@ -86,9 +83,9 @@ pub fn register_bundled_programs(registry: &mut CairoProgramRegistry) -> Result<
         casm: HEXARY_VERIFY_CASM.to_vec(),
         version: 2,
     };
-    registry
-        .register(hexary_verify)
-        .map_err(|e| BundledError::RegistrationFailed("hexary_verify".to_string(), e.to_string()))?;
+    registry.register(hexary_verify).map_err(|e| {
+        BundledError::RegistrationFailed("hexary_verify".to_string(), e.to_string())
+    })?;
 
     // Register merkle_batch.cairo
     let merkle_batch = CairoProgram {
@@ -166,7 +163,9 @@ impl std::fmt::Display for BundledError {
             BundledError::RegistrationFailed(name, msg) => {
                 write!(f, "Failed to register bundled program '{}': {}", name, msg)
             }
-            BundledError::ProgramNotFound(name) => write!(f, "Bundled program '{}' not found", name),
+            BundledError::ProgramNotFound(name) => {
+                write!(f, "Bundled program '{}' not found", name)
+            }
         }
     }
 }
@@ -210,9 +209,18 @@ mod tests {
 
     #[test]
     fn test_get_bundled_program_name() {
-        assert_eq!(get_bundled_program_name(&STATE_TRANSITION_HASH), Some("state_transition"));
-        assert_eq!(get_bundled_program_name(&HEXARY_VERIFY_HASH), Some("hexary_verify"));
-        assert_eq!(get_bundled_program_name(&MERKLE_BATCH_HASH), Some("merkle_batch"));
+        assert_eq!(
+            get_bundled_program_name(&STATE_TRANSITION_HASH),
+            Some("state_transition")
+        );
+        assert_eq!(
+            get_bundled_program_name(&HEXARY_VERIFY_HASH),
+            Some("hexary_verify")
+        );
+        assert_eq!(
+            get_bundled_program_name(&MERKLE_BATCH_HASH),
+            Some("merkle_batch")
+        );
 
         let unknown_hash = [0u8; 32];
         assert_eq!(get_bundled_program_name(&unknown_hash), None);

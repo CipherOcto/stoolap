@@ -20,7 +20,7 @@
 //! compilation issues with recent Rust nightly versions.
 //! These benchmarks include both mock and real proof generation for testing purposes.
 
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 #[cfg(feature = "zk")]
 mod mock_benches {

@@ -24,10 +24,10 @@ use serde::{Deserialize, Serialize};
 pub const ADDRESS_SIZE: usize = 20;
 
 /// Rollup protocol constants
-pub const CHALLENGE_PERIOD: u64 = 100;     // Blocks before batch can be finalized
-pub const MAX_BATCH_SIZE: usize = 10000;    // Maximum transactions per batch
-pub const BATCH_INTERVAL: u64 = 10;         // Blocks between batch submissions
-pub const SEQUENCER_BOND: u64 = 100_000;    // Minimum bond amount for sequencer
+pub const CHALLENGE_PERIOD: u64 = 100; // Blocks before batch can be finalized
+pub const MAX_BATCH_SIZE: usize = 10000; // Maximum transactions per batch
+pub const BATCH_INTERVAL: u64 = 10; // Blocks between batch submissions
+pub const SEQUENCER_BOND: u64 = 100_000; // Minimum bond amount for sequencer
 
 /// Ethereum-style address
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -117,7 +117,7 @@ impl RollupBatch {
 
     /// Compute batch hash using SHA256
     pub fn hash(&self) -> [u8; 32] {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&self.batch_number.to_le_bytes());
         hasher.update(&self.parent_hash);
@@ -256,8 +256,7 @@ impl RollupState {
 
     /// Check if a batch can be finalized
     pub fn can_finalize(&self, batch_number: u64) -> bool {
-        batch_number > self.finalized_batch
-            && self.batch_number >= batch_number + CHALLENGE_PERIOD
+        batch_number > self.finalized_batch && self.batch_number >= batch_number + CHALLENGE_PERIOD
     }
 }
 
@@ -434,14 +433,14 @@ impl RollupBatch {
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
         let mut pos = 0;
 
-        let batch_number = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let batch_number = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
         let mut parent_hash = [0u8; 32];
-        parent_hash.copy_from_slice(&data[pos..pos+32]);
+        parent_hash.copy_from_slice(&data[pos..pos + 32]);
         pos += 32;
 
-        let tx_count = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let tx_count = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
 
         let mut transactions = Vec::with_capacity(tx_count);
@@ -450,7 +449,7 @@ impl RollupBatch {
             pos += 1;
 
             let mut from_bytes = [0u8; 20];
-            from_bytes.copy_from_slice(&data[pos..pos+20]);
+            from_bytes.copy_from_slice(&data[pos..pos + 20]);
             pos += 20;
             let from = Address::new(from_bytes);
 
@@ -459,40 +458,40 @@ impl RollupBatch {
 
             let to = if has_to {
                 let mut to_bytes = [0u8; 20];
-                to_bytes.copy_from_slice(&data[pos..pos+20]);
+                to_bytes.copy_from_slice(&data[pos..pos + 20]);
                 pos += 20;
                 Some(Address::new(to_bytes))
             } else {
                 None
             };
 
-            let data_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+            let data_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
             pos += 4;
-            let tx_data = data[pos..pos+data_len].to_vec();
+            let tx_data = data[pos..pos + data_len].to_vec();
             pos += data_len;
 
-            let nonce = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+            let nonce = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
             pos += 8;
 
-            let fee = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+            let fee = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
             pos += 8;
 
             transactions.push(Transaction::new(tx_type, from, to, tx_data, nonce, fee));
         }
 
         let mut pre_state_root = [0u8; 32];
-        pre_state_root.copy_from_slice(&data[pos..pos+32]);
+        pre_state_root.copy_from_slice(&data[pos..pos + 32]);
         pos += 32;
 
         let mut post_state_root = [0u8; 32];
-        post_state_root.copy_from_slice(&data[pos..pos+32]);
+        post_state_root.copy_from_slice(&data[pos..pos + 32]);
         pos += 32;
 
-        let timestamp = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let timestamp = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
         let mut sequencer_bytes = [0u8; 20];
-        sequencer_bytes.copy_from_slice(&data[pos..pos+20]);
+        sequencer_bytes.copy_from_slice(&data[pos..pos + 20]);
         pos += 20;
         let sequencer = Address::new(sequencer_bytes);
 
@@ -500,9 +499,9 @@ impl RollupBatch {
         pos += 1;
 
         let signature = if has_sig {
-            let sig_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+            let sig_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
             pos += 4;
-            Some(data[pos..pos+sig_len].to_vec())
+            Some(data[pos..pos + sig_len].to_vec())
         } else {
             None
         };
@@ -543,20 +542,20 @@ impl Withdrawal {
     pub fn from_bytes(data: &[u8]) -> Option<Self> {
         let mut pos = 0;
 
-        let withdrawal_id = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let withdrawal_id = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
         let mut recipient_bytes = [0u8; 20];
-        recipient_bytes.copy_from_slice(&data[pos..pos+20]);
+        recipient_bytes.copy_from_slice(&data[pos..pos + 20]);
         pos += 20;
 
-        let amount = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let amount = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
-        let batch_number = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let batch_number = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
-        let timestamp = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let timestamp = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
         let finalized = data[pos] != 0;
@@ -565,7 +564,7 @@ impl Withdrawal {
         let l1_tx_hash = if data[pos] != 0 {
             pos += 1;
             let mut hash = [0u8; 32];
-            hash.copy_from_slice(&data[pos..pos+32]);
+            hash.copy_from_slice(&data[pos..pos + 32]);
             Some(hash)
         } else {
             None
@@ -660,16 +659,14 @@ mod tests {
         let batch = RollupBatch::new(
             42,
             [1u8; 32],
-            vec![
-                Transaction::new(
-                    TxType::Transfer,
-                    Address::new([2u8; 20]),
-                    None,
-                    vec![1, 2, 3],
-                    5,
-                    100,
-                ),
-            ],
+            vec![Transaction::new(
+                TxType::Transfer,
+                Address::new([2u8; 20]),
+                None,
+                vec![1, 2, 3],
+                5,
+                100,
+            )],
             [4u8; 32],
             [5u8; 32],
             2000,
@@ -689,13 +686,7 @@ mod tests {
 
     #[test]
     fn test_withdrawal_new() {
-        let withdrawal = Withdrawal::new(
-            1,
-            Address::new([1u8; 20]),
-            1000,
-            42,
-            1000,
-        );
+        let withdrawal = Withdrawal::new(1, Address::new([1u8; 20]), 1000, 42, 1000);
 
         assert_eq!(withdrawal.withdrawal_id, 1);
         assert_eq!(withdrawal.amount, 1000);
@@ -704,13 +695,7 @@ mod tests {
 
     #[test]
     fn test_withdrawal_finalize() {
-        let mut withdrawal = Withdrawal::new(
-            1,
-            Address::new([1u8; 20]),
-            1000,
-            42,
-            1000,
-        );
+        let mut withdrawal = Withdrawal::new(1, Address::new([1u8; 20]), 1000, 42, 1000);
 
         withdrawal.finalize([9u8; 32]);
 
@@ -720,13 +705,7 @@ mod tests {
 
     #[test]
     fn test_withdrawal_roundtrip() {
-        let mut withdrawal = Withdrawal::new(
-            1,
-            Address::new([1u8; 20]),
-            1000,
-            42,
-            1000,
-        );
+        let mut withdrawal = Withdrawal::new(1, Address::new([1u8; 20]), 1000, 42, 1000);
         withdrawal.finalize([9u8; 32]);
 
         let bytes = withdrawal.to_bytes();
@@ -740,11 +719,7 @@ mod tests {
     #[test]
     fn test_fraud_proof_verify() {
         let proof = FraudProof::new(
-            1,
-            0,
-            [1u8; 32],
-            [2u8; 32],
-            [3u8; 32], // Different from expected
+            1, 0, [1u8; 32], [2u8; 32], [3u8; 32], // Different from expected
         );
 
         assert!(proof.verify());
@@ -754,10 +729,7 @@ mod tests {
     fn test_fraud_proof_same_roots() {
         let same_root = [1u8; 32];
         let proof = FraudProof::new(
-            1,
-            0,
-            same_root,
-            same_root, // Same as claimed
+            1, 0, same_root, same_root, // Same as claimed
             same_root,
         );
 
@@ -792,7 +764,12 @@ mod tests {
 
     #[test]
     fn test_tx_type_serialization() {
-        for tx_type in &[TxType::Transfer, TxType::Call, TxType::Create, TxType::Withdrawal] {
+        for tx_type in &[
+            TxType::Transfer,
+            TxType::Call,
+            TxType::Create,
+            TxType::Withdrawal,
+        ] {
             let byte = tx_type.to_byte();
             let recovered = TxType::from_byte(byte);
             assert_eq!(Some(*tx_type), recovered);

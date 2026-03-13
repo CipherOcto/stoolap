@@ -198,10 +198,7 @@ mod tests {
 
     fn create_test_fraud_proof() -> FraudProof {
         FraudProof::new(
-            0,
-            0,
-            [1u8; 32],
-            [2u8; 32], // Expected
+            0, 0, [1u8; 32], [2u8; 32], // Expected
             [3u8; 32], // Claimed (different)
         )
     }

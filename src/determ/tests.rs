@@ -37,7 +37,10 @@ fn test_determ_value_integer_hash() {
 #[test]
 fn test_determ_value_inline_text() {
     // Test inline text (15 bytes or less)
-    let short_text = DetermValue::InlineText([b'h', b'e', b'l', b'l', b'o', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 5);
+    let short_text = DetermValue::InlineText(
+        [b'h', b'e', b'l', b'l', b'o', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        5,
+    );
 
     // Hash should be deterministic
     let hash1 = short_text.hash();
@@ -45,7 +48,10 @@ fn test_determ_value_inline_text() {
     assert_eq!(hash1, hash2);
 
     // Same content should have same hash
-    let short_text2 = DetermValue::InlineText([b'h', b'e', b'l', b'l', b'o', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 5);
+    let short_text2 = DetermValue::InlineText(
+        [b'h', b'e', b'l', b'l', b'o', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        5,
+    );
     assert_eq!(short_text.hash(), short_text2.hash());
 }
 

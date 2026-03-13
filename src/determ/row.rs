@@ -14,10 +14,10 @@
 
 //! Deterministic Row type for blockchain SQL database
 
-use crate::core::Result;
-use crate::core::value::Value;
-use crate::core::types::DataType;
 use crate::common::SmartString;
+use crate::core::types::DataType;
+use crate::core::value::Value;
+use crate::core::Result;
 use crate::determ::value::DetermValue;
 
 /// Deterministic Row type
@@ -86,15 +86,20 @@ impl DetermRow {
             // For now, we'll use a simpler approach where we know the type tag
             let type_tag = data[offset];
             let value_end = match type_tag {
-                0 => offset + 1,                     // Null
-                1 => offset + 9,                     // Integer
-                2 => offset + 9,                     // Float
-                3 => offset + 1 + 15,                // InlineText
-                4 => offset + 5,                     // HeapText (1 byte len + 4 bytes length)
-                5 => offset + 2,                     // Boolean
-                6 => offset + 9,                     // Timestamp
-                7 => offset + 5,                     // Extension (1 byte len + 4 bytes length)
-                _ => return Err(Error::invalid_argument(format!("invalid type tag: {}", type_tag))),
+                0 => offset + 1,      // Null
+                1 => offset + 9,      // Integer
+                2 => offset + 9,      // Float
+                3 => offset + 1 + 15, // InlineText
+                4 => offset + 5,      // HeapText (1 byte len + 4 bytes length)
+                5 => offset + 2,      // Boolean
+                6 => offset + 9,      // Timestamp
+                7 => offset + 5,      // Extension (1 byte len + 4 bytes length)
+                _ => {
+                    return Err(Error::invalid_argument(format!(
+                        "invalid type tag: {}",
+                        type_tag
+                    )))
+                }
             };
             if value_end > data.len() {
                 return Err(Error::invalid_argument("invalid row data: truncated value"));
@@ -131,8 +136,8 @@ impl DetermRow {
             DetermValue::Timestamp(ts) => {
                 // Convert i64 nanoseconds to DateTime<Utc>
                 use chrono::DateTime;
-                use chrono::Utc;
                 use chrono::NaiveDateTime;
+                use chrono::Utc;
 
                 // Convert nanoseconds to seconds
                 let secs = ts / 1_000_000_000;

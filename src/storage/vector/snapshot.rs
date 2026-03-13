@@ -21,8 +21,8 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::core::Result;
 use super::mmap::MmapVectorSegmentMut;
+use crate::core::Result;
 
 /// Snapshot metadata
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

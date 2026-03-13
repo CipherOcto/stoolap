@@ -207,10 +207,7 @@ pub enum Operation {
     },
 
     /// Delete a row
-    Delete {
-        table_name: String,
-        row_id: i64,
-    },
+    Delete { table_name: String, row_id: i64 },
 
     /// Create a new table
     CreateTable {
@@ -219,9 +216,7 @@ pub enum Operation {
     },
 
     /// Drop a table
-    DropTable {
-        table_name: String,
-    },
+    DropTable { table_name: String },
 
     /// Create an index
     CreateIndex {
@@ -458,9 +453,8 @@ impl Operation {
                 let index_type = IndexType::from_u8(data[pos])
                     .ok_or_else(|| OpError::InvalidIndexType(data[pos]))?;
                 pos = pos + 1;
-                let (columns, new_pos) = decode_vec(data, pos, |data, pos| {
-                    decode_usize(data, pos)
-                })?;
+                let (columns, new_pos) =
+                    decode_vec(data, pos, |data, pos| decode_usize(data, pos))?;
                 pos = new_pos;
 
                 Operation::CreateIndex {

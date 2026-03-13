@@ -17,11 +17,11 @@
 //! This module provides types for representing database operations in the
 //! blockchain's operation log, enabling consensus and replication.
 
-pub mod operation;
 pub mod block;
+pub mod operation;
 
-pub use operation::{Operation, IndexType, ColumnDef, DataType};
-pub use block::{Block, BlockHeader, BlockOperations, BlockError};
+pub use block::{Block, BlockError, BlockHeader, BlockOperations};
+pub use operation::{ColumnDef, DataType, IndexType, Operation};
 
 #[cfg(test)]
 #[path = "tests/operation_tests.rs"]

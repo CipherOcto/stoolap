@@ -14,7 +14,7 @@
 
 // Tests for consensus operation types
 
-use crate::consensus::operation::{Operation, IndexType, ColumnDef, DataType};
+use crate::consensus::operation::{ColumnDef, DataType, IndexType, Operation};
 
 /// Test that insert operations produce consistent hashes
 #[test]
@@ -190,7 +190,11 @@ fn test_all_operation_types() {
         };
         let hash = op.hash();
         let has_nonzero = hash.iter().any(|&b| b != 0);
-        assert!(has_nonzero, "IndexType {:?} produced all-zero hash", index_type);
+        assert!(
+            has_nonzero,
+            "IndexType {:?} produced all-zero hash",
+            index_type
+        );
     }
 
     // Test all DataType variants
@@ -216,6 +220,10 @@ fn test_all_operation_types() {
         };
         let hash = op.hash();
         let has_nonzero = hash.iter().any(|&b| b != 0);
-        assert!(has_nonzero, "DataType {:?} produced all-zero hash", data_type);
+        assert!(
+            has_nonzero,
+            "DataType {:?} produced all-zero hash",
+            data_type
+        );
     }
 }

@@ -66,7 +66,10 @@ pub enum DataType {
 impl DataType {
     /// Returns true if this type is numeric (INTEGER, FLOAT, DFP, or DQA)
     pub fn is_numeric(&self) -> bool {
-        matches!(self, DataType::Integer | DataType::Float | DataType::DeterministicFloat | DataType::Quant)
+        matches!(
+            self,
+            DataType::Integer | DataType::Float | DataType::DeterministicFloat | DataType::Quant
+        )
     }
 
     /// Returns true if this type can be compared for ordering

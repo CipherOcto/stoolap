@@ -100,10 +100,7 @@ impl BlockOperations {
         }
 
         // Hash each operation
-        let mut hashes: Vec<[u8; 32]> = operations
-            .iter()
-            .map(|op| op.hash())
-            .collect();
+        let mut hashes: Vec<[u8; 32]> = operations.iter().map(|op| op.hash()).collect();
 
         // Build Merkle tree bottom-up
         while hashes.len() > 1 {
@@ -366,12 +363,8 @@ mod tests {
             extra_data: vec![],
         };
 
-        let operations = BlockOperations::new(
-            1,
-            vec![],
-            header.state_root_before,
-            header.state_root_after,
-        );
+        let operations =
+            BlockOperations::new(1, vec![], header.state_root_before, header.state_root_after);
 
         let block = Block {
             header,
@@ -382,7 +375,10 @@ mod tests {
 
         assert!(matches!(
             block.verify(),
-            Err(BlockError::GasLimitExceeded { used: 200, limit: 100 })
+            Err(BlockError::GasLimitExceeded {
+                used: 200,
+                limit: 100
+            })
         ));
     }
 }

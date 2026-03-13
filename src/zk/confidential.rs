@@ -285,8 +285,7 @@ impl ConfidentialResult {
     #[cfg(not(feature = "zk"))]
     pub fn verify(&self, _expected_root: [u8; 32]) -> bool {
         // Basic structural validation without proof verification
-        self.query_commitment != [0u8; 32]
-            && self.row_count as usize == self.row_commitments.len()
+        self.query_commitment != [0u8; 32] && self.row_count as usize == self.row_commitments.len()
     }
 
     /// Open a commitment to reveal the underlying value
@@ -311,12 +310,7 @@ impl ConfidentialResult {
     ///
     /// This allows verification that a claimed value corresponds to
     /// a commitment without revealing the value.
-    pub fn verify_value_commitment(
-        &self,
-        index: usize,
-        value: i64,
-        randomness: u64,
-    ) -> bool {
+    pub fn verify_value_commitment(&self, index: usize, value: i64, randomness: u64) -> bool {
         use crate::zk::commitment::pedersen_commit;
 
         if index >= self.row_commitments.len() {
@@ -363,35 +357,40 @@ impl EncryptedQuery {
         let mut pos = 0;
 
         // table
-        let table_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let table_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
-        let table = data[pos..pos+table_len].to_vec();
+        let table = data[pos..pos + table_len].to_vec();
         pos += table_len;
 
         // filters
-        let filters_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let filters_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
         let mut filters = Vec::with_capacity(filters_len);
         for _ in 0..filters_len {
-            let col_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+            let col_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
             pos += 4;
-            let column = data[pos..pos+col_len].to_vec();
+            let column = data[pos..pos + col_len].to_vec();
             pos += col_len;
             let operator = FilterOp::from_byte(data[pos])?;
             pos += 1;
-            let value_commitment: Commitment = data[pos..pos+32].try_into().ok()?;
+            let value_commitment: Commitment = data[pos..pos + 32].try_into().ok()?;
             pos += 32;
-            let nonce: [u8; 32] = data[pos..pos+32].try_into().ok()?;
+            let nonce: [u8; 32] = data[pos..pos + 32].try_into().ok()?;
             pos += 32;
-            filters.push(EncryptedFilter::new(column, operator, value_commitment, nonce));
+            filters.push(EncryptedFilter::new(
+                column,
+                operator,
+                value_commitment,
+                nonce,
+            ));
         }
 
         // nonce
-        let nonce: [u8; 32] = data[pos..pos+32].try_into().ok()?;
+        let nonce: [u8; 32] = data[pos..pos + 32].try_into().ok()?;
         pos += 32;
 
         // query_commitment
-        let query_commitment: Commitment = data[pos..pos+32].try_into().ok()?;
+        let query_commitment: Commitment = data[pos..pos + 32].try_into().ok()?;
 
         Some(Self {
             table,
@@ -437,37 +436,37 @@ impl ConfidentialResult {
         let mut pos = 0;
 
         // row_count
-        let row_count = u64::from_le_bytes(data[pos..pos+8].try_into().ok()?);
+        let row_count = u64::from_le_bytes(data[pos..pos + 8].try_into().ok()?);
         pos += 8;
 
         // row_commitments
-        let row_comm_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let row_comm_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
         let mut row_commitments = Vec::with_capacity(row_comm_len);
         for _ in 0..row_comm_len {
-            let c: Commitment = data[pos..pos+32].try_into().ok()?;
+            let c: Commitment = data[pos..pos + 32].try_into().ok()?;
             row_commitments.push(c);
             pos += 32;
         }
 
         // aggregate_commitments
-        let agg_comm_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let agg_comm_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
         let mut aggregate_commitments = Vec::with_capacity(agg_comm_len);
         for _ in 0..agg_comm_len {
-            let c: Commitment = data[pos..pos+32].try_into().ok()?;
+            let c: Commitment = data[pos..pos + 32].try_into().ok()?;
             aggregate_commitments.push(c);
             pos += 32;
         }
 
         // proof
-        let proof_len = u32::from_le_bytes(data[pos..pos+4].try_into().ok()?) as usize;
+        let proof_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
         pos += 4;
-        let proof = data[pos..pos+proof_len].to_vec();
+        let proof = data[pos..pos + proof_len].to_vec();
         pos += proof_len;
 
         // query_commitment
-        let query_commitment: Commitment = data[pos..pos+32].try_into().ok()?;
+        let query_commitment: Commitment = data[pos..pos + 32].try_into().ok()?;
 
         Some(Self {
             row_count,
@@ -508,12 +507,7 @@ mod tests {
     #[test]
     fn test_encrypted_query_roundtrip() {
         let filters = vec![
-            EncryptedFilter::new(
-                b"age".to_vec(),
-                FilterOp::GreaterThan,
-                [1u8; 32],
-                [2u8; 32],
-            ),
+            EncryptedFilter::new(b"age".to_vec(), FilterOp::GreaterThan, [1u8; 32], [2u8; 32]),
             EncryptedFilter::new(
                 b"score".to_vec(),
                 FilterOp::LessThanOrEqual,
@@ -550,29 +544,22 @@ mod tests {
 
         assert_eq!(result.row_count, recovered.row_count);
         assert_eq!(result.row_commitments, recovered.row_commitments);
-        assert_eq!(result.aggregate_commitments, recovered.aggregate_commitments);
+        assert_eq!(
+            result.aggregate_commitments,
+            recovered.aggregate_commitments
+        );
         assert_eq!(result.proof, recovered.proof);
         assert_eq!(result.query_commitment, recovered.query_commitment);
     }
 
     #[test]
     fn test_range_proof() {
-        let proof = RangeProof::new(
-            [1u8; 32],
-            vec![1, 2, 3, 4],
-            0,
-            100,
-        );
+        let proof = RangeProof::new([1u8; 32], vec![1, 2, 3, 4], 0, 100);
 
         assert!(proof.verify());
 
         // Invalid range should fail
-        let invalid = RangeProof::new(
-            [1u8; 32],
-            vec![],
-            100,
-            50,
-        );
+        let invalid = RangeProof::new([1u8; 32], vec![], 100, 50);
         assert!(!invalid.verify());
     }
 
@@ -580,14 +567,12 @@ mod tests {
     fn test_encrypted_query_size() {
         let query = EncryptedQuery::new(
             b"users".to_vec(),
-            vec![
-                EncryptedFilter::new(
-                    b"age".to_vec(),
-                    FilterOp::GreaterThan,
-                    [1u8; 32],
-                    [2u8; 32],
-                ),
-            ],
+            vec![EncryptedFilter::new(
+                b"age".to_vec(),
+                FilterOp::GreaterThan,
+                [1u8; 32],
+                [2u8; 32],
+            )],
             [3u8; 32],
         );
 
@@ -648,7 +633,7 @@ mod tests {
     #[test]
     fn test_confidential_result_verify_mismatched_count() {
         let result = ConfidentialResult::new(
-            3, // row_count says 3
+            3,                          // row_count says 3
             vec![[1u8; 32], [2u8; 32]], // but only 2 commitments
             vec![],
             vec![],
@@ -667,13 +652,7 @@ mod tests {
         let randomness: u64 = 12345;
         let commitment = pedersen_commit(value, randomness);
 
-        let result = ConfidentialResult::new(
-            1,
-            vec![commitment],
-            vec![],
-            vec![],
-            [1u8; 32],
-        );
+        let result = ConfidentialResult::new(1, vec![commitment], vec![], vec![], [1u8; 32]);
 
         // Verify correct value and randomness
         assert!(result.verify_value_commitment(0, value, randomness));
@@ -691,13 +670,7 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_open_commitment_returns_none() {
-        let result = ConfidentialResult::new(
-            1,
-            vec![[1u8; 32]],
-            vec![],
-            vec![],
-            [1u8; 32],
-        );
+        let result = ConfidentialResult::new(1, vec![[1u8; 32]], vec![], vec![], [1u8; 32]);
 
         // Opening requires original values - should return None
         assert_eq!(result.open_commitment(0), None);

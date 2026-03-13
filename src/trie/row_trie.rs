@@ -18,7 +18,7 @@
 //! database rows with cryptographic proofs.
 
 use crate::determ::{DetermRow, DetermValue};
-use crate::trie::proof::{HexaryProof, ProofLevel, pack_nibbles, hash_16_children};
+use crate::trie::proof::{hash_16_children, pack_nibbles, HexaryProof, ProofLevel};
 use rand::Rng;
 
 /// Represents a state difference between two trie states
@@ -126,15 +126,17 @@ impl RowNode {
 
     /// Recompute the hash of a branch node
     fn recompute_branch_hash(&mut self) {
-        if let RowNode::Branch { ref mut hash, children } = self {
-            let child_hashes: [Option<[u8; 32]>; 16] = std::array::from_fn(|i| {
-                children[i].as_ref().map(|c| c.hash())
-            });
+        if let RowNode::Branch {
+            ref mut hash,
+            children,
+        } = self
+        {
+            let child_hashes: [Option<[u8; 32]>; 16] =
+                std::array::from_fn(|i| children[i].as_ref().map(|c| c.hash()));
 
             // Convert to array of [u8; 32] with zeros for missing children
-            let child_hash_array: [[u8; 32]; 16] = std::array::from_fn(|i| {
-                child_hashes[i].unwrap_or([0u8; 32])
-            });
+            let child_hash_array: [[u8; 32]; 16] =
+                std::array::from_fn(|i| child_hashes[i].unwrap_or([0u8; 32]));
 
             *hash = hash_16_children(&child_hash_array);
         }
@@ -228,12 +230,12 @@ impl RowTrie {
 
                     // Find where the keys diverge (starting from current depth)
                     let mut diverge_at = depth;
-                    while diverge_at < key.len() && diverge_at < existing_key.len()
+                    while diverge_at < key.len()
+                        && diverge_at < existing_key.len()
                         && key[diverge_at] == existing_key[diverge_at]
                     {
                         diverge_at += 1;
                     }
-
 
                     // Create a branch at the current depth
                     let mut branch = RowNode::new_branch();
@@ -267,16 +269,20 @@ impl RowTrie {
 
                         if existing_remaining.iter().all(|&x| x == 0) {
                             // All remaining nibbles are 0, put leaf directly
-                            if let RowNode::Branch { ref mut children, .. } = branch {
+                            if let RowNode::Branch {
+                                ref mut children, ..
+                            } = branch
+                            {
                                 children[existing_nibble] = Some(Box::new(existing_leaf));
                             }
                         } else {
                             // Create extension for remaining path
-                            let ext = RowNode::new_extension(
-                                existing_remaining.to_vec(),
-                                existing_leaf,
-                            );
-                            if let RowNode::Branch { ref mut children, .. } = branch {
+                            let ext =
+                                RowNode::new_extension(existing_remaining.to_vec(), existing_leaf);
+                            if let RowNode::Branch {
+                                ref mut children, ..
+                            } = branch
+                            {
                                 children[existing_nibble] = Some(Box::new(ext));
                             }
                         }
@@ -291,16 +297,19 @@ impl RowTrie {
 
                         if new_remaining.iter().all(|&x| x == 0) {
                             // All remaining nibbles are 0, put leaf directly
-                            if let RowNode::Branch { ref mut children, .. } = branch {
+                            if let RowNode::Branch {
+                                ref mut children, ..
+                            } = branch
+                            {
                                 children[new_nibble] = Some(Box::new(new_leaf));
                             }
                         } else {
                             // Create extension for remaining path
-                            let ext = RowNode::new_extension(
-                                new_remaining.to_vec(),
-                                new_leaf,
-                            );
-                            if let RowNode::Branch { ref mut children, .. } = branch {
+                            let ext = RowNode::new_extension(new_remaining.to_vec(), new_leaf);
+                            if let RowNode::Branch {
+                                ref mut children, ..
+                            } = branch
+                            {
                                 children[new_nibble] = Some(Box::new(ext));
                             }
                         }
@@ -325,7 +334,6 @@ impl RowTrie {
                             0 // Past end means trailing zeros
                         };
 
-
                         let existing_leaf = RowNode::Leaf {
                             row_id: existing_id,
                             row_hash,
@@ -333,12 +341,19 @@ impl RowTrie {
                         };
                         let new_leaf = RowNode::new_leaf(row_id, row.clone());
 
-                        if let RowNode::Branch { ref mut children, .. } = sub_branch {
+                        if let RowNode::Branch {
+                            ref mut children, ..
+                        } = sub_branch
+                        {
                             if existing_nibble == new_nibble {
                                 // Both keys go to the same child - recursively insert one into the other
-                                children[existing_nibble] = Some(Box::new(
-                                    Self::do_insert_static(Some(existing_leaf), key, diverge_at + 1, row_id, row)
-                                ));
+                                children[existing_nibble] = Some(Box::new(Self::do_insert_static(
+                                    Some(existing_leaf),
+                                    key,
+                                    diverge_at + 1,
+                                    row_id,
+                                    row,
+                                )));
                             } else {
                                 // Different children - add both
                                 children[existing_nibble] = Some(Box::new(existing_leaf));
@@ -372,7 +387,8 @@ impl RowTrie {
                 let nibble = key[depth] as usize;
                 let child = children[nibble].take().map(|c| *c);
 
-                let new_child = Box::new(Self::do_insert_static(child, key, depth + 1, row_id, row));
+                let new_child =
+                    Box::new(Self::do_insert_static(child, key, depth + 1, row_id, row));
                 children[nibble] = Some(new_child);
 
                 let mut branch = RowNode::Branch {
@@ -393,7 +409,7 @@ impl RowTrie {
                     let new_child = Box::new(Self::do_insert_static(
                         Some(*child),
                         &key[prefix.len()..],
-                        0,  // Reset depth - key is now sliced, so index from 0
+                        0, // Reset depth - key is now sliced, so index from 0
                         row_id,
                         row,
                     ));
@@ -408,7 +424,10 @@ impl RowTrie {
                     if let Some(first_prefix_nibble) = prefix.first() {
                         let old_idx = *first_prefix_nibble as usize;
                         // Clone the child into the branch at old position
-                        if let RowNode::Branch { ref mut children, .. } = branch {
+                        if let RowNode::Branch {
+                            ref mut children, ..
+                        } = branch
+                        {
                             children[old_idx] = Some(child.clone());
                         }
                     }
@@ -420,7 +439,10 @@ impl RowTrie {
                         0
                     };
                     let new_leaf = RowNode::new_leaf(row_id, row);
-                    if let RowNode::Branch { ref mut children, .. } = branch {
+                    if let RowNode::Branch {
+                        ref mut children, ..
+                    } = branch
+                    {
                         children[new_idx] = Some(Box::new(new_leaf));
                     }
 
@@ -482,7 +504,8 @@ impl RowTrie {
                 }
 
                 let nibble = key[depth] as usize;
-                children[nibble] = Self::do_delete_static(children[nibble].take().map(|c| *c), key, depth + 1);
+                children[nibble] =
+                    Self::do_delete_static(children[nibble].take().map(|c| *c), key, depth + 1);
 
                 // Check if only one child remains (could compress to extension)
                 let non_empty_count = children.iter().filter(|c| c.is_some()).count();
@@ -511,7 +534,8 @@ impl RowTrie {
                 if depth + prefix.len() <= key.len() {
                     let key_prefix = &key[depth..depth + prefix.len()];
                     if key_prefix == &prefix[..] {
-                        let new_child = Self::do_delete_static(Some(*child), key, depth + prefix.len());
+                        let new_child =
+                            Self::do_delete_static(Some(*child), key, depth + prefix.len());
                         return new_child.map(|c| Box::new(RowNode::new_extension(prefix, *c)));
                     }
                 }
@@ -532,10 +556,10 @@ impl RowTrie {
 
     fn do_get_hash(&self, node: Option<&RowNode>, key: &[u8], depth: usize) -> Option<[u8; 32]> {
         match node {
-            None => {
-                None
-            }
-            Some(RowNode::Leaf { row_id, row_hash, .. }) => {
+            None => None,
+            Some(RowNode::Leaf {
+                row_id, row_hash, ..
+            }) => {
                 // Check if we've found the right leaf
                 // We've found it if we've consumed the entire key, OR if the remaining nibbles are all zeros (padding)
                 if depth >= key.len() {
@@ -552,7 +576,11 @@ impl RowTrie {
                     return None;
                 }
                 let nibble = key[depth] as usize;
-                self.do_get_hash(children[nibble].as_ref().map(|c| c.as_ref()), key, depth + 1)
+                self.do_get_hash(
+                    children[nibble].as_ref().map(|c| c.as_ref()),
+                    key,
+                    depth + 1,
+                )
             }
             Some(RowNode::Extension { prefix, child, .. }) => {
                 // Check if the key starting at depth has the extension's prefix
@@ -561,8 +589,8 @@ impl RowTrie {
                     if key_prefix == &prefix[..] {
                         return self.do_get_hash(
                             Some(child.as_ref()),
-                            &key[depth + prefix.len()..],  // Slice past the prefix
-                            0,  // Reset depth - key is now relative
+                            &key[depth + prefix.len()..], // Slice past the prefix
+                            0,                            // Reset depth - key is now relative
                         );
                     }
                 }
@@ -577,10 +605,18 @@ impl RowTrie {
         self.do_get(self.root.as_ref().map(|r| r.as_ref()), &key, 0, row_id)
     }
 
-    fn do_get(&self, node: Option<&RowNode>, key: &[u8], depth: usize, target_row_id: i64) -> Option<DetermRow> {
+    fn do_get(
+        &self,
+        node: Option<&RowNode>,
+        key: &[u8],
+        depth: usize,
+        target_row_id: i64,
+    ) -> Option<DetermRow> {
         match node {
             None => None,
-            Some(RowNode::Leaf { row_id, row_data, .. }) => {
+            Some(RowNode::Leaf {
+                row_id, row_data, ..
+            }) => {
                 // Verify the row_id matches
                 if *row_id != target_row_id {
                     return None;
@@ -595,7 +631,12 @@ impl RowTrie {
                     return None;
                 }
                 let nibble = key[depth] as usize;
-                self.do_get(children[nibble].as_ref().map(|c| c.as_ref()), key, depth + 1, target_row_id)
+                self.do_get(
+                    children[nibble].as_ref().map(|c| c.as_ref()),
+                    key,
+                    depth + 1,
+                    target_row_id,
+                )
             }
             Some(RowNode::Extension { prefix, child, .. }) => {
                 // Check if the key starting at depth has the extension's prefix
@@ -604,8 +645,8 @@ impl RowTrie {
                     if key_prefix == &prefix[..] {
                         return self.do_get(
                             Some(child.as_ref()),
-                            &key[depth + prefix.len()..],  // Slice past the prefix
-                            0,  // Reset depth - key is now relative
+                            &key[depth + prefix.len()..], // Slice past the prefix
+                            0,                            // Reset depth - key is now relative
                             target_row_id,
                         );
                     }
@@ -676,7 +717,9 @@ impl RowTrie {
     ) -> Option<[u8; 32]> {
         match node {
             None => None,
-            Some(RowNode::Leaf { row_id, row_hash, .. }) => {
+            Some(RowNode::Leaf {
+                row_id, row_hash, ..
+            }) => {
                 // Verify the row_id matches
                 if *row_id != target_row_id {
                     return None;
@@ -727,8 +770,8 @@ impl RowTrie {
                         }
                         return self.do_get_hexary_proof(
                             Some(child.as_ref()),
-                            &key[depth + prefix.len()..],  // Slice past the prefix
-                            0,  // Reset depth - key is now relative
+                            &key[depth + prefix.len()..], // Slice past the prefix
+                            0,                            // Reset depth - key is now relative
                             levels,
                             path_nibbles,
                             target_row_id,
@@ -742,10 +785,7 @@ impl RowTrie {
 
     /// Get the current root hash
     pub fn get_root(&self) -> [u8; 32] {
-        self.root
-            .as_ref()
-            .map(|r| r.hash())
-            .unwrap_or([0u8; 32])
+        self.root.as_ref().map(|r| r.hash()).unwrap_or([0u8; 32])
     }
 
     /// Get the number of rows in the trie
@@ -775,8 +815,8 @@ impl RowTrie {
         &self,
         query: crate::zk::confidential::EncryptedQuery,
     ) -> Result<crate::zk::confidential::ConfidentialResult, ConfidentialQueryError> {
-        use crate::zk::confidential::{EncryptedQuery, FilterOp, ConfidentialResult};
         use crate::zk::commitment::pedersen_commit;
+        use crate::zk::confidential::{ConfidentialResult, EncryptedQuery, FilterOp};
 
         // 1. Decrypt the query (currently just extracts plaintext hints)
         // In a full implementation, this would use homomorphic encryption
@@ -791,7 +831,9 @@ impl RowTrie {
                 if self.matches_confidential_filters(&query.filters, &row) {
                     // Generate commitment for this row's primary value
                     // Using first integer value or hash of row data
-                    let value = row.values.first()
+                    let value = row
+                        .values
+                        .first()
                         .and_then(|v| v.as_integer())
                         .unwrap_or(row_id);
                     let mut rng = rand::thread_rng();
@@ -872,9 +914,7 @@ impl RowTrie {
         }
 
         // Get row value for matching
-        let row_value = row.values.first()
-            .and_then(|v| v.as_integer())
-            .unwrap_or(0);
+        let row_value = row.values.first().and_then(|v| v.as_integer()).unwrap_or(0);
 
         for filter in filters {
             // In a real implementation, we'd use the commitment to verify
@@ -975,8 +1015,8 @@ mod tests {
     fn test_encode_row_id() {
         let key = encode_row_id(1);
         assert_eq!(key.len(), 16); // 8 bytes * 2 nibbles
-        // For row_id=1, le_bytes are [1,0,0,0,0,0,0,0]
-        // First byte 1: high nibble=0, low nibble=1
+                                   // For row_id=1, le_bytes are [1,0,0,0,0,0,0,0]
+                                   // First byte 1: high nibble=0, low nibble=1
         assert_eq!(key[0], 0); // High nibble of first byte (1 >> 4)
         assert_eq!(key[1], 1); // Low nibble of first byte (1 & 0x0F)
     }
@@ -1024,7 +1064,12 @@ mod tests {
             assert!(row.is_some(), "Should be able to get row {}", i);
             if let Some(r) = row {
                 assert_eq!(r.len(), 1, "Row {} should have 1 value", i);
-                assert_eq!(r[0], DetermValue::integer(i * 10), "Row {} value mismatch", i);
+                assert_eq!(
+                    r[0],
+                    DetermValue::integer(i * 10),
+                    "Row {} value mismatch",
+                    i
+                );
             }
         }
     }
@@ -1056,7 +1101,12 @@ mod tests {
             assert!(row.is_some(), "Should be able to get row {}", i);
             if let Some(r) = row {
                 assert_eq!(r.len(), 1, "Row {} should have 1 value", i);
-                assert_eq!(r[0], DetermValue::integer(i * 10), "Row {} value mismatch", i);
+                assert_eq!(
+                    r[0],
+                    DetermValue::integer(i * 10),
+                    "Row {} value mismatch",
+                    i
+                );
             }
         }
     }
@@ -1064,14 +1114,10 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_confidential_query_empty() {
-        use crate::zk::confidential::{EncryptedQuery, EncryptedFilter, FilterOp};
+        use crate::zk::confidential::{EncryptedFilter, EncryptedQuery, FilterOp};
 
         let trie = RowTrie::new();
-        let query = EncryptedQuery::new(
-            b"test".to_vec(),
-            vec![],
-            [0u8; 32],
-        );
+        let query = EncryptedQuery::new(b"test".to_vec(), vec![], [0u8; 32]);
 
         let result = trie.execute_confidential_query(query).unwrap();
         assert_eq!(result.row_count, 0);
@@ -1081,7 +1127,7 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_confidential_query_with_rows() {
-        use crate::zk::confidential::{EncryptedQuery, EncryptedFilter, FilterOp};
+        use crate::zk::confidential::{EncryptedFilter, EncryptedQuery, FilterOp};
 
         let mut trie = RowTrie::new();
 
@@ -1092,11 +1138,7 @@ mod tests {
         }
 
         // Query with no filters
-        let query = EncryptedQuery::new(
-            b"test".to_vec(),
-            vec![],
-            [0u8; 32],
-        );
+        let query = EncryptedQuery::new(b"test".to_vec(), vec![], [0u8; 32]);
 
         let result = trie.execute_confidential_query(query).unwrap();
         assert_eq!(result.row_count, 5);
@@ -1107,7 +1149,7 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_confidential_query_with_filters() {
-        use crate::zk::confidential::{EncryptedQuery, EncryptedFilter, FilterOp};
+        use crate::zk::confidential::{EncryptedFilter, EncryptedQuery, FilterOp};
 
         let mut trie = RowTrie::new();
 
@@ -1119,19 +1161,13 @@ mod tests {
         trie.insert(5, DetermRow::from_values(vec![DetermValue::integer(50)]));
 
         // Query with a filter (GreaterThan - matches positive values)
-        let filters = vec![
-            EncryptedFilter::new(
-                b"value".to_vec(),
-                FilterOp::GreaterThan,
-                [0u8; 32],
-                [0u8; 32],
-            ),
-        ];
-        let query = EncryptedQuery::new(
-            b"test".to_vec(),
-            filters,
+        let filters = vec![EncryptedFilter::new(
+            b"value".to_vec(),
+            FilterOp::GreaterThan,
             [0u8; 32],
-        );
+            [0u8; 32],
+        )];
+        let query = EncryptedQuery::new(b"test".to_vec(), filters, [0u8; 32]);
 
         let result = trie.execute_confidential_query(query).unwrap();
         // All rows should match because they all have positive values

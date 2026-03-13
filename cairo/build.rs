@@ -22,11 +22,14 @@ fn main() {
         if Path::new(&src_path).exists() {
             // For now, just verify the file exists
             // Real compilation would use cairo-compile or similar
-            println!("cargo:rustc-env={}_CAIRO={}", program.to_uppercase(), src_path);
+            println!(
+                "cargo:rustc-env={}_CAIRO={}",
+                program.to_uppercase(),
+                src_path
+            );
         }
     }
 
     // Generate a marker file to track compilation status
-    fs::write(dest_path.join("compiled.txt"), "compiled")
-        .expect("Failed to write marker");
+    fs::write(dest_path.join("compiled.txt"), "compiled").expect("Failed to write marker");
 }

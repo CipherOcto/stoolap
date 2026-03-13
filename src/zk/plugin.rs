@@ -2,8 +2,8 @@
 // STWO plugin loading and verification
 
 use libloading::{Library, Symbol};
-use std::path::Path;
 use std::os::raw::c_char;
+use std::path::Path;
 
 /// Result of a verification operation from the plugin
 #[repr(C)]
@@ -52,8 +52,8 @@ pub struct STWOPlugin {
 impl STWOPlugin {
     /// Load the plugin from a .so file
     pub fn load(path: &Path) -> Result<Self, PluginError> {
-        let lib = unsafe { Library::new(path) }
-            .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
+        let lib =
+            unsafe { Library::new(path) }.map_err(|e| PluginError::LoadFailed(e.to_string()))?;
         Ok(Self { lib })
     }
 
@@ -62,7 +62,8 @@ impl STWOPlugin {
         type VerifyFn = unsafe extern "C" fn(*const u8, usize) -> StarkVerifyResult;
 
         let func: Symbol<VerifyFn> = unsafe {
-            self.lib.get(b"stark_verify_proof")
+            self.lib
+                .get(b"stark_verify_proof")
                 .map_err(|_| PluginError::SymbolNotFound)?
         };
 
@@ -87,7 +88,8 @@ impl STWOPlugin {
         type VersionFn = extern "C" fn() -> *const c_char;
 
         let func: Symbol<VersionFn> = unsafe {
-            self.lib.get(b"stark_plugin_version")
+            self.lib
+                .get(b"stark_plugin_version")
                 .map_err(|_| PluginError::SymbolNotFound)?
         };
 

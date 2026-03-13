@@ -17,11 +17,11 @@
 //! This module provides the execution engine for SQL operations, including
 //! gas metering for transaction execution.
 
-pub mod gas;
 pub mod context;
+pub mod gas;
 
-pub use gas::{GasMeter, GasPrice, GasPrices};
 pub use context::{ExecutionContext, StateSnapshot};
+pub use gas::{GasMeter, GasPrice, GasPrices};
 
 #[cfg(test)]
 mod tests;

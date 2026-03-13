@@ -30,8 +30,8 @@ use super::ops::{CompareOp, Op};
 use super::program::Program;
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Result, Row, Value, NULL_VALUE};
+use octo_determin::dqa::{dqa_add, dqa_assign_to_column, dqa_div, dqa_mul, dqa_sub, Dqa};
 use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, Dfp, DfpEncoding};
-use octo_determin::dqa::{dqa_assign_to_column, dqa_add, dqa_div, dqa_mul, dqa_sub, Dqa};
 
 /// Stack value that can be borrowed (from row/constants) or owned (from operations)
 type StackValue<'a> = Cow<'a, Value>;
@@ -3256,7 +3256,13 @@ impl ExprVM {
     }
 
     #[inline]
-    fn arithmetic_op<FF>(&self, a: &Value, b: &Value, int_op: ArithmeticOp, float_op: FF) -> Result<Value>
+    fn arithmetic_op<FF>(
+        &self,
+        a: &Value,
+        b: &Value,
+        int_op: ArithmeticOp,
+        float_op: FF,
+    ) -> Result<Value>
     where
         FF: Fn(f64, f64) -> f64,
     {
@@ -3322,11 +3328,18 @@ impl ExprVM {
                     // Check if mixing with non-DFP Extension (like Vector or Json)
                     let type_a = a.first().copied();
                     let type_b = b.first().copied();
-                    if type_a == Some(DataType::Vector as u8) || type_b == Some(DataType::Vector as u8) {
-                        return Err(crate::core::Error::Type("cannot perform arithmetic on Vector type".to_string()));
+                    if type_a == Some(DataType::Vector as u8)
+                        || type_b == Some(DataType::Vector as u8)
+                    {
+                        return Err(crate::core::Error::Type(
+                            "cannot perform arithmetic on Vector type".to_string(),
+                        ));
                     }
-                    if type_a == Some(DataType::Json as u8) || type_b == Some(DataType::Json as u8) {
-                        return Err(crate::core::Error::Type("cannot perform arithmetic on JSON type".to_string()));
+                    if type_a == Some(DataType::Json as u8) || type_b == Some(DataType::Json as u8)
+                    {
+                        return Err(crate::core::Error::Type(
+                            "cannot perform arithmetic on JSON type".to_string(),
+                        ));
                     }
                     Ok(Value::Null(DataType::DeterministicFloat))
                 }
@@ -3397,7 +3410,12 @@ impl ExprVM {
 
     /// Deterministic arithmetic: INT → DFP promotion, rejects FLOAT
     #[inline]
-    fn arithmetic_op_deterministic(&self, a: &Value, b: &Value, int_op: ArithmeticOp) -> Result<Value> {
+    fn arithmetic_op_deterministic(
+        &self,
+        a: &Value,
+        b: &Value,
+        int_op: ArithmeticOp,
+    ) -> Result<Value> {
         // In deterministic mode:
         // - Integer + Integer → DFP (promotion)
         // - Integer + DFP → DFP (promotion)
@@ -3408,7 +3426,8 @@ impl ExprVM {
         match (a, b) {
             (Value::Float(_), _) | (_, Value::Float(_)) => {
                 return Err(crate::core::Error::Type(
-                    "FLOAT not allowed in deterministic mode: use DFP or CAST(value AS DFP)".to_string()
+                    "FLOAT not allowed in deterministic mode: use DFP or CAST(value AS DFP)"
+                        .to_string(),
                 ));
             }
             _ => {}

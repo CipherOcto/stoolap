@@ -20,13 +20,13 @@
 //! - Product Quantization (PQ): Sub-vector quantization, 4-64x configurable
 
 pub mod config;
+pub mod distance;
+pub mod product;
 pub mod quantizer;
 pub mod scalar;
-pub mod product;
-pub mod distance;
 
 pub use config::{QuantizationConfig, QuantizationType};
+pub use distance::{euclidean_distance, hamming_distance, hamming_to_similarity};
+pub use product::ProductQuantizer;
 pub use quantizer::BinaryQuantizer;
 pub use scalar::ScalarQuantizer;
-pub use product::ProductQuantizer;
-pub use distance::{hamming_distance, hamming_to_similarity, euclidean_distance};

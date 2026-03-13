@@ -186,7 +186,9 @@ impl VectorSegment {
             .iter()
             .copied()
             .zip(self.embeddings.chunks(self.dimensions))
-            .filter(|(id, _)| !self.deleted[self.vector_ids.iter().position(|&x| x == *id).unwrap_or(0)])
+            .filter(|(id, _)| {
+                !self.deleted[self.vector_ids.iter().position(|&x| x == *id).unwrap_or(0)]
+            })
     }
 
     /// Get count of non-deleted vectors

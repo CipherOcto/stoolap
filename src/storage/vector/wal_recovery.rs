@@ -20,8 +20,8 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
-use crate::core::Result;
 use super::wal_logger::VectorWalEntry;
+use crate::core::Result;
 
 /// Read and replay WAL entries from a file
 pub struct VectorWalRecovery {
@@ -54,7 +54,11 @@ impl VectorWalRecovery {
             match reader.read_exact(&mut op) {
                 Ok(_) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(crate::core::Error::Io { message: e.to_string() }),
+                Err(e) => {
+                    return Err(crate::core::Error::Io {
+                        message: e.to_string(),
+                    })
+                }
             }
 
             // Read table name length
@@ -138,8 +142,8 @@ impl VectorMvccRecovery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use crate::storage::vector::VectorWalLogger;
+    use tempfile::tempdir;
 
     #[test]
     fn test_wal_recovery() {
@@ -158,10 +162,12 @@ mod tests {
         // Recover
         let recovery = VectorWalRecovery::new(&wal_path);
         let entries = std::sync::Mutex::new(Vec::new());
-        recovery.replay(|entry| {
-            entries.lock().unwrap().push(entry);
-            Ok(())
-        }).unwrap();
+        recovery
+            .replay(|entry| {
+                entries.lock().unwrap().push(entry);
+                Ok(())
+            })
+            .unwrap();
 
         assert_eq!(entries.lock().unwrap().len(), 2);
     }

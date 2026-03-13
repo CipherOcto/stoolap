@@ -21,12 +21,12 @@
 //! 4. Error handling and gas metering
 
 use crate::zk::{
-    CairoProgram, CairoProgramHash, CairoProgramRegistry, ProverConfig, ProverError, STWOProver,
-    StarkProof, VerifyError,
     bundled::{
         get_bundled_program, is_bundled_program, register_bundled_programs, BundledError,
         HEXARY_VERIFY_HASH, MERKLE_BATCH_HASH, STATE_TRANSITION_HASH,
     },
+    CairoProgram, CairoProgramHash, CairoProgramRegistry, ProverConfig, ProverError, STWOProver,
+    StarkProof, VerifyError,
 };
 
 // Helper function to check if a program is in the registry
@@ -78,7 +78,10 @@ fn test_bundled_programs_registration() {
 
     // Register all bundled programs
     let result = register_bundled_programs(&mut registry);
-    assert!(result.is_ok(), "Bundled programs should register successfully");
+    assert!(
+        result.is_ok(),
+        "Bundled programs should register successfully"
+    );
 
     // Verify all three programs are registered
     assert!(registry_contains(&registry, &STATE_TRANSITION_HASH));
@@ -117,15 +120,24 @@ fn test_program_allowlist_enforcement() {
     registry.register(program).unwrap();
 
     // By default, programs are NOT on the allowlist
-    assert!(!registry.is_allowed(&hash), "New programs should not be on allowlist");
+    assert!(
+        !registry.is_allowed(&hash),
+        "New programs should not be on allowlist"
+    );
 
     // Add to allowlist
     registry.allowlist_add(hash).unwrap();
-    assert!(registry.is_allowed(&hash), "Program should be allowed after allowlist_add()");
+    assert!(
+        registry.is_allowed(&hash),
+        "Program should be allowed after allowlist_add()"
+    );
 
     // Remove from allowlist
     registry.allowlist_remove(&hash).unwrap();
-    assert!(!registry.is_allowed(&hash), "Program should not be allowed after allowlist_remove()");
+    assert!(
+        !registry.is_allowed(&hash),
+        "Program should not be allowed after allowlist_remove()"
+    );
 }
 
 #[test]
@@ -216,7 +228,11 @@ fn test_verify_with_mismatched_outputs() {
     // Verify with different outputs
     let result = prover.verify(&proof, &[99]);
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), false, "Proof should be invalid with mismatched outputs");
+    assert_eq!(
+        result.unwrap(),
+        false,
+        "Proof should be invalid with mismatched outputs"
+    );
 }
 
 #[test]
@@ -350,7 +366,10 @@ fn test_zk_operation_gas_estimate() {
     let register_duration = start.elapsed();
 
     // Should be very fast (< 1ms)
-    assert!(register_duration.as_millis() < 10, "Registration should be fast");
+    assert!(
+        register_duration.as_millis() < 10,
+        "Registration should be fast"
+    );
 
     // Generate proof (gas cost estimate)
     let mut proof_program = CairoProgram::from_source("fn main() {}".to_string(), 2);
@@ -362,17 +381,29 @@ fn test_zk_operation_gas_estimate() {
     let prove_duration = start.elapsed();
 
     // Mock proof generation should be fast (< 10ms)
-    assert!(prove_duration.as_millis() < 50, "Mock proof generation should be fast");
+    assert!(
+        prove_duration.as_millis() < 50,
+        "Mock proof generation should be fast"
+    );
 
     // Verify proof (gas cost estimate)
-    let proof = StarkProof::new(proof_program.hash, vec![1, 2, 3], vec![42], vec![1, 2, 3], vec![]);
+    let proof = StarkProof::new(
+        proof_program.hash,
+        vec![1, 2, 3],
+        vec![42],
+        vec![1, 2, 3],
+        vec![],
+    );
 
     let start = std::time::Instant::now();
     let _result = prover.verify(&proof, &[42]).unwrap();
     let verify_duration = start.elapsed();
 
     // Verification should be fast (< 1ms)
-    assert!(verify_duration.as_millis() < 10, "Verification should be fast");
+    assert!(
+        verify_duration.as_millis() < 10,
+        "Verification should be fast"
+    );
 }
 
 // ============================================================================
@@ -418,7 +449,10 @@ fn test_proof_generation_baseline_performance() {
     let duration = start.elapsed();
 
     // Mock proof generation should be < 10ms for 100 inputs
-    assert!(duration.as_millis() < 10, "Mock proof generation should be fast");
+    assert!(
+        duration.as_millis() < 10,
+        "Mock proof generation should be fast"
+    );
     println!("Proof generation for 100 inputs: {:?}", duration);
 }
 
@@ -432,20 +466,17 @@ fn test_batch_proof_verification_performance() {
 
     // Verify 100 proofs
     for i in 0..100 {
-        let proof = StarkProof::new(
-            program.hash,
-            vec![i as u8],
-            vec![42],
-            vec![1, 2, 3],
-            vec![],
-        );
+        let proof = StarkProof::new(program.hash, vec![i as u8], vec![42], vec![1, 2, 3], vec![]);
         let _result = prover.verify(&proof, &[42]).unwrap();
     }
 
     let duration = start.elapsed();
 
     // 100 verifications should be < 100ms
-    assert!(duration.as_millis() < 100, "Batch verification should be fast");
+    assert!(
+        duration.as_millis() < 100,
+        "Batch verification should be fast"
+    );
     println!("100 proof verifications: {:?}", duration);
 }
 
@@ -500,10 +531,15 @@ fn test_end_to_end_flow_register_prove_verify() {
     let hash = program.hash;
 
     // 4. Verify it's registered
-    assert!(registry_contains(&registry, &hash), "Program should be in registry");
+    assert!(
+        registry_contains(&registry, &hash),
+        "Program should be in registry"
+    );
 
     // 5. Add to allowlist
-    registry.allowlist_add(hash).expect("Allowlist add should succeed");
+    registry
+        .allowlist_add(hash)
+        .expect("Allowlist add should succeed");
     assert!(registry.is_allowed(&hash), "Program should be allowed");
 
     // 6. Create prover
@@ -511,7 +547,9 @@ fn test_end_to_end_flow_register_prove_verify() {
 
     // 7. Generate proof
     let inputs = vec![1, 2, 3, 4];
-    let proof = prover.prove(&program, &inputs).expect("Proof generation should succeed");
+    let proof = prover
+        .prove(&program, &inputs)
+        .expect("Proof generation should succeed");
 
     // 8. Verify proof
     let is_valid = prover

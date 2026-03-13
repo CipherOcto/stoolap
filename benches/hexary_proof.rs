@@ -14,7 +14,7 @@
 
 //! Benchmark for HexaryProof operations
 
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stoolap::determ::{DetermRow, DetermValue};
 use stoolap::trie::row_trie::RowTrie;
 

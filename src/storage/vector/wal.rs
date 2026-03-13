@@ -35,7 +35,8 @@ pub struct VectorWalData {
 impl VectorWalData {
     /// Serialize vector WAL data
     pub fn serialize(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(8 + 4 + self.embedding.as_ref().map(|e| e.len() * 4).unwrap_or(0));
+        let mut data =
+            Vec::with_capacity(8 + 4 + self.embedding.as_ref().map(|e| e.len() * 4).unwrap_or(0));
 
         // segment_id (u64)
         data.extend_from_slice(&self.segment_id.to_le_bytes());
@@ -59,13 +60,17 @@ impl VectorWalData {
     /// Deserialize vector WAL data
     pub fn deserialize(data: &[u8]) -> Result<Self> {
         if data.len() < 12 {
-            return Err(crate::core::Error::Parse("vector WAL data too short".to_string()));
+            return Err(crate::core::Error::Parse(
+                "vector WAL data too short".to_string(),
+            ));
         }
 
         let mut offset = 0;
 
         // segment_id
-        let segment_id = u64::from_le_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]);
+        let segment_id = u64::from_le_bytes([
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+        ]);
         offset += 8;
 
         // dimension
@@ -81,7 +86,10 @@ impl VectorWalData {
             let mut emb = Vec::with_capacity(embedding_len);
             for _ in 0..embedding_len {
                 let val = f32::from_le_bytes([
-                    data[offset], data[offset+1], data[offset+2], data[offset+3]
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
                 ]);
                 emb.push(val);
                 offset += 4;
@@ -234,11 +242,7 @@ pub fn index_build_entry(
 }
 
 /// Create a compaction start WAL entry
-pub fn compaction_start_entry(
-    txn_id: i64,
-    table_name: &str,
-    segments: &[u64],
-) -> WALEntry {
+pub fn compaction_start_entry(txn_id: i64, table_name: &str, segments: &[u64]) -> WALEntry {
     let mut data = Vec::with_capacity(4 + segments.len() * 8);
     data.extend_from_slice(&(segments.len() as u32).to_le_bytes());
     for seg_id in segments {

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::determ::{DetermRow, DetermValue};
 use crate::trie::proof::{hash_pair, merkle_root, MerkleProof};
 use crate::trie::row_trie::RowTrie;
-use crate::determ::{DetermRow, DetermValue};
 
 // Tests for deprecated MerkleProof - kept for documentation purposes
 #[allow(deprecated)]

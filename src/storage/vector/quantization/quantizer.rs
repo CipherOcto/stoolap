@@ -66,7 +66,11 @@ impl BinaryQuantizer {
         let mut result = vec![0.0; self.dimension];
         for i in 0..self.dimension {
             let byte = data[i / 8];
-            result[i] = if byte & (1 << (i % 8)) != 0 { 1.0 } else { -1.0 };
+            result[i] = if byte & (1 << (i % 8)) != 0 {
+                1.0
+            } else {
+                -1.0
+            };
         }
         result
     }

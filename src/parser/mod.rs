@@ -332,19 +332,34 @@ mod tests {
 
     #[test]
     fn test_parse_vector_quantize_bq() {
-        let result = parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = BQ)");
-        assert!(result.is_ok(), "Failed to parse VECTOR QUANTIZE = BQ: {:?}", result);
+        let result =
+            parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = BQ)");
+        assert!(
+            result.is_ok(),
+            "Failed to parse VECTOR QUANTIZE = BQ: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_parse_vector_quantize_sq() {
-        let result = parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = SQ)");
-        assert!(result.is_ok(), "Failed to parse VECTOR QUANTIZE = SQ: {:?}", result);
+        let result =
+            parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = SQ)");
+        assert!(
+            result.is_ok(),
+            "Failed to parse VECTOR QUANTIZE = SQ: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_parse_vector_quantize_pq() {
-        let result = parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ(8))");
-        assert!(result.is_ok(), "Failed to parse VECTOR QUANTIZE = PQ(8): {:?}", result);
+        let result =
+            parse_sql("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ(8))");
+        assert!(
+            result.is_ok(),
+            "Failed to parse VECTOR QUANTIZE = PQ(8): {:?}",
+            result
+        );
     }
 }

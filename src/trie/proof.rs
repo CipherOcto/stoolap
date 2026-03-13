@@ -259,7 +259,8 @@ impl HexaryProof {
             };
 
             // Reconstruct the 16-child array
-            let children = reconstruct_children(level.bitmap, &level.siblings, path_nibble, current_hash);
+            let children =
+                reconstruct_children(level.bitmap, &level.siblings, path_nibble, current_hash);
 
             // Hash the children to get the parent hash
             current_hash = hash_16_children(&children);
@@ -589,7 +590,11 @@ impl std::fmt::Display for SerializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SerializationError::InsufficientData { expected, found } => {
-                write!(f, "Insufficient data: expected {} bytes, found {}", expected, found)
+                write!(
+                    f,
+                    "Insufficient data: expected {} bytes, found {}",
+                    expected, found
+                )
             }
             SerializationError::InvalidData(msg) => {
                 write!(f, "Invalid data: {}", msg)
@@ -778,42 +783,60 @@ impl SolanaSerialize for HexaryProof {
 
         // Value hash
         if data.len() < cursor + 32 {
-            return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + 32,
+                found: data.len(),
+            });
         }
         let value_hash = data[cursor..cursor + 32].try_into().unwrap();
         cursor += 32;
 
         // Root hash
         if data.len() < cursor + 32 {
-            return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + 32,
+                found: data.len(),
+            });
         }
         let root = data[cursor..cursor + 32].try_into().unwrap();
         cursor += 32;
 
         // Path nibble count
         if data.len() < cursor + 1 {
-            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + 1,
+                found: data.len(),
+            });
         }
         let path_nibble_count = data[cursor] as usize;
         cursor += 1;
 
         // Path length
         if data.len() < cursor + 1 {
-            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + 1,
+                found: data.len(),
+            });
         }
         let path_len = data[cursor] as usize;
         cursor += 1;
 
         // Path data
         if data.len() < cursor + path_len {
-            return Err(InsufficientData { expected: cursor + path_len, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + path_len,
+                found: data.len(),
+            });
         }
         let path = data[cursor..cursor + path_len].to_vec();
         cursor += path_len;
 
         // Levels length
         if data.len() < cursor + 1 {
-            return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+            return Err(InsufficientData {
+                expected: cursor + 1,
+                found: data.len(),
+            });
         }
         let levels_len = data[cursor] as usize;
         cursor += 1;
@@ -822,14 +845,20 @@ impl SolanaSerialize for HexaryProof {
         for _ in 0..levels_len {
             // Bitmap (u16 LE)
             if data.len() < cursor + 2 {
-                return Err(InsufficientData { expected: cursor + 2, found: data.len() });
+                return Err(InsufficientData {
+                    expected: cursor + 2,
+                    found: data.len(),
+                });
             }
             let bitmap = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap());
             cursor += 2;
 
             // Sibling count
             if data.len() < cursor + 1 {
-                return Err(InsufficientData { expected: cursor + 1, found: data.len() });
+                return Err(InsufficientData {
+                    expected: cursor + 1,
+                    found: data.len(),
+                });
             }
             let sibling_count = data[cursor] as usize;
             cursor += 1;
@@ -838,7 +867,10 @@ impl SolanaSerialize for HexaryProof {
             let mut siblings = Vec::new();
             for _ in 0..sibling_count {
                 if data.len() < cursor + 32 {
-                    return Err(InsufficientData { expected: cursor + 32, found: data.len() });
+                    return Err(InsufficientData {
+                        expected: cursor + 32,
+                        found: data.len(),
+                    });
                 }
                 siblings.push(data[cursor..cursor + 32].try_into().unwrap());
                 cursor += 32;
@@ -1007,12 +1039,10 @@ mod tests {
     fn test_hexary_proof_basic_structure() {
         let proof = HexaryProof {
             value_hash: [1u8; 32],
-            levels: vec![
-                ProofLevel {
-                    bitmap: 0b1000000000001000,
-                    siblings: vec![[2u8; 32]],
-                }
-            ],
+            levels: vec![ProofLevel {
+                bitmap: 0b1000000000001000,
+                siblings: vec![[2u8; 32]],
+            }],
             root: [3u8; 32],
             path: vec![0x35], // nibbles [5]
             path_nibble_count: 1,
@@ -1198,7 +1228,9 @@ mod tests {
 
     #[test]
     fn test_hexary_proof_verify_single_level() {
-        use crate::trie::proof::{HexaryProof, hash_16_children, reconstruct_children, pack_nibbles};
+        use crate::trie::proof::{
+            hash_16_children, pack_nibbles, reconstruct_children, HexaryProof,
+        };
 
         // Create a simple proof with one level
         // Path nibble is 5, siblings at positions 3 and 12
@@ -1221,7 +1253,9 @@ mod tests {
 
     #[test]
     fn test_hexary_proof_verify_two_levels() {
-        use crate::trie::proof::{HexaryProof, hash_16_children, reconstruct_children, pack_nibbles};
+        use crate::trie::proof::{
+            hash_16_children, pack_nibbles, reconstruct_children, HexaryProof,
+        };
 
         // Create a two-level proof
         let value_hash = [1u8; 32];
@@ -1235,7 +1269,8 @@ mod tests {
         // Level 1 (root): path nibble 12, sibling at position 7
         let level1_bitmap = (1u16 << 7) | (1u16 << 12);
         let level1_siblings = vec![[7u8; 32]];
-        let level1_children = reconstruct_children(level1_bitmap, &level1_siblings, 12, level0_hash);
+        let level1_children =
+            reconstruct_children(level1_bitmap, &level1_siblings, 12, level0_hash);
         let expected_root = hash_16_children(&level1_children);
 
         // Path is [12, 5] - level 1 uses nibble 12, level 0 uses nibble 5
@@ -1269,12 +1304,10 @@ mod tests {
 
         let original = HexaryProof {
             value_hash: [1u8; 32],
-            levels: vec![
-                ProofLevel {
-                    bitmap: 0x1234,
-                    siblings: vec![[2u8; 32], [3u8; 32]],
-                },
-            ],
+            levels: vec![ProofLevel {
+                bitmap: 0x1234,
+                siblings: vec![[2u8; 32], [3u8; 32]],
+            }],
             root: [4u8; 32],
             path: vec![0x35, 0xC3],
             path_nibble_count: 4, // 2 bytes * 2 nibbles
@@ -1310,15 +1343,13 @@ mod tests {
         assert!(HexaryProof::verify_batch_sequential(&proofs));
 
         // With invalid proof
-        let invalid_proofs = vec![
-            HexaryProof {
-                value_hash: [1u8; 32],
-                levels: vec![],
-                root: [99u8; 32], // Wrong
-                path: vec![],
-                path_nibble_count: 0,
-            },
-        ];
+        let invalid_proofs = vec![HexaryProof {
+            value_hash: [1u8; 32],
+            levels: vec![],
+            root: [99u8; 32], // Wrong
+            path: vec![],
+            path_nibble_count: 0,
+        }];
 
         assert!(!HexaryProof::verify_batch_sequential(&invalid_proofs));
     }
@@ -1348,15 +1379,13 @@ mod tests {
         assert!(HexaryProof::verify_batch(&proofs));
 
         // With invalid proof
-        let invalid_proofs = vec![
-            HexaryProof {
-                value_hash: [1u8; 32],
-                levels: vec![],
-                root: [99u8; 32], // Wrong
-                path: vec![],
-                path_nibble_count: 0,
-            },
-        ];
+        let invalid_proofs = vec![HexaryProof {
+            value_hash: [1u8; 32],
+            levels: vec![],
+            root: [99u8; 32], // Wrong
+            path: vec![],
+            path_nibble_count: 0,
+        }];
 
         assert!(!HexaryProof::verify_batch(&invalid_proofs));
     }

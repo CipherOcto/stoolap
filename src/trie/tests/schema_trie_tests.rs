@@ -15,7 +15,7 @@
 //! SchemaTrie tests
 
 use crate::core::DataType;
-use crate::trie::schema_trie::{SchemaTrie, TableSchema, ColumnDef};
+use crate::trie::schema_trie::{ColumnDef, SchemaTrie, TableSchema};
 use std::collections::BTreeMap;
 
 #[test]

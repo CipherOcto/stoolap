@@ -139,10 +139,7 @@ impl SubmissionContext {
     /// 3. Verifies the parent hash
     /// 4. Verifies the STARK proof (if zk feature enabled)
     /// 5. Updates the rollup state
-    pub fn submit_batch(
-        &mut self,
-        batch: RollupBatch,
-    ) -> SubmissionResult<SubmissionResult_> {
+    pub fn submit_batch(&mut self, batch: RollupBatch) -> SubmissionResult<SubmissionResult_> {
         // 1. Verify sequencer is authorized
         if !self.is_authorized_sequencer(&batch.sequencer) {
             return Err(SubmissionError::UnauthorizedSequencer);
@@ -248,7 +245,10 @@ mod tests {
         batch.sequencer = Address::new([9u8; 20]);
 
         let result = ctx.submit_batch(batch);
-        assert!(matches!(result, Err(SubmissionError::UnauthorizedSequencer)));
+        assert!(matches!(
+            result,
+            Err(SubmissionError::UnauthorizedSequencer)
+        ));
     }
 
     #[test]

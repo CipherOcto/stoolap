@@ -142,7 +142,11 @@ impl RollupBatch {
     }
 
     /// Execute batch without proof generation
-    pub fn execute(&self, pre_state_root: [u8; 32], parent_hash: [u8; 32]) -> RollupResult<ExecutionResult> {
+    pub fn execute(
+        &self,
+        pre_state_root: [u8; 32],
+        parent_hash: [u8; 32],
+    ) -> RollupResult<ExecutionResult> {
         self.execute_and_prove(pre_state_root, parent_hash)
     }
 
@@ -192,7 +196,9 @@ impl RollupState {
             TxType::Call => {
                 // Contract call - execute in state
                 if tx.to.is_none() {
-                    return Err(RollupError::InvalidTransaction("Call requires target".to_string()));
+                    return Err(RollupError::InvalidTransaction(
+                        "Call requires target".to_string(),
+                    ));
                 }
                 self.apply_call(tx.to.as_ref().unwrap(), &tx.data);
             }
@@ -213,7 +219,12 @@ impl RollupState {
     }
 
     /// Apply a transfer (simplified state update)
-    fn apply_transfer(&mut self, _from: &super::types::Address, _to: Option<&super::types::Address>, _amount: u64) {
+    fn apply_transfer(
+        &mut self,
+        _from: &super::types::Address,
+        _to: Option<&super::types::Address>,
+        _amount: u64,
+    ) {
         // In a real implementation, this would update account balances
         // For now, we just update the state root
         self.update_state_root();
@@ -250,7 +261,7 @@ impl RollupState {
 
     /// Update the state root (simplified)
     fn update_state_root(&mut self) {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&self.state_root);
         hasher.update(&self.batch_number.to_le_bytes());
@@ -288,7 +299,7 @@ mod tests {
     fn test_batch_execution_invalid_parent() {
         let batch = RollupBatch::new(
             1,
-            [1u8; 32],  // Different parent hash
+            [1u8; 32], // Different parent hash
             vec![],
             [1u8; 32],
             [2u8; 32],
@@ -306,7 +317,7 @@ mod tests {
             1,
             [0u8; 32],
             vec![],
-            [1u8; 32],  // Pre-state root
+            [1u8; 32], // Pre-state root
             [2u8; 32],
             1000,
             Address::zero(),
@@ -360,7 +371,13 @@ mod tests {
 
     #[test]
     fn test_rollup_error_display() {
-        assert_eq!(format!("{}", RollupError::InvalidParent), "Invalid parent batch hash");
-        assert_eq!(format!("{}", RollupError::BatchTooLarge), "Batch exceeds maximum size");
+        assert_eq!(
+            format!("{}", RollupError::InvalidParent),
+            "Invalid parent batch hash"
+        );
+        assert_eq!(
+            format!("{}", RollupError::BatchTooLarge),
+            "Batch exceeds maximum size"
+        );
     }
 }

@@ -104,11 +104,7 @@ impl STWOProver {
     /// - Execution fails
     /// - Proof generation times out
     /// - Proof exceeds size limits
-    pub fn prove(
-        &self,
-        program: &CairoProgram,
-        inputs: &[u8],
-    ) -> Result<StarkProof, ProverError> {
+    pub fn prove(&self, program: &CairoProgram, inputs: &[u8]) -> Result<StarkProof, ProverError> {
         // Check if program is compiled
         if !program.is_compiled() {
             return Err(ProverError::CompilationFailed(
@@ -154,13 +150,11 @@ impl STWOProver {
     /// - Proof format is invalid
     /// - Proof verification fails
     /// - Outputs don't match
-    pub fn verify(
-        &self,
-        proof: &StarkProof,
-        expected_outputs: &[u8],
-    ) -> Result<bool, VerifyError> {
+    pub fn verify(&self, proof: &StarkProof, expected_outputs: &[u8]) -> Result<bool, VerifyError> {
         // Validate proof structure
-        proof.validate().map_err(|e| VerifyError::InvalidProofFormat(format!("{:?}", e)))?;
+        proof
+            .validate()
+            .map_err(|e| VerifyError::InvalidProofFormat(format!("{:?}", e)))?;
 
         // For now, this is a stub that will be integrated with STWO later
         // The actual implementation will:
@@ -234,7 +228,8 @@ impl STWOProver {
         Err(ProverError::ProvingFailed(
             "Real proof generation requires ProverInput from adapter module. \
              The crates.io stwo-cairo-prover v1.1 does not export adapter. \
-             Use local stwo-cairo (v1.1.0 tag) with adapter for full integration.".to_string()
+             Use local stwo-cairo (v1.1.0 tag) with adapter for full integration."
+                .to_string(),
         ))
     }
 }
@@ -380,13 +375,7 @@ mod tests {
         let prover = STWOProver::new();
         let program = CairoProgram::from_source("fn main() {}".to_string(), 2);
 
-        let proof = StarkProof::new(
-            program.hash,
-            vec![1, 2, 3],
-            vec![42],
-            vec![7, 8, 9],
-            vec![],
-        );
+        let proof = StarkProof::new(program.hash, vec![1, 2, 3], vec![42], vec![7, 8, 9], vec![]);
 
         // Verify with matching outputs
         let result = prover.verify(&proof, &[42]);
@@ -399,13 +388,7 @@ mod tests {
         let prover = STWOProver::new();
         let program = CairoProgram::from_source("fn main() {}".to_string(), 2);
 
-        let proof = StarkProof::new(
-            program.hash,
-            vec![1, 2, 3],
-            vec![42],
-            vec![7, 8, 9],
-            vec![],
-        );
+        let proof = StarkProof::new(program.hash, vec![1, 2, 3], vec![42], vec![7, 8, 9], vec![]);
 
         // Verify with different outputs
         let result = prover.verify(&proof, &[99]);
@@ -419,13 +402,7 @@ mod tests {
         let program = CairoProgram::from_source("fn main() {}".to_string(), 2);
 
         // Create an invalid proof (empty)
-        let proof = StarkProof::new(
-            program.hash,
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-        );
+        let proof = StarkProof::new(program.hash, vec![], vec![], vec![], vec![]);
 
         let result = prover.verify(&proof, &[42]);
         assert!(result.is_err());

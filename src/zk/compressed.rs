@@ -20,8 +20,8 @@
 
 use crate::core::value::Value;
 use crate::trie::proof::HexaryProof;
-use crate::zk::proof::{SerializationError, SolanaSerialize, StarkProof};
 use crate::zk::bundled::MERKLE_BATCH_HASH;
+use crate::zk::proof::{SerializationError, SolanaSerialize, StarkProof};
 
 /// Average size of a hexary proof in bytes (empirical measurement)
 pub const AVG_HEXARY_PROOF_SIZE: usize = 68;
@@ -53,11 +53,7 @@ pub struct CompressedProof {
 
 impl CompressedProof {
     /// Create a new compressed proof
-    pub fn new(
-        row_count: u64,
-        root: [u8; 32],
-        stark_proof: StarkProof,
-    ) -> Self {
+    pub fn new(row_count: u64, root: [u8; 32], stark_proof: StarkProof) -> Self {
         Self {
             program_hash: MERKLE_BATCH_HASH,
             row_count,
@@ -128,7 +124,8 @@ impl CompressedProof {
         }
 
         // Check STARK proof validity
-        self.stark_proof.validate()
+        self.stark_proof
+            .validate()
             .map_err(|e| CompressedProofError::InvalidStarkProof(format!("{:?}", e)))?;
 
         // Check compressed size limit
@@ -167,11 +164,11 @@ impl CompressedProof {
         self.validate()?;
 
         // 2. Load and use plugin (no fallback - intentional)
-        let plugin = crate::zk::plugin::load_plugin()
-            .map_err(CompressedProofError::from)?;
+        let plugin = crate::zk::plugin::load_plugin().map_err(CompressedProofError::from)?;
 
         // 3. Verify proof using plugin
-        plugin.verify(&self.stark_proof.proof)
+        plugin
+            .verify(&self.stark_proof.proof)
             .map_err(CompressedProofError::from)
     }
 
@@ -369,7 +366,11 @@ impl std::fmt::Display for CompressedProofError {
                 write!(f, "Invalid STARK proof: {}", msg)
             }
             CompressedProofError::ProofTooLarge(size) => {
-                write!(f, "Proof size {} exceeds maximum {}", size, MAX_COMPRESSED_SIZE)
+                write!(
+                    f,
+                    "Proof size {} exceeds maximum {}",
+                    size, MAX_COMPRESSED_SIZE
+                )
             }
             CompressedProofError::InvalidProgramHash => {
                 write!(f, "Program hash is invalid (all zeros)")
@@ -443,13 +444,8 @@ mod tests {
 
     #[test]
     fn test_compressed_proof_creation() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2, 3],
-            vec![42],
-            vec![4, 5, 6, 7],
-            vec![],
-        );
+        let stark_proof =
+            StarkProof::new([1u8; 32], vec![1, 2, 3], vec![42], vec![4, 5, 6, 7], vec![]);
 
         let proof = CompressedProof::new(100, [2u8; 32], stark_proof);
 
@@ -461,20 +457,9 @@ mod tests {
     #[test]
     fn test_compressed_proof_with_custom_program_hash() {
         let custom_hash = [99u8; 32];
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
-        let proof = CompressedProof::with_program_hash(
-            custom_hash,
-            50,
-            [3u8; 32],
-            stark_proof,
-        );
+        let proof = CompressedProof::with_program_hash(custom_hash, 50, [3u8; 32], stark_proof);
 
         assert_eq!(proof.program_hash, custom_hash);
         assert_eq!(proof.row_count, 50);
@@ -496,7 +481,11 @@ mod tests {
         // Compressed: 100 + 72 = 172 bytes
         // Ratio: 6800 / 172 ≈ 39.5
         let ratio = proof.compression_ratio();
-        assert!(ratio > 30.0, "Compression ratio should be significant, got {}", ratio);
+        assert!(
+            ratio > 30.0,
+            "Compression ratio should be significant, got {}",
+            ratio
+        );
     }
 
     #[test]
@@ -510,13 +499,7 @@ mod tests {
 
     #[test]
     fn test_compressed_size() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![],
-            vec![42],
-            vec![0; 200],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![], vec![42], vec![0; 200], vec![]);
 
         let proof = CompressedProof::new(10, [2u8; 32], stark_proof);
         assert_eq!(proof.compressed_size(), 200 + 72);
@@ -524,30 +507,22 @@ mod tests {
 
     #[test]
     fn test_space_savings_percentage() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![],
-            vec![42],
-            vec![0; 100],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![], vec![42], vec![0; 100], vec![]);
 
         let proof = CompressedProof::new(100, [2u8; 32], stark_proof);
         let savings = proof.space_savings_percentage();
 
         // Should have significant savings (>90%)
-        assert!(savings > 90.0, "Space savings should be >90%, got {}", savings);
+        assert!(
+            savings > 90.0,
+            "Space savings should be >90%, got {}",
+            savings
+        );
     }
 
     #[test]
     fn test_validate_valid_proof() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2],
-            vec![42],
-            vec![3, 4, 5],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1, 2], vec![42], vec![3, 4, 5], vec![]);
 
         let proof = CompressedProof::new(10, [2u8; 32], stark_proof);
         assert!(proof.validate().is_ok());
@@ -555,13 +530,7 @@ mod tests {
 
     #[test]
     fn test_validate_empty_batch_fails() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
         let proof = CompressedProof::new(0, [2u8; 32], stark_proof);
         assert!(proof.validate().is_err());
@@ -573,13 +542,7 @@ mod tests {
 
     #[test]
     fn test_validate_batch_too_large_fails() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
         let proof = CompressedProof::new(MAX_BATCH_SIZE + 1, [2u8; 32], stark_proof);
         assert!(proof.validate().is_err());
@@ -591,13 +554,7 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_program_hash_fails() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
         let proof = CompressedProof::with_program_hash(
             [0u8; 32], // Invalid hash
@@ -614,13 +571,8 @@ mod tests {
 
     #[test]
     fn test_serialize_deserialize_roundtrip() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2, 3],
-            vec![42],
-            vec![4, 5, 6],
-            vec![],
-        );
+        let stark_proof =
+            StarkProof::new([1u8; 32], vec![1, 2, 3], vec![42], vec![4, 5, 6], vec![]);
 
         let original = CompressedProof::new(100, [2u8; 32], stark_proof);
 
@@ -645,13 +597,8 @@ mod tests {
 
     #[test]
     fn test_serialized_size() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2, 3],
-            vec![42],
-            vec![4, 5, 6, 7],
-            vec![],
-        );
+        let stark_proof =
+            StarkProof::new([1u8; 32], vec![1, 2, 3], vec![42], vec![4, 5, 6, 7], vec![]);
 
         let proof = CompressedProof::new(50, [2u8; 32], stark_proof);
         let serialized = proof.serialize();
@@ -665,7 +612,11 @@ mod tests {
     fn test_batch_verify_input_creation() {
         use crate::core::types::DataType;
 
-        let proofs = vec![HexaryProof::default(), HexaryProof::default(), HexaryProof::default()];
+        let proofs = vec![
+            HexaryProof::default(),
+            HexaryProof::default(),
+            HexaryProof::default(),
+        ];
 
         let input = BatchVerifyInput::new(
             vec![1, 2, 3],
@@ -687,10 +638,7 @@ mod tests {
     #[test]
     fn test_batch_verify_input_validate_success() {
         // Create valid hexary proofs (using empty for simplicity)
-        let proofs = vec![
-            HexaryProof::default(),
-            HexaryProof::default(),
-        ];
+        let proofs = vec![HexaryProof::default(), HexaryProof::default()];
 
         let input = BatchVerifyInput::new(
             vec![1, 2],
@@ -707,9 +655,9 @@ mod tests {
         let proofs = vec![HexaryProof::default()];
 
         let input = BatchVerifyInput::new(
-            vec![1, 2], // 2 row IDs
+            vec![1, 2],              // 2 row IDs
             vec![Value::Integer(1)], // 1 value
-            proofs, // 1 proof
+            proofs,                  // 1 proof
             [5u8; 32],
         );
 
@@ -722,12 +670,7 @@ mod tests {
 
     #[test]
     fn test_batch_verify_input_empty_fails() {
-        let input = BatchVerifyInput::new(
-            vec![],
-            vec![],
-            vec![],
-            [5u8; 32],
-        );
+        let input = BatchVerifyInput::new(vec![], vec![], vec![], [5u8; 32]);
 
         assert!(input.validate().is_err());
         match input.validate().unwrap_err() {
@@ -747,12 +690,7 @@ mod tests {
         let row_ids = vec![0i64; proofs.len()];
         let values = vec![Value::Null(DataType::Null); proofs.len()];
 
-        let input = BatchVerifyInput::new(
-            row_ids,
-            values,
-            proofs,
-            [5u8; 32],
-        );
+        let input = BatchVerifyInput::new(row_ids, values, proofs, [5u8; 32]);
 
         assert!(input.validate().is_err());
         match input.validate().unwrap_err() {
@@ -806,13 +744,7 @@ mod tests {
 
     #[test]
     fn test_quick_verify_valid_proof() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2],
-            vec![42],
-            vec![3, 4, 5],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1, 2], vec![42], vec![3, 4, 5], vec![]);
 
         let proof = CompressedProof::new(10, [2u8; 32], stark_proof);
         // Without zk feature, quick_verify only checks structure
@@ -822,13 +754,7 @@ mod tests {
 
     #[test]
     fn test_quick_verify_empty_batch_fails() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
         let proof = CompressedProof::new(0, [2u8; 32], stark_proof);
         let result = proof.quick_verify();
@@ -837,13 +763,7 @@ mod tests {
 
     #[test]
     fn test_quick_verify_invalid_program_hash_fails() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1],
-            vec![42],
-            vec![2, 3],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1], vec![42], vec![2, 3], vec![]);
 
         let proof = CompressedProof::with_program_hash(
             [0u8; 32], // Invalid hash
@@ -857,13 +777,7 @@ mod tests {
 
     #[test]
     fn test_verify_valid_proof_structure() {
-        let stark_proof = StarkProof::new(
-            [1u8; 32],
-            vec![1, 2],
-            vec![42],
-            vec![3, 4, 5],
-            vec![],
-        );
+        let stark_proof = StarkProof::new([1u8; 32], vec![1, 2], vec![42], vec![3, 4, 5], vec![]);
 
         let proof = CompressedProof::new(10, [2u8; 32], stark_proof);
         // This will fail at structure validation if zk feature is not enabled

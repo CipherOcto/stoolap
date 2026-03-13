@@ -226,14 +226,18 @@ impl DetermValue {
                 if data.len() < 9 {
                     return Err(Error::invalid_argument("invalid integer data"));
                 }
-                let bytes = [data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]];
+                let bytes = [
+                    data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                ];
                 Ok(DetermValue::Integer(i64::from_le_bytes(bytes)))
             }
             Self::TYPE_FLOAT => {
                 if data.len() < 9 {
                     return Err(Error::invalid_argument("invalid float data"));
                 }
-                let bytes = [data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]];
+                let bytes = [
+                    data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                ];
                 Ok(DetermValue::Float(f64::from_le_bytes(bytes)))
             }
             Self::TYPE_INLINE_TEXT => {
@@ -269,7 +273,9 @@ impl DetermValue {
                 if data.len() < 9 {
                     return Err(Error::invalid_argument("invalid timestamp data"));
                 }
-                let bytes = [data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]];
+                let bytes = [
+                    data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                ];
                 Ok(DetermValue::Timestamp(i64::from_le_bytes(bytes)))
             }
             Self::TYPE_EXTENSION => {
@@ -344,9 +350,9 @@ impl DetermValue {
     /// Get the value as text if possible
     pub fn as_text(&self) -> Option<String> {
         match self {
-            DetermValue::InlineText(data, len) => {
-                std::str::from_utf8(&data[..*len as usize]).ok().map(|s| s.to_string())
-            }
+            DetermValue::InlineText(data, len) => std::str::from_utf8(&data[..*len as usize])
+                .ok()
+                .map(|s| s.to_string()),
             DetermValue::HeapText(data) => std::str::from_utf8(data).ok().map(|s| s.to_string()),
             _ => None,
         }

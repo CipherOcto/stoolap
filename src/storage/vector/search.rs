@@ -198,7 +198,10 @@ mod tests {
         let b = &[1.0f32, 0.0, 0.0];
 
         let dist = cosine_distance(a, b);
-        assert!(dist < 0.001, "identical vectors should have distance near 0");
+        assert!(
+            dist < 0.001,
+            "identical vectors should have distance near 0"
+        );
     }
 
     #[test]

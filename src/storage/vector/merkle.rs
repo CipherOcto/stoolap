@@ -44,10 +44,7 @@ impl VectorMerkle {
         use blake3::Hasher;
 
         // Hash the embedding
-        let embedding_bytes: Vec<u8> = embedding
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
         let embedding_hash = blake3::hash(&embedding_bytes);
 
         // Hash with vector_id prefix
@@ -145,7 +142,12 @@ impl VectorMerkle {
 
     /// Generate proof for a vector
     #[cfg(feature = "vector")]
-    pub fn generate_proof(&self, segment_id: u64, vector_id: i64, embedding: &[f32]) -> Option<MerkleProof> {
+    pub fn generate_proof(
+        &self,
+        segment_id: u64,
+        vector_id: i64,
+        embedding: &[f32],
+    ) -> Option<MerkleProof> {
         let leaf = Self::leaf_hash(vector_id, embedding);
         let segment_root = self.segment_root(segment_id)?.to_vec();
 
@@ -159,7 +161,12 @@ impl VectorMerkle {
     }
 
     #[cfg(not(feature = "vector"))]
-    pub fn generate_proof(&self, _segment_id: u64, _vector_id: i64, _embedding: &[f32]) -> Option<MerkleProof> {
+    pub fn generate_proof(
+        &self,
+        _segment_id: u64,
+        _vector_id: i64,
+        _embedding: &[f32],
+    ) -> Option<MerkleProof> {
         Some(MerkleProof {
             leaf: vec![0u8; 32],
             segment_root: vec![0u8; 32],

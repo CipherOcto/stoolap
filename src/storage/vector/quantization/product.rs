@@ -94,10 +94,8 @@ impl ProductQuantizer {
             let end = start + self.sub_vector_size;
 
             // Collect all sub-vectors at this position
-            let mut sub_vectors: Vec<Vec<f32>> = vectors
-                .iter()
-                .map(|v| v[start..end].to_vec())
-                .collect();
+            let mut sub_vectors: Vec<Vec<f32>> =
+                vectors.iter().map(|v| v[start..end].to_vec()).collect();
 
             // Run k-means
             let centroids = self.kmeans(&mut sub_vectors, self.num_centroids, 20);
@@ -113,9 +111,8 @@ impl ProductQuantizer {
         }
 
         // Initialize centroids randomly from data
-        let mut centroids: Vec<Vec<f32>> = (0..k)
-            .map(|i| vectors[i % vectors.len()].clone())
-            .collect();
+        let mut centroids: Vec<Vec<f32>> =
+            (0..k).map(|i| vectors[i % vectors.len()].clone()).collect();
 
         for _ in 0..iterations {
             // Assign each vector to nearest centroid
@@ -164,10 +161,7 @@ impl ProductQuantizer {
 
     /// Squared Euclidean distance
     fn squared_distance(&self, a: &[f32], b: &[f32]) -> f32 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| (x - y) * (x - y))
-            .sum()
+        a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum()
     }
 
     /// Encode a vector
@@ -282,11 +276,7 @@ mod tests {
 
         // Train on sample vectors
         let vectors: Vec<Vec<f32>> = (0..100)
-            .map(|i| {
-                (0..16)
-                    .map(|j| (i as f32 * 0.1 + j as f32).sin())
-                    .collect()
-            })
+            .map(|i| (0..16).map(|j| (i as f32 * 0.1 + j as f32).sin()).collect())
             .collect();
 
         let refs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();

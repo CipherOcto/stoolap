@@ -395,7 +395,9 @@ impl Value {
     /// Extract DFP as Dfp struct (decodes 24-byte DfpEncoding from Extension payload)
     pub fn as_dfp(&self) -> Option<Dfp> {
         match self {
-            Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+            Value::Extension(data)
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
                 let encoding_bytes: [u8; 24] = data[1..25].try_into().ok()?;
                 Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
             }
@@ -408,7 +410,9 @@ impl Value {
         match self {
             Value::Integer(i) => Some(Dfp::from_i64(*i)),
             Value::Float(f) => Some(Dfp::from_f64(*f)),
-            Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+            Value::Extension(data)
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
                 self.as_dfp()
             }
             _ => None,
@@ -448,7 +452,9 @@ impl Value {
         // Cross-type numeric comparison (integer vs float vs DFP)
         if self.data_type().is_numeric() && other.data_type().is_numeric() {
             // If both are DFP, use DFP comparison for deterministic results
-            if self.data_type() == DataType::DeterministicFloat && other.data_type() == DataType::DeterministicFloat {
+            if self.data_type() == DataType::DeterministicFloat
+                && other.data_type() == DataType::DeterministicFloat
+            {
                 if let (Some(dfp1), Some(dfp2)) = (self.as_dfp(), other.as_dfp()) {
                     return Ok(compare_dfp(&dfp1, &dfp2));
                 }
@@ -681,7 +687,9 @@ impl Value {
                         .map(Value::Integer)
                         .unwrap_or(Value::Null(target_type)),
                     Value::Boolean(b) => Value::Integer(if *b { 1 } else { 0 }),
-                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                    {
                         // DFP -> Integer (truncate)
                         if let Some(dfp) = self.as_dfp() {
                             Value::Integer(dfp.to_f64() as i64)
@@ -702,7 +710,9 @@ impl Value {
                         .map(Value::Float)
                         .unwrap_or(Value::Null(target_type)),
                     Value::Boolean(b) => Value::Float(if *b { 1.0 } else { 0.0 }),
-                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                    {
                         // DFP -> Float
                         if let Some(dfp) = self.as_dfp() {
                             Value::Float(dfp.to_f64())
@@ -716,7 +726,9 @@ impl Value {
             DataType::DeterministicFloat => {
                 // Convert to DFP (Deterministic Floating Point)
                 match self {
-                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                    {
                         // Already DFP
                         self.clone()
                     }
@@ -747,7 +759,9 @@ impl Value {
                             std::str::from_utf8(&data[1..]).unwrap_or(""),
                         ))
                     }
-                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                    {
                         // DFP -> Text
                         if let Some(dfp) = self.as_dfp() {
                             Value::Text(SmartString::from_string(dfp.to_string()))
@@ -768,7 +782,9 @@ impl Value {
                     Value::Boolean(b) => Value::Boolean(*b),
                     Value::Integer(v) => Value::Boolean(*v != 0),
                     Value::Float(v) => Value::Boolean(*v != 0.0),
-                    Value::Extension(data) if data.first().copied() == Some(DataType::DeterministicFloat as u8) => {
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                    {
                         // DFP -> Boolean (true if not zero)
                         if let Some(dfp) = self.as_dfp() {
                             Value::Boolean(dfp.to_f64() != 0.0)
@@ -1594,19 +1610,33 @@ fn compare_dfp(a: &Dfp, b: &Dfp) -> Ordering {
         (NaN, NaN) => Ordering::Equal,
         (NaN, _) => Ordering::Greater,
         (_, NaN) => Ordering::Less,
-        (Zero, Zero) | (Zero, _) | (_, Zero) |
-        (Infinity, Infinity) | (Infinity, _) | (_, Infinity) |
-        (Normal, Normal) | (Normal, _) | (_, Normal) => {
+        (Zero, Zero)
+        | (Zero, _)
+        | (_, Zero)
+        | (Infinity, Infinity)
+        | (Infinity, _)
+        | (_, Infinity)
+        | (Normal, Normal)
+        | (Normal, _)
+        | (_, Normal) => {
             // Compare signs first
             if a.sign != b.sign {
-                return if a.sign { Ordering::Less } else { Ordering::Greater };
+                return if a.sign {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                };
             }
 
             // Both same sign - compare magnitudes
             let cmp = compare_dfp_magnitude(a, b);
 
             // If both negative, flip the result
-            if a.sign { cmp.reverse() } else { cmp }
+            if a.sign {
+                cmp.reverse()
+            } else {
+                cmp
+            }
         }
     }
 }
@@ -1630,7 +1660,11 @@ fn compare_dfp_magnitude(a: &Dfp, b: &Dfp) -> Ordering {
         (Normal, Normal) => {
             // First compare exponents
             if a.exponent != b.exponent {
-                return if a.exponent > b.exponent { Ordering::Greater } else { Ordering::Less };
+                return if a.exponent > b.exponent {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                };
             }
             // Same exponent - compare mantissas
             a.mantissa.cmp(&b.mantissa)

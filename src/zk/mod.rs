@@ -34,19 +34,19 @@
 //! It enables efficient proof generation and verification for Cairo programs.
 
 #[cfg(feature = "zk")]
-pub mod cairo;
-#[cfg(feature = "zk")]
-pub mod prover;
-#[cfg(feature = "zk")]
-pub mod proof;
-#[cfg(feature = "zk")]
 pub mod bundled;
+#[cfg(feature = "zk")]
+pub mod cairo;
+#[cfg(feature = "commitment")]
+pub mod commitment;
 #[cfg(feature = "zk")]
 pub mod compressed;
 #[cfg(feature = "commitment")]
-pub mod commitment;
-#[cfg(feature = "commitment")]
 pub mod confidential;
+#[cfg(feature = "zk")]
+pub mod proof;
+#[cfg(feature = "zk")]
+pub mod prover;
 
 // Plugin loading - doesn't require zk feature, uses dynamic loading
 pub mod plugin;
@@ -56,34 +56,34 @@ pub mod plugin;
 mod tests;
 
 #[cfg(feature = "zk")]
-pub use cairo::{CairoProgram, CairoProgramHash, CairoProgramRegistry, CompileError, RegistryError};
-#[cfg(feature = "zk")]
-pub use prover::{ProverConfig, ProverError, STWOProver, VerifyError};
-#[cfg(feature = "zk")]
-pub use proof::{
-    CairoProgramForRegistration, MAX_INPUTS_SIZE, MAX_OUTPUTS_SIZE, MAX_PROOF_SIZE,
-    MAX_PUBLIC_INPUTS_SIZE, ProofSummary, ProofValidationError, SerializationError,
-    SolanaSerialize, StarkProof, ZKOperation,
-};
-#[cfg(feature = "zk")]
 pub use bundled::{
     get_bundled_program, get_bundled_program_name, is_bundled_program, register_bundled_programs,
     BundledError, HEXARY_VERIFY_CASM, HEXARY_VERIFY_HASH, MERKLE_BATCH_CASM, MERKLE_BATCH_HASH,
     STATE_TRANSITION_CASM, STATE_TRANSITION_HASH,
 };
 #[cfg(feature = "zk")]
-pub use compressed::{
-    BatchVerifyError, BatchVerifyInput, AVG_HEXARY_PROOF_SIZE, CompressedProof,
-    CompressedProofError, MAX_BATCH_SIZE, MAX_COMPRESSED_SIZE,
+pub use cairo::{
+    CairoProgram, CairoProgramHash, CairoProgramRegistry, CompileError, RegistryError,
 };
 #[cfg(feature = "commitment")]
 pub use commitment::{
-    pedersen_commit, pedersen_commit_batch, open_commitment, open_commitment_batch, Commitment,
+    open_commitment, open_commitment_batch, pedersen_commit, pedersen_commit_batch, Commitment,
+};
+#[cfg(feature = "zk")]
+pub use compressed::{
+    BatchVerifyError, BatchVerifyInput, CompressedProof, CompressedProofError,
+    AVG_HEXARY_PROOF_SIZE, MAX_BATCH_SIZE, MAX_COMPRESSED_SIZE,
 };
 #[cfg(feature = "commitment")]
-pub use confidential::{
-    EncryptedQuery, EncryptedFilter, FilterOp, ConfidentialResult, RangeProof,
+pub use confidential::{ConfidentialResult, EncryptedFilter, EncryptedQuery, FilterOp, RangeProof};
+#[cfg(feature = "zk")]
+pub use proof::{
+    CairoProgramForRegistration, ProofSummary, ProofValidationError, SerializationError,
+    SolanaSerialize, StarkProof, ZKOperation, MAX_INPUTS_SIZE, MAX_OUTPUTS_SIZE, MAX_PROOF_SIZE,
+    MAX_PUBLIC_INPUTS_SIZE,
 };
+#[cfg(feature = "zk")]
+pub use prover::{ProverConfig, ProverError, STWOProver, VerifyError};
 
 // Plugin exports (always available)
 pub use plugin::{load_plugin, PluginError, STWOPlugin};

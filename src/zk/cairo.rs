@@ -450,7 +450,10 @@ mod tests {
 
         let different_source = "fn main() { return 1; }";
         let hash3 = CairoProgram::compute_hash(different_source);
-        assert_ne!(hash1, hash3, "Different source should produce different hash");
+        assert_ne!(
+            hash1, hash3,
+            "Different source should produce different hash"
+        );
     }
 
     #[test]
@@ -623,7 +626,10 @@ mod tests {
         let hash = [0u8; 32];
 
         let result = registry.remove(&hash);
-        assert!(result.is_err(), "Should fail to remove non-existent program");
+        assert!(
+            result.is_err(),
+            "Should fail to remove non-existent program"
+        );
     }
 
     #[test]
@@ -680,10 +686,16 @@ mod tests {
         let hash = program.hash;
 
         registry.register(program).unwrap();
-        assert!(!registry.is_allowed(&hash), "Program should not be allowed initially");
+        assert!(
+            !registry.is_allowed(&hash),
+            "Program should not be allowed initially"
+        );
 
         registry.allowlist_add(hash).unwrap();
-        assert!(registry.is_allowed(&hash), "Program should be allowed after allowlist_add");
+        assert!(
+            registry.is_allowed(&hash),
+            "Program should be allowed after allowlist_add"
+        );
     }
 
     #[test]

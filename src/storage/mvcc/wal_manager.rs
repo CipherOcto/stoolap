@@ -2581,15 +2581,42 @@ mod tests {
             WALOperationType::from_u8(13),
             Some(WALOperationType::TruncateTable)
         );
-        assert_eq!(WALOperationType::from_u8(14), Some(WALOperationType::VectorInsert));
-        assert_eq!(WALOperationType::from_u8(15), Some(WALOperationType::VectorUpdate));
-        assert_eq!(WALOperationType::from_u8(16), Some(WALOperationType::VectorDelete));
-        assert_eq!(WALOperationType::from_u8(17), Some(WALOperationType::SegmentCreate));
-        assert_eq!(WALOperationType::from_u8(18), Some(WALOperationType::SegmentMerge));
-        assert_eq!(WALOperationType::from_u8(19), Some(WALOperationType::IndexBuild));
-        assert_eq!(WALOperationType::from_u8(20), Some(WALOperationType::CompactionStart));
-        assert_eq!(WALOperationType::from_u8(21), Some(WALOperationType::CompactionFinish));
-        assert_eq!(WALOperationType::from_u8(22), Some(WALOperationType::SnapshotCommit));
+        assert_eq!(
+            WALOperationType::from_u8(14),
+            Some(WALOperationType::VectorInsert)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(15),
+            Some(WALOperationType::VectorUpdate)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(16),
+            Some(WALOperationType::VectorDelete)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(17),
+            Some(WALOperationType::SegmentCreate)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(18),
+            Some(WALOperationType::SegmentMerge)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(19),
+            Some(WALOperationType::IndexBuild)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(20),
+            Some(WALOperationType::CompactionStart)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(21),
+            Some(WALOperationType::CompactionFinish)
+        );
+        assert_eq!(
+            WALOperationType::from_u8(22),
+            Some(WALOperationType::SnapshotCommit)
+        );
         assert_eq!(WALOperationType::from_u8(23), None); // Invalid value
 
         assert!(WALOperationType::CreateTable.is_ddl());

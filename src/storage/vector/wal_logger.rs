@@ -43,10 +43,7 @@ impl VectorWalLogger {
 
     /// Open WAL file for appending
     pub fn open(&self, path: &Path) -> Result<()> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
 
         let writer = BufWriter::new(file);
         *self.file.write().unwrap() = Some(writer);
@@ -61,7 +58,13 @@ impl VectorWalLogger {
     }
 
     /// Log vector insert
-    pub fn log_insert(&self, table_name: &str, vector_id: i64, segment_id: u64, embedding: &[f32]) -> Result<()> {
+    pub fn log_insert(
+        &self,
+        table_name: &str,
+        vector_id: i64,
+        segment_id: u64,
+        embedding: &[f32],
+    ) -> Result<()> {
         if !self.enabled.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -174,7 +177,12 @@ impl VectorWalEntry {
             .map_err(|e| crate::core::Error::Parse(e.to_string()))?;
         offset += table_len;
 
-        let data_len = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]) as usize;
+        let data_len = u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]) as usize;
         offset += 4;
 
         let payload = &data[offset..offset + data_len];
@@ -182,32 +190,89 @@ impl VectorWalEntry {
         match op {
             VectorWalOp::Insert => {
                 if payload.len() < 12 {
-                    return Err(crate::core::Error::Parse("Insert payload too short".to_string()));
+                    return Err(crate::core::Error::Parse(
+                        "Insert payload too short".to_string(),
+                    ));
                 }
-                let vector_id = i64::from_le_bytes([payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7]]);
-                let segment_id = u64::from_le_bytes([payload[8], payload[9], payload[10], payload[11], payload[12], payload[13], payload[14], payload[15]]);
-                let dim = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+                let vector_id = i64::from_le_bytes([
+                    payload[0], payload[1], payload[2], payload[3], payload[4], payload[5],
+                    payload[6], payload[7],
+                ]);
+                let segment_id = u64::from_le_bytes([
+                    payload[8],
+                    payload[9],
+                    payload[10],
+                    payload[11],
+                    payload[12],
+                    payload[13],
+                    payload[14],
+                    payload[15],
+                ]);
+                let dim = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]])
+                    as usize;
                 let mut embedding = Vec::with_capacity(dim);
                 for i in 0..dim {
-                    let val = f32::from_le_bytes([payload[20 + i * 4], payload[21 + i * 4], payload[22 + i * 4], payload[23 + i * 4]]);
+                    let val = f32::from_le_bytes([
+                        payload[20 + i * 4],
+                        payload[21 + i * 4],
+                        payload[22 + i * 4],
+                        payload[23 + i * 4],
+                    ]);
                     embedding.push(val);
                 }
-                Ok(Self { operation: op, table_name, vector_id: Some(vector_id), segment_id: Some(segment_id), embedding: Some(embedding) })
+                Ok(Self {
+                    operation: op,
+                    table_name,
+                    vector_id: Some(vector_id),
+                    segment_id: Some(segment_id),
+                    embedding: Some(embedding),
+                })
             }
             VectorWalOp::Delete => {
                 if payload.len() < 16 {
-                    return Err(crate::core::Error::Parse("Delete payload too short".to_string()));
+                    return Err(crate::core::Error::Parse(
+                        "Delete payload too short".to_string(),
+                    ));
                 }
-                let vector_id = i64::from_le_bytes([payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7]]);
-                let segment_id = u64::from_le_bytes([payload[8], payload[9], payload[10], payload[11], payload[12], payload[13], payload[14], payload[15]]);
-                Ok(Self { operation: op, table_name, vector_id: Some(vector_id), segment_id: Some(segment_id), embedding: None })
+                let vector_id = i64::from_le_bytes([
+                    payload[0], payload[1], payload[2], payload[3], payload[4], payload[5],
+                    payload[6], payload[7],
+                ]);
+                let segment_id = u64::from_le_bytes([
+                    payload[8],
+                    payload[9],
+                    payload[10],
+                    payload[11],
+                    payload[12],
+                    payload[13],
+                    payload[14],
+                    payload[15],
+                ]);
+                Ok(Self {
+                    operation: op,
+                    table_name,
+                    vector_id: Some(vector_id),
+                    segment_id: Some(segment_id),
+                    embedding: None,
+                })
             }
             VectorWalOp::SegmentFlush => {
                 if payload.len() < 8 {
-                    return Err(crate::core::Error::Parse("SegmentFlush payload too short".to_string()));
+                    return Err(crate::core::Error::Parse(
+                        "SegmentFlush payload too short".to_string(),
+                    ));
                 }
-                let segment_id = u64::from_le_bytes([payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6], payload[7]]);
-                Ok(Self { operation: op, table_name, vector_id: None, segment_id: Some(segment_id), embedding: None })
+                let segment_id = u64::from_le_bytes([
+                    payload[0], payload[1], payload[2], payload[3], payload[4], payload[5],
+                    payload[6], payload[7],
+                ]);
+                Ok(Self {
+                    operation: op,
+                    table_name,
+                    vector_id: None,
+                    segment_id: Some(segment_id),
+                    embedding: None,
+                })
             }
         }
     }
@@ -226,7 +291,9 @@ mod tests {
         let logger = VectorWalLogger::new();
         logger.open(&path).unwrap();
 
-        logger.log_insert("test_table", 1, 1, &[1.0, 2.0, 3.0]).unwrap();
+        logger
+            .log_insert("test_table", 1, 1, &[1.0, 2.0, 3.0])
+            .unwrap();
         logger.log_delete("test_table", 1, 1).unwrap();
         logger.log_segment_flush("test_table", 1).unwrap();
 

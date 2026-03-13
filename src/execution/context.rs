@@ -60,7 +60,8 @@ impl StateSnapshot {
 
     /// Get all table root hashes
     pub fn table_roots(&self) -> BTreeMap<String, [u8; 32]> {
-        self.tables.iter()
+        self.tables
+            .iter()
             .map(|(name, trie)| (name.clone(), trie.get_root()))
             .collect()
     }
@@ -152,7 +153,10 @@ impl ExecutionContext {
     pub fn delete(&mut self, table: &str, row_id: i64) -> Result<()> {
         self.gas_meter.charge(GasPrice::WriteRow)?;
 
-        let trie = self.state.tables.get_mut(table)
+        let trie = self
+            .state
+            .tables
+            .get_mut(table)
             .ok_or_else(|| Error::TableNotFound(table.to_string()))?;
 
         trie.delete(row_id);
@@ -222,10 +226,7 @@ mod tests {
 
         let mut ctx = ExecutionContext::new(1, 10000, state);
 
-        let row = DetermRow::from_values(vec![
-            DetermValue::integer(1),
-            DetermValue::text("Alice"),
-        ]);
+        let row = DetermRow::from_values(vec![DetermValue::integer(1), DetermValue::text("Alice")]);
 
         assert!(ctx.insert("users", 1, row).is_ok());
         assert_eq!(ctx.gas_used(), 1000); // GasPrice::WriteRow = 1000

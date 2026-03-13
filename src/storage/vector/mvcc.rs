@@ -67,7 +67,11 @@ impl VectorMvcc {
     }
 
     /// Create new VectorMVCC with WAL logging
-    pub fn with_wal(config: VectorConfig, wal: Option<super::wal_logger::VectorWalLogger>, table_name: String) -> Self {
+    pub fn with_wal(
+        config: VectorConfig,
+        wal: Option<super::wal_logger::VectorWalLogger>,
+        table_name: String,
+    ) -> Self {
         let tracker = VersionTracker {
             locations: HashMap::new(),
             deleted: I64Set::new(),
@@ -112,7 +116,8 @@ impl VectorMvcc {
 
                             // WAL logging
                             if let Some(ref wal) = self.wal {
-                                let _ = wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
+                                let _ =
+                                    wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
                             }
                             return Ok(());
                         }

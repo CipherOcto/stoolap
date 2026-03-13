@@ -17,7 +17,7 @@
 use stoolap::consensus::{Block, BlockHeader, BlockOperations, Operation};
 use stoolap::determ::{DetermRow, DetermValue};
 use stoolap::execution::{ExecutionContext, StateSnapshot};
-use stoolap::trie::{RowTrie, TableSchema, ColumnDef};
+use stoolap::trie::{ColumnDef, RowTrie, TableSchema};
 use stoolap::DataType;
 
 #[test]
@@ -27,8 +27,16 @@ fn test_full_block_execution() {
     let schema = TableSchema {
         name: "users".to_string(),
         columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-            ColumnDef { name: "name".to_string(), data_type: DataType::Text, nullable: false },
+            ColumnDef {
+                name: "id".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
+            ColumnDef {
+                name: "name".to_string(),
+                data_type: DataType::Text,
+                nullable: false,
+            },
         ],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
@@ -68,8 +76,16 @@ fn test_single_row_trie_retrieve() {
     let schema = TableSchema {
         name: "singles".to_string(),
         columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-            ColumnDef { name: "value".to_string(), data_type: DataType::Integer, nullable: false },
+            ColumnDef {
+                name: "id".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
+            ColumnDef {
+                name: "value".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
         ],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
@@ -80,10 +96,7 @@ fn test_single_row_trie_retrieve() {
 
     let mut ctx = ExecutionContext::new(1, 10_000, state);
 
-    let row = DetermRow::from_values(vec![
-        DetermValue::Integer(42),
-        DetermValue::Integer(100),
-    ]);
+    let row = DetermRow::from_values(vec![DetermValue::Integer(42), DetermValue::Integer(100)]);
 
     assert!(ctx.insert("singles", 42, row).is_ok());
 
@@ -104,8 +117,16 @@ fn test_state_root_changes_after_operations() {
     let schema = TableSchema {
         name: "products".to_string(),
         columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-            ColumnDef { name: "price".to_string(), data_type: DataType::Float, nullable: false },
+            ColumnDef {
+                name: "id".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
+            ColumnDef {
+                name: "price".to_string(),
+                data_type: DataType::Float,
+                nullable: false,
+            },
         ],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
@@ -119,10 +140,7 @@ fn test_state_root_changes_after_operations() {
 
     let mut ctx = ExecutionContext::new(1, 100_000, state);
 
-    let row = DetermRow::from_values(vec![
-        DetermValue::Integer(1),
-        DetermValue::Float(29.99),
-    ]);
+    let row = DetermRow::from_values(vec![DetermValue::Integer(1), DetermValue::Float(29.99)]);
 
     assert!(ctx.insert("products", 1, row).is_ok());
 
@@ -137,9 +155,11 @@ fn test_gas_tracking_during_execution() {
 
     let schema = TableSchema {
         name: "items".to_string(),
-        columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-        ],
+        columns: vec![ColumnDef {
+            name: "id".to_string(),
+            data_type: DataType::Integer,
+            nullable: false,
+        }],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
         index_roots: std::collections::BTreeMap::new(),
@@ -167,8 +187,16 @@ fn test_block_with_operations() {
     let schema = TableSchema {
         name: "orders".to_string(),
         columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-            ColumnDef { name: "amount".to_string(), data_type: DataType::Integer, nullable: false },
+            ColumnDef {
+                name: "id".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
+            ColumnDef {
+                name: "amount".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            },
         ],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
@@ -181,10 +209,8 @@ fn test_block_with_operations() {
 
     // Insert 2 rows to avoid edge cases
     for i in 1..=2 {
-        let row = DetermRow::from_values(vec![
-            DetermValue::Integer(i),
-            DetermValue::Integer(i * 10),
-        ]);
+        let row =
+            DetermRow::from_values(vec![DetermValue::Integer(i), DetermValue::Integer(i * 10)]);
         assert!(ctx.insert("orders", i, row).is_ok());
     }
 
@@ -229,9 +255,11 @@ fn test_delete_operation() {
 
     let schema = TableSchema {
         name: "temp".to_string(),
-        columns: vec![
-            ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-        ],
+        columns: vec![ColumnDef {
+            name: "id".to_string(),
+            data_type: DataType::Integer,
+            nullable: false,
+        }],
         primary_key: Some("id".to_string()),
         table_root: [0u8; 32],
         index_roots: std::collections::BTreeMap::new(),
@@ -295,9 +323,11 @@ fn test_multiple_tables_independent_state() {
     for table_name in &["table_a", "table_b"] {
         let schema = TableSchema {
             name: table_name.to_string(),
-            columns: vec![
-                ColumnDef { name: "id".to_string(), data_type: DataType::Integer, nullable: false },
-            ],
+            columns: vec![ColumnDef {
+                name: "id".to_string(),
+                data_type: DataType::Integer,
+                nullable: false,
+            }],
             primary_key: Some("id".to_string()),
             table_root: [0u8; 32],
             index_roots: std::collections::BTreeMap::new(),
@@ -320,5 +350,8 @@ fn test_multiple_tables_independent_state() {
     assert!(retrieved_a.is_some());
     assert!(retrieved_b.is_some());
 
-    assert_ne!(retrieved_a.unwrap().values.get(0), retrieved_b.unwrap().values.get(0));
+    assert_ne!(
+        retrieved_a.unwrap().values.get(0),
+        retrieved_b.unwrap().values.get(0)
+    );
 }

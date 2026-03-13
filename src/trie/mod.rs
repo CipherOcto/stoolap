@@ -50,13 +50,13 @@ pub mod schema_trie;
 
 // Primary exports for HexaryProof system
 pub use proof::{HexaryProof, ProofLevel};
-pub use row_trie::{RowTrie, RowNode, StateDiff};
-pub use schema_trie::{SchemaTrie, TableSchema, ColumnDef};
+pub use row_trie::{RowNode, RowTrie, StateDiff};
+pub use schema_trie::{ColumnDef, SchemaTrie, TableSchema};
 
 // Re-export hexary proof utility functions for convenience
 pub use proof::{
-    hash_16_children, pack_nibbles, unpack_nibbles, reconstruct_children,
-    SolanaSerialize, SerializationError
+    hash_16_children, pack_nibbles, reconstruct_children, unpack_nibbles, SerializationError,
+    SolanaSerialize,
 };
 
 #[cfg(test)]

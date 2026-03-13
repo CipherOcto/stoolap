@@ -203,7 +203,11 @@ impl WithdrawalContext {
 
     /// Get the number of pending withdrawals
     pub fn pending_count(&self) -> usize {
-        self.state.pending_withdrawals.iter().filter(|w| !w.finalized).count()
+        self.state
+            .pending_withdrawals
+            .iter()
+            .filter(|w| !w.finalized)
+            .count()
     }
 }
 
@@ -268,7 +272,10 @@ mod tests {
 
         // Try to finalize immediately (before challenge period)
         let result = ctx.finalize_withdrawal(0, 150);
-        assert!(matches!(result, Err(WithdrawalError::ChallengePeriodNotPassed)));
+        assert!(matches!(
+            result,
+            Err(WithdrawalError::ChallengePeriodNotPassed)
+        ));
     }
 
     #[test]

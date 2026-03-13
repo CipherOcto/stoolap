@@ -90,7 +90,9 @@ impl StarkProof {
             return Err(ProofValidationError::ProofTooLarge(self.proof.len()));
         }
         if self.public_inputs.len() > MAX_PUBLIC_INPUTS_SIZE {
-            return Err(ProofValidationError::PublicInputsTooLarge(self.public_inputs.len()));
+            return Err(ProofValidationError::PublicInputsTooLarge(
+                self.public_inputs.len(),
+            ));
         }
         if self.proof.is_empty() {
             return Err(ProofValidationError::EmptyProof);
@@ -130,13 +132,25 @@ impl std::fmt::Display for ProofValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProofValidationError::InputsTooLarge(size) => {
-                write!(f, "Inputs too large: {} bytes (max {})", size, MAX_INPUTS_SIZE)
+                write!(
+                    f,
+                    "Inputs too large: {} bytes (max {})",
+                    size, MAX_INPUTS_SIZE
+                )
             }
             ProofValidationError::OutputsTooLarge(size) => {
-                write!(f, "Outputs too large: {} bytes (max {})", size, MAX_OUTPUTS_SIZE)
+                write!(
+                    f,
+                    "Outputs too large: {} bytes (max {})",
+                    size, MAX_OUTPUTS_SIZE
+                )
             }
             ProofValidationError::ProofTooLarge(size) => {
-                write!(f, "Proof too large: {} bytes (max {})", size, MAX_PROOF_SIZE)
+                write!(
+                    f,
+                    "Proof too large: {} bytes (max {})",
+                    size, MAX_PROOF_SIZE
+                )
             }
             ProofValidationError::PublicInputsTooLarge(size) => write!(
                 f,
@@ -312,8 +326,7 @@ impl SolanaSerialize for StarkProof {
         if data.len() < pos + 4 {
             return Err(SerializationError::DataTooShort);
         }
-        let inputs_len =
-            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+        let inputs_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
 
         // Read inputs
@@ -327,8 +340,7 @@ impl SolanaSerialize for StarkProof {
         if data.len() < pos + 4 {
             return Err(SerializationError::DataTooShort);
         }
-        let outputs_len =
-            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+        let outputs_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
 
         // Read outputs
@@ -342,8 +354,7 @@ impl SolanaSerialize for StarkProof {
         if data.len() < pos + 4 {
             return Err(SerializationError::DataTooShort);
         }
-        let proof_len =
-            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+        let proof_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
 
         // Read proof
@@ -357,8 +368,7 @@ impl SolanaSerialize for StarkProof {
         if data.len() < pos + 4 {
             return Err(SerializationError::DataTooShort);
         }
-        let public_inputs_len =
-            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+        let public_inputs_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
 
         // Read public_inputs
@@ -546,7 +556,10 @@ mod tests {
         };
 
         match op {
-            ZKOperation::SubmitProof { proof: p, gas_limit } => {
+            ZKOperation::SubmitProof {
+                proof: p,
+                gas_limit,
+            } => {
                 assert_eq!(p, proof);
                 assert_eq!(gas_limit, 100000);
             }
