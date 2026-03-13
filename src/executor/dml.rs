@@ -195,6 +195,7 @@ impl Executor {
             limit: None,
             offset: None,
             set_operations: Vec::new(),
+            for_update: false,
         };
 
         // Execute using full SELECT executor (gets all optimizations)

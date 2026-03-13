@@ -616,6 +616,7 @@ mod tests {
             limit: None,
             offset: None,
             set_operations: vec![],
+            for_update: false,
         }))
     }
 

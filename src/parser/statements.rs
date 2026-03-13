@@ -95,6 +95,7 @@ impl Parser {
             limit: None,
             offset: None,
             set_operations: Vec::new(),
+            for_update: false,
         };
 
         // Check for DISTINCT
@@ -299,6 +300,7 @@ impl Parser {
             limit: None,
             offset: None,
             set_operations: Vec::new(),
+            for_update: false,
         };
 
         // Check for DISTINCT
@@ -1711,9 +1713,7 @@ impl Parser {
         } else if data_type == "DQA" && self.peek_token_is_punctuator("(") {
             self.next_token(); // consume (
             if self.peek_token.token_type != TokenType::Integer {
-                self.add_error(
-                    "DQA requires a scale between 0 and 18, e.g. DQA(6)".to_string(),
-                );
+                self.add_error("DQA requires a scale between 0 and 18, e.g. DQA(6)".to_string());
                 return None;
             }
             self.next_token(); // consume scale number
@@ -1792,7 +1792,9 @@ impl Parser {
 
                     // Parse quantization type: BQ, SQ, PQ - just check for Identifier
                     // Keywords like BQ/SQ/PQ should work as identifiers
-                    let qtype = if self.peek_token_is(TokenType::Identifier) || self.peek_token_is(TokenType::Keyword) {
+                    let qtype = if self.peek_token_is(TokenType::Identifier)
+                        || self.peek_token_is(TokenType::Keyword)
+                    {
                         self.next_token();
                         self.cur_token.literal.to_uppercase()
                     } else {
@@ -2898,19 +2900,23 @@ mod tests {
         assert!(result.is_some(), "Failed to parse VECTOR(768)");
 
         // Test VECTOR with QUANTIZE = BQ
-        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(768) QUANTIZE = BQ)");
+        let result =
+            parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(768) QUANTIZE = BQ)");
         assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = BQ");
 
         // Test VECTOR with QUANTIZE = SQ
-        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(384) QUANTIZE = SQ)");
+        let result =
+            parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(384) QUANTIZE = SQ)");
         assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = SQ");
 
         // Test VECTOR with QUANTIZE = PQ (without sub-vector count)
-        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ)");
+        let result =
+            parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ)");
         assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = PQ");
 
         // Test VECTOR with QUANTIZE = PQ(8)
-        let result = parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ(8))");
+        let result =
+            parse_stmt("CREATE TABLE emb (id INTEGER, embedding VECTOR(128) QUANTIZE = PQ(8))");
         assert!(result.is_some(), "Failed to parse VECTOR QUANTIZE = PQ(8)");
     }
 

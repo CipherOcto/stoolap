@@ -1448,6 +1448,8 @@ pub struct SelectStatement {
     pub offset: Option<Box<Expression>>,
     /// Set operations (UNION, INTERSECT, EXCEPT)
     pub set_operations: Vec<SetOperation>,
+    /// FOR UPDATE clause for pessimistic row locking
+    pub for_update: bool,
 }
 
 impl fmt::Display for SelectStatement {
@@ -1487,6 +1489,9 @@ impl fmt::Display for SelectStatement {
         }
         if let Some(ref offset) = self.offset {
             result.push_str(&format!(" OFFSET {}", offset));
+        }
+        if self.for_update {
+            result.push_str(" FOR UPDATE");
         }
         // Add set operations
         for set_op in &self.set_operations {
@@ -2373,6 +2378,7 @@ mod tests {
             limit: None,
             offset: None,
             set_operations: vec![],
+            for_update: false,
         };
         assert_eq!(stmt.to_string(), "SELECT * FROM users");
     }
@@ -2458,5 +2464,63 @@ mod tests {
             }))),
         };
         assert_eq!(case_expr.to_string(), "CASE WHEN TRUE THEN 1 ELSE 0 END");
+    }
+
+    #[test]
+    fn test_select_statement_for_update_display() {
+        let mut stmt = SelectStatement {
+            token: make_token(TokenType::Keyword, "SELECT"),
+            distinct: false,
+            columns: vec![Expression::Identifier(Identifier::new(
+                make_token(TokenType::Identifier, "id"),
+                "id".to_string(),
+            ))],
+            with: None,
+            table_expr: Some(Box::new(Expression::Identifier(Identifier::new(
+                make_token(TokenType::Identifier, "users"),
+                "users".to_string(),
+            )))),
+            where_clause: None,
+            group_by: GroupByClause {
+                columns: vec![],
+                modifier: GroupByModifier::None,
+            },
+            having: None,
+            window_defs: vec![],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            set_operations: vec![],
+            for_update: false,
+        };
+
+        // Without FOR UPDATE
+        assert_eq!(stmt.to_string(), "SELECT id FROM users");
+
+        // With FOR UPDATE
+        stmt.for_update = true;
+        assert_eq!(stmt.to_string(), "SELECT id FROM users FOR UPDATE");
+
+        // With ORDER BY, LIMIT, OFFSET and FOR UPDATE
+        stmt.order_by = vec![OrderByExpression {
+            expression: Expression::Identifier(Identifier::new(
+                make_token(TokenType::Identifier, "id"),
+                "id".to_string(),
+            )),
+            ascending: true,
+            nulls_first: None,
+        }];
+        stmt.limit = Some(Box::new(Expression::IntegerLiteral(IntegerLiteral {
+            token: make_token(TokenType::Integer, "10"),
+            value: 10,
+        })));
+        stmt.offset = Some(Box::new(Expression::IntegerLiteral(IntegerLiteral {
+            token: make_token(TokenType::Integer, "5"),
+            value: 5,
+        })));
+        assert_eq!(
+            stmt.to_string(),
+            "SELECT id FROM users ORDER BY id ASC LIMIT 10 OFFSET 5 FOR UPDATE"
+        );
     }
 }

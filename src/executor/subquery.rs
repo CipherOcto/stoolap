@@ -1075,6 +1075,7 @@ impl Executor {
             with: None,
             window_defs: vec![],
             set_operations: vec![],
+            for_update: false,
         };
 
         // Execute the batch query
@@ -2852,6 +2853,7 @@ impl Executor {
             limit: None,
             offset: None,
             set_operations: vec![],
+            for_update: false,
         };
 
         // Execute the query with incremented depth to avoid creating new TimeoutGuard
