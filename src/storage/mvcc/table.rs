@@ -2502,6 +2502,35 @@ impl Table for MVCCTable {
         Ok(self.collect_visible_rows(where_expr))
     }
 
+    fn collect_all_rows_for_update(&self, where_expr: Option<&dyn Expression>) -> Result<RowVec> {
+        // Use batch fetch WITH original versions for O(1) lock acquisition
+        let schema = &self.cached_schema;
+
+        let rows: RowVec = if let Some(expr) = where_expr {
+            // Use filtered scan - filter is applied BEFORE cloning rows
+            self.version_store
+                .get_all_visible_rows_for_update_filtered(self.txn_id, expr)
+                .into_iter()
+                .map(|(row_id, row, _orig)| {
+                    // Normalize row to match current schema
+                    (row_id, self.normalize_row_to_schema(row, schema))
+                })
+                .collect()
+        } else {
+            // No filter - get all rows with locks
+            self.version_store
+                .get_all_visible_rows_for_update(self.txn_id)
+                .into_iter()
+                .map(|(row_id, row, _orig)| {
+                    // Normalize row to match current schema
+                    (row_id, self.normalize_row_to_schema(row, schema))
+                })
+                .collect()
+        };
+
+        Ok(rows)
+    }
+
     fn collect_all_rows_unsorted(&self) -> Result<RowVec> {
         Ok(self.collect_visible_rows_unsorted())
     }

@@ -446,6 +446,23 @@ pub trait Table: Send + Sync {
         self.collect_rows_with_limit(where_expr, limit, offset)
     }
 
+    /// Collect all rows with FOR UPDATE locking (pessimistic row locking)
+    ///
+    /// This method acquires exclusive row locks for all visible rows, preventing
+    /// concurrent modifications until the transaction commits or rolls back.
+    ///
+    /// # Arguments
+    /// * `where_expr` - Optional filter expression (only lock matching rows)
+    ///
+    /// # Returns
+    /// A RowVec containing locked rows with row IDs
+    fn collect_all_rows_for_update(&self, where_expr: Option<&dyn Expression>) -> Result<RowVec> {
+        // Default implementation: not supported
+        Err(Error::NotSupported(
+            "FOR UPDATE locking not supported".to_string(),
+        ))
+    }
+
     /// Collects all rows WITHOUT guaranteeing deterministic order.
     ///
     /// This is an optimization for GROUP BY queries where row order doesn't matter.

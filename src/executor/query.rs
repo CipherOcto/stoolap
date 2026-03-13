@@ -1819,8 +1819,12 @@ impl Executor {
             // Use unordered version since ORDER BY is already confirmed empty by can_pushdown_limit
             // This enables true early termination without sorting overhead
             // Now returns RowVec directly with row IDs preserved
-            let rows =
-                table.collect_rows_with_limit_unordered(storage_expr.as_deref(), limit, offset)?;
+            let rows = if stmt.for_update {
+                // FOR UPDATE: acquire row locks for pessimistic locking
+                table.collect_all_rows_for_update(storage_expr.as_deref())?
+            } else {
+                table.collect_rows_with_limit_unordered(storage_expr.as_deref(), limit, offset)?
+            };
 
             // Project rows according to SELECT expressions
             // Note: collect_rows_with_limit always returns full rows (all columns),
