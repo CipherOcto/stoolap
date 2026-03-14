@@ -4329,6 +4329,35 @@ impl VersionStore {
         }
     }
 
+    /// Claims multiple rows for update in batch (FOR UPDATE support)
+    ///
+    /// Returns error if any row is already claimed by another transaction.
+    /// Claims are tracked in uncommitted_writes and will block concurrent updates.
+    #[inline]
+    pub fn claim_rows_for_update(&self, row_ids: &[i64], txn_id: i64) -> Result<(), Error> {
+        use crate::common::i64_map::Entry;
+
+        let mut map = self.uncommitted_writes.write();
+        for &row_id in row_ids {
+            match map.entry(row_id) {
+                Entry::Occupied(e) => {
+                    let existing_txn = *e.get();
+                    if existing_txn != txn_id {
+                        return Err(Error::internal(format!(
+                            "row {} is locked by transaction {}",
+                            row_id, existing_txn
+                        )));
+                    }
+                    // Same transaction already owns it - OK
+                }
+                Entry::Vacant(e) => {
+                    e.insert(txn_id);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Check if an index exists
     pub fn index_exists(&self, index_name: &str) -> bool {
         let indexes = self.indexes.read();

@@ -2503,30 +2503,36 @@ impl Table for MVCCTable {
     }
 
     fn collect_all_rows_for_update(&self, where_expr: Option<&dyn Expression>) -> Result<RowVec> {
-        // Use batch fetch WITH original versions for O(1) lock acquisition
+        // Step 1: Get rows with their versions (for MVCC conflict detection)
         let schema = &self.cached_schema;
 
-        let rows: RowVec = if let Some(expr) = where_expr {
-            // Use filtered scan - filter is applied BEFORE cloning rows
+        let rows_with_versions: Vec<(i64, crate::core::Row, crate::storage::mvcc::version_store::RowVersion)> =
+            if let Some(expr) = where_expr {
+                // Use filtered scan - filter is applied BEFORE cloning rows
+                self.version_store
+                    .get_all_visible_rows_for_update_filtered(self.txn_id, expr)
+            } else {
+                // No filter - get all rows with locks
+                self.version_store
+                    .get_all_visible_rows_for_update(self.txn_id)
+            };
+
+        // Step 2: Extract row_ids and claim them for pessimistic locking
+        // This blocks concurrent transactions from modifying these rows until we commit/rollback
+        let row_ids: Vec<i64> = rows_with_versions.iter().map(|(id, _, _)| *id).collect();
+
+        if !row_ids.is_empty() {
             self.version_store
-                .get_all_visible_rows_for_update_filtered(self.txn_id, expr)
-                .into_iter()
-                .map(|(row_id, row, _orig)| {
-                    // Normalize row to match current schema
-                    (row_id, self.normalize_row_to_schema(row, schema))
-                })
-                .collect()
-        } else {
-            // No filter - get all rows with locks
-            self.version_store
-                .get_all_visible_rows_for_update(self.txn_id)
-                .into_iter()
-                .map(|(row_id, row, _orig)| {
-                    // Normalize row to match current schema
-                    (row_id, self.normalize_row_to_schema(row, schema))
-                })
-                .collect()
-        };
+                .claim_rows_for_update(&row_ids, self.txn_id)?;
+        }
+
+        // Step 3: Normalize and return rows
+        let rows: RowVec = rows_with_versions
+            .into_iter()
+            .map(|(row_id, row, _orig)| {
+                (row_id, self.normalize_row_to_schema(row, schema))
+            })
+            .collect();
 
         Ok(rows)
     }
