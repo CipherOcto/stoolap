@@ -314,9 +314,6 @@ pub enum RollupOperation {
         /// The batch being submitted
         batch: RollupBatch,
         /// STARK proof for the batch (requires zk feature, otherwise empty)
-        #[cfg(feature = "zk")]
-        proof: StarkProof,
-        #[cfg(not(feature = "zk"))]
         proof: Vec<u8>,
     },
     /// Challenge a submitted batch (fraud proof)

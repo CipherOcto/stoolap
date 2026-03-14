@@ -18,6 +18,8 @@
 //! 1. Registering Cairo programs
 //! 2. Generating STARK proofs
 //! 3. Verifying proofs
+
+#![allow(clippy::bool_assert_comparison, clippy::expect_fun_call)]
 //! 4. Error handling and gas metering
 
 use crate::zk::{
@@ -228,11 +230,7 @@ fn test_verify_with_mismatched_outputs() {
     // Verify with different outputs
     let result = prover.verify(&proof, &[99]);
     assert!(result.is_ok());
-    assert_eq!(
-        result.unwrap(),
-        false,
-        "Proof should be invalid with mismatched outputs"
-    );
+    assert!(!result.unwrap(), "Proof should be invalid with mismatched outputs");
 }
 
 #[test]
@@ -359,7 +357,7 @@ fn test_zk_operation_gas_estimate() {
 
     // Register program (gas cost estimate)
     let program = CairoProgram::from_source("fn main() {}".to_string(), 2);
-    let hash = program.hash;
+    let _hash = program.hash;
 
     let start = std::time::Instant::now();
     registry.register(program).unwrap();

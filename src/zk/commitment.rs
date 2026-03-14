@@ -81,11 +81,11 @@ pub fn open_commitment(commitment: &Commitment, value: i64, randomness: u64) -> 
 pub fn pedersen_commit_batch(values: &[i64]) -> Vec<Commitment> {
     use rand::Rng;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     values
         .iter()
         .map(|&v| {
-            let randomness: u64 = rng.gen();
+            let randomness: u64 = rng.random();
             pedersen_commit(v, randomness)
         })
         .collect()
@@ -185,9 +185,9 @@ mod tests {
     fn test_batch_open() {
         use rand::Rng;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let values = vec![10i64, 20, 30];
-        let randomness: Vec<u64> = (0..3).map(|_| rng.gen()).collect();
+        let randomness: Vec<u64> = (0..3).map(|_| rng.random()).collect();
 
         let commitments: Vec<Commitment> = values
             .iter()
@@ -207,7 +207,7 @@ mod tests {
         ));
 
         // Should fail with wrong randomness
-        let wrong_randomness: Vec<u64> = (0..3).map(|_| rng.gen()).collect();
+        let wrong_randomness: Vec<u64> = (0..3).map(|_| rng.random()).collect();
         assert!(!open_commitment_batch(
             &commitments,
             &values,

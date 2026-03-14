@@ -830,13 +830,14 @@ impl RowTrie {
                 if self.matches_confidential_filters(&query.filters, &row) {
                     // Generate commitment for this row's primary value
                     // Using first integer value or hash of row data
+                    use rand::Rng;
                     let value = row
                         .values
                         .first()
                         .and_then(|v| v.as_integer())
                         .unwrap_or(row_id);
-                    let mut rng = rand::thread_rng();
-                    let randomness: u64 = rng.gen();
+                    let mut rng = rand::rng();
+                    let randomness: u64 = rng.random();
                     let commitment = pedersen_commit(value, randomness);
                     row_commitments.push(commitment);
 
@@ -849,11 +850,12 @@ impl RowTrie {
         // 3. Generate aggregate commitments
         let mut aggregate_commitments = Vec::new();
         if !aggregate_values.is_empty() {
+            use rand::Rng;
             let sum: i64 = aggregate_values.iter().sum();
             let count = aggregate_values.len() as i64;
-            let mut rng = rand::thread_rng();
-            let randomness1: u64 = rng.gen();
-            let randomness2: u64 = rng.gen();
+            let mut rng = rand::rng();
+            let randomness1: u64 = rng.random();
+            let randomness2: u64 = rng.random();
             aggregate_commitments.push(pedersen_commit(sum, randomness1));
             aggregate_commitments.push(pedersen_commit(count, randomness2));
         }

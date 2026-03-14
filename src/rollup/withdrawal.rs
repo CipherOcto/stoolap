@@ -213,6 +213,7 @@ impl WithdrawalContext {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unnecessary_cast)]
     use super::*;
 
     #[test]

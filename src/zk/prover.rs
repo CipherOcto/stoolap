@@ -306,6 +306,7 @@ impl std::error::Error for VerifyError {}
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::bool_assert_comparison, clippy::assertions_on_constants)]
     use super::*;
 
     #[test]

@@ -271,6 +271,7 @@ impl std::error::Error for BlockError {}
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::cloned_ref_to_slice_refs)]
     use super::*;
 
     #[test]

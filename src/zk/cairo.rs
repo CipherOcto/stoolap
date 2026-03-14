@@ -65,7 +65,10 @@ impl CairoProgram {
     pub fn compute_hash(source: &str) -> CairoProgramHash {
         #[cfg(feature = "zk")]
         {
-            blake3::hash(source.as_bytes()).into()
+            let hash = blake3::hash(source.as_bytes());
+            let mut result = [0u8; 32];
+            result.copy_from_slice(hash.as_bytes());
+            result
         }
 
         #[cfg(not(feature = "zk"))]
@@ -264,7 +267,6 @@ fn check_cairo_version(compiler_path: &Path) -> Result<u32, CompileError> {
 fn parse_cairo_version(version_str: &str) -> Result<u32, CompileError> {
     // Parse version like "2.6.0" or "Cairo compiler version 2.6.0"
     let version_str = version_str
-        .trim()
         .split_whitespace()
         .last()
         .unwrap_or(version_str);
@@ -358,7 +360,7 @@ impl CairoProgramRegistry {
     pub fn remove(&mut self, hash: &CairoProgramHash) -> Result<CairoProgram, RegistryError> {
         self.programs
             .remove(hash)
-            .ok_or_else(|| RegistryError::NotFound(*hash))
+            .ok_or(RegistryError::NotFound(*hash))
             .map(|mut program| {
                 // Also remove from allowlist if present
                 self.allowlist.remove(hash);

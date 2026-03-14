@@ -13,6 +13,7 @@
 // limitations under the License.
 
 //! Tests for deterministic value types
+#![allow(clippy::approx_constant)]
 
 use crate::determ::DetermValue;
 

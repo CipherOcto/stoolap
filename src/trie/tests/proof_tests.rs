@@ -117,7 +117,7 @@ fn test_row_trie_get_hexary_proof_multiple_rows() {
     let row256 = DetermRow::from_values(vec![DetermValue::integer(256)]);
 
     let _ = trie.insert(1, row1);
-    let (root2, _) = trie.insert(256, row256.clone());
+    let (_root2, _) = trie.insert(256, row256.clone());
 
     // Verify row 256 exists
     let retrieved = trie.get(256);

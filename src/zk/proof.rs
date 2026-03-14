@@ -627,7 +627,7 @@ mod tests {
         // Should have: program_hash (32) + inputs_len (4) + inputs (0) +
         //              outputs_len (4) + outputs (0) + proof_len (4) + proof (3) +
         //              public_inputs_len (4) + public_inputs (0)
-        assert_eq!(serialized.len(), 32 + 4 + 0 + 4 + 0 + 4 + 3 + 4 + 0);
+        assert_eq!(serialized.len(), 32 + 4 + 4 + 4 + 3 + 4);
 
         let deserialized = StarkProof::deserialize(&serialized).unwrap();
         assert_eq!(deserialized.proof, vec![1, 2, 3]);

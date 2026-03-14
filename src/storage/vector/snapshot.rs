@@ -159,6 +159,7 @@ impl Default for VectorSnapshotManager {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unnecessary_to_owned)]
     use super::*;
     use tempfile::tempdir;
 
@@ -182,7 +183,7 @@ mod tests {
         assert_eq!(snapshots.len(), 1);
 
         // Get latest
-        let (path, meta) = mgr.get_latest_snapshot().unwrap().unwrap();
+        let (_path, meta) = mgr.get_latest_snapshot().unwrap().unwrap();
         assert_eq!(meta.vector_count, 2);
     }
 }
