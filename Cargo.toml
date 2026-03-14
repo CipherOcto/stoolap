@@ -161,15 +161,107 @@ required-features = ["duckdb"]
 name = "semantic_search"
 required-features = ["semantic"]
 
+# =============================================================================
+# Build Profiles
+# =============================================================================
+#
+# STOOLAP BUILD OPTIMIZATION GUIDE
+# ------------------------------
+# RFC-0104 (Deterministic Floating-Point) requires specific compiler settings for
+# consensus-critical computations. This section documents why each profile exists.
+#
+# RFC-0104 References:
+# - Section "Compiler Flags for Reproducibility": Must use release profile (overflow checks off)
+# - Section "Determinism Hazards": Disable FMA, reordering, and undefined behavior
+# - Section "Storage Encoding": Single canonical serialization path
+#
+# Key Requirements from RFC-0104:
+# 1. overflow-checks = false (required for DFP saturating arithmetic)
+# 2. No floating-point hardware fast-path (software-only DFP)
+# 3. No FMA contraction (-C target-feature=-fma)
+# 4. No fast-math flags
+# 5. Deterministic integer arithmetic (checked/wrapping explicitly)
+#
+# =============================================================================
+
+# DEVELOPMENT PROFILE: Fastest possible builds for iterative development
+# - Uses debug mode for fast compile times
+# - overflow-checks = true (safe for development, not for production)
+# - No LTO for faster incremental builds
+# - Multiple codegen units for parallelism
+# - Suitable for: `cargo build`, `cargo test` (without --profile flag)
+#
+# NOTE: This produces NON-DETERMINISTIC results. Use for development only!
+[profile.dev]
+opt-level = 0           # No optimization for fast compile
+debug = true            # Full debug symbols
+lto = false            # No LTO for faster incremental builds
+codegen-units = 16     # Parallel codegen for speed
+overflow-checks = true  # Runtime overflow checks (safe in dev)
+
+# FINAL RELEASE PROFILE: Deterministic, fully optimized builds
+# - Uses release mode with deterministic settings per RFC-0104
+# - overflow-checks = false (REQUIRED for DFP consensus operations)
+# - Full LTO for maximum optimization
+# - Single codegen unit for best optimization
+# - Suitable for: Production builds, benchmark binaries
+#
+# RFC-0104 Compliance:
+# - "Use `release` profile (overflow checks off by default)"
+# - "Disable FMA contraction: -C target-feature=-fma"
+# - "Disable auto-vectorization and fast-math flags"
+# - "Single codegen unit ensures deterministic optimization passes"
 [profile.release]
 # RFC-0104: Disable overflow checks for deterministic floating-point (DFP)
-# DFP uses saturating arithmetic, not wrapping
+# DFP uses saturating arithmetic, not wrapping. Overflow saturates to MAX/MIN.
 overflow-checks = false
+# Full LTO for maximum cross-crate optimization (deterministic inlining)
+lto = true
+# Single codegen unit ensures deterministic optimization passes across builds
+codegen-units = 1
+# Abort on panic (no unwinding, smaller binary)
+panic = "abort"
+# Maximum optimization level
+opt-level = 3
+# Debug symbols for production profiling (can be disabled for smaller binaries)
+debug = true
+
+# BENCHMARK PROFILE: For benchmark binaries
+# - Full optimization like release
+# - Single codegen unit for deterministic results
+[profile.bench]
 lto = true
 codegen-units = 1
-panic = "abort"
-opt-level = 3
-debug = true  # Enable debug symbols for profiling
+
+# TEST PROFILE: For running tests with deterministic behavior
+# - Inherits release settings for RFC-0104 compliance
+# - Uses thin LTO for faster test compilation while maintaining determinism
+# - Multiple codegen units for parallel test compilation
+# - overflow-checks = false REQUIRED per RFC-0104 for DFP
+# - Suitable for: `cargo test --profile test`
+#
+# RFC-0104: "Do NOT use debug profile for DFP operations"
+# Tests must use deterministic settings to verify consensus behavior
+[profile.test]
+inherits = "release"
+# RFC-0104: Required for deterministic floating-point operations in tests
+overflow-checks = false
+# Thin LTO: Faster compilation than full LTO, still deterministic
+lto = "thin"
+# Parallel codegen: Faster test compilation
+codegen-units = 16
+
+# CI PROFILE: Optimized for CI pipeline speed
+# - Faster than test profile (no debug symbols)
+# - Still maintains determinism for consistent CI results
+# - Suitable for: GitHub Actions, CI runners
+#
+# NOTE: debug = false reduces binary size and link time
+[profile.ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+debug = false
 
 [[bench]]
 name = "select_by_id"
@@ -207,22 +299,3 @@ harness = false
 name = "vector_search"
 harness = false
 required-features = ["vector"]
-
-[profile.bench]
-lto = true
-codegen-units = 1
-
-# Test profile: inherits from release for DFP determinism
-# Run with: cargo test --profile test
-[profile.test]
-inherits = "release"
-overflow-checks = false  # RFC-0104: Required for deterministic floating-point
-lto = "thin"             # Faster compilation for tests
-codegen-units = 16       # Parallel codegen
-
-# CI test profile: faster compile, less disk usage
-[profile.ci]
-inherits = "release"
-lto = "thin"          # Much faster than full LTO
-codegen-units = 16    # Parallel codegen
-debug = false         # No debug symbols needed for tests
