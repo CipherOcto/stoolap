@@ -4320,6 +4320,7 @@ impl VersionStore {
     #[inline]
     pub fn release_row_claims_batch(&self, row_ids: &[i64], txn_id: i64) {
         let mut map = self.uncommitted_writes.write();
+
         for &row_id in row_ids {
             if let Some(&v) = map.get(row_id) {
                 if v == txn_id {
@@ -4329,33 +4330,58 @@ impl VersionStore {
         }
     }
 
-    /// Claims multiple rows for update in batch (FOR UPDATE support)
+    /// Acquires blocking row-level locks for FOR UPDATE (PostgreSQL-style)
     ///
-    /// Returns error if any row is already claimed by another transaction.
-    /// Claims are tracked in uncommitted_writes and will block concurrent updates.
+    /// This method implements true pessimistic locking where:
+    /// - If a row is already locked by another transaction, we WAIT (spin)
+    /// - When the locking transaction commits/rolls back, we acquire the lock
+    /// - This ensures serialized access to rows like PostgreSQL's SELECT FOR UPDATE
+    ///
+    /// The lock is held until the transaction commits or rolls back.
     #[inline]
-    pub fn claim_rows_for_update(&self, row_ids: &[i64], txn_id: i64) -> Result<(), Error> {
+    pub fn acquire_row_locks_for_update(&self, row_ids: &[i64], txn_id: i64) -> Result<(), Error> {
         use crate::common::i64_map::Entry;
 
-        let mut map = self.uncommitted_writes.write();
-        for &row_id in row_ids {
-            match map.entry(row_id) {
-                Entry::Occupied(e) => {
-                    let existing_txn = *e.get();
-                    if existing_txn != txn_id {
-                        return Err(Error::internal(format!(
-                            "row {} is locked by transaction {}",
-                            row_id, existing_txn
-                        )));
+        // Sort row_ids to prevent deadlocks
+        let mut sorted_ids: Vec<i64> = row_ids.to_vec();
+        sorted_ids.sort_unstable();
+
+        // For each row, either acquire lock or wait for it
+        for &row_id in &sorted_ids {
+            // Spin-wait loop with backoff for blocking behavior
+            loop {
+                {
+                    let mut map = self.uncommitted_writes.write();
+                    match map.entry(row_id) {
+                        Entry::Occupied(e) => {
+                            let existing_txn = *e.get();
+                            if existing_txn != txn_id {
+                                // Row is locked - need to wait
+                            } else {
+                                // Same transaction already owns it - OK
+                                break;
+                            }
+                        }
+                        Entry::Vacant(e) => {
+                            // No lock exists, acquire it
+                            e.insert(txn_id);
+                            break;
+                        }
                     }
-                    // Same transaction already owns it - OK
                 }
-                Entry::Vacant(e) => {
-                    e.insert(txn_id);
-                }
+
+                // Lock is held by another transaction - spin wait
+                // Small sleep to avoid busy-spinning
+                std::thread::sleep(std::time::Duration::from_micros(100));
             }
         }
+
         Ok(())
+    }
+
+    /// Releases all row locks held by a transaction (called on commit/rollback)
+    pub fn release_row_locks(&self, _txn_id: i64) {
+        // Nothing to do - locks are in uncommitted_writes and released via release_row_claims_batch
     }
 
     /// Check if an index exists

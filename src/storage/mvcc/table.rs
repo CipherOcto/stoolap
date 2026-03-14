@@ -2523,7 +2523,7 @@ impl Table for MVCCTable {
 
         if !row_ids.is_empty() {
             self.version_store
-                .claim_rows_for_update(&row_ids, self.txn_id)?;
+                .acquire_row_locks_for_update(&row_ids, self.txn_id)?;
         }
 
         // Step 3: Normalize and return rows
