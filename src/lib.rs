@@ -98,6 +98,7 @@ pub mod executor;
 pub mod functions;
 pub mod optimizer;
 pub mod parser;
+pub mod pubsub;
 pub mod rollup;
 pub mod storage;
 pub mod trie;
