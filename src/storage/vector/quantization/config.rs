@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 
 /// Quantization type
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum QuantizationType {
     /// Binary Quantization: 1 bit per dimension
+    #[default]
     Binary,
     /// Scalar Quantization: 4 bits per dimension (future)
     Scalar,
@@ -27,11 +29,6 @@ pub enum QuantizationType {
     Product,
 }
 
-impl Default for QuantizationType {
-    fn default() -> Self {
-        QuantizationType::Binary
-    }
-}
 
 impl QuantizationType {
     /// Get compression ratio (original_size / compressed_size)
@@ -80,7 +77,7 @@ impl QuantizationConfig {
             return 0;
         }
         match self.quantization_type {
-            QuantizationType::Binary => (self.dimension + 7) / 8,
+            QuantizationType::Binary => self.dimension.div_ceil(8),
             QuantizationType::Scalar => self.dimension / 2,
             QuantizationType::Product => self.dimension / 8, // rough estimate
         }

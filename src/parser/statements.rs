@@ -1841,7 +1841,7 @@ impl Parser {
                     };
 
                     constraints.push(ColumnConstraint::Quantize(QuantizationConfig {
-                        quantization_type: qtype.into(),
+                        quantization_type: qtype,
                         sub_vectors,
                     }));
                 }

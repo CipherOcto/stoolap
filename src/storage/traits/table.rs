@@ -456,7 +456,7 @@ pub trait Table: Send + Sync {
     ///
     /// # Returns
     /// A RowVec containing locked rows with row IDs
-    fn collect_all_rows_for_update(&self, where_expr: Option<&dyn Expression>) -> Result<RowVec> {
+    fn collect_all_rows_for_update(&self, _where_expr: Option<&dyn Expression>) -> Result<RowVec> {
         // Default implementation: not supported
         Err(Error::NotSupported(
             "FOR UPDATE locking not supported".to_string(),

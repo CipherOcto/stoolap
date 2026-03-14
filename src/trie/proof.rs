@@ -29,6 +29,7 @@ use sha2::{Digest, Sha256};
 /// * `root` - The expected Merkle root
 /// * `path` - The path (indices) from root to leaf in the tree
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
 pub struct MerkleProof {
     /// Hash of the value being proven
     pub value_hash: [u8; 32],
@@ -480,16 +481,6 @@ impl MerkleProof {
     }
 }
 
-impl Default for MerkleProof {
-    fn default() -> Self {
-        Self {
-            value_hash: [0u8; 32],
-            siblings: Vec::new(),
-            root: [0u8; 32],
-            path: Vec::new(),
-        }
-    }
-}
 
 /// Compute the Merkle root from a list of leaf hashes
 ///
@@ -625,7 +616,7 @@ pub trait SolanaSerialize: Sized {
 /// assert_eq!(packed, vec![0xC5]); // 5 in low nibble, 12 (0xC) in high
 /// ```
 pub fn pack_nibbles(nibbles: &[u8]) -> Vec<u8> {
-    let mut result = Vec::with_capacity((nibbles.len() + 1) / 2);
+    let mut result = Vec::with_capacity(nibbles.len().div_ceil(2));
 
     for chunk in nibbles.chunks(2) {
         let low = chunk[0] & 0x0F;
@@ -704,11 +695,9 @@ pub fn reconstruct_children(
         if bitmap & (1 << i) != 0 {
             if i == path_nibble as usize {
                 children[i] = our_hash;
-            } else {
-                if sibling_idx < siblings.len() {
-                    children[i] = siblings[sibling_idx];
-                    sibling_idx += 1;
-                }
+            } else if sibling_idx < siblings.len() {
+                children[i] = siblings[sibling_idx];
+                sibling_idx += 1;
             }
         }
     }
@@ -1229,7 +1218,7 @@ mod tests {
     #[test]
     fn test_hexary_proof_verify_single_level() {
         use crate::trie::proof::{
-            hash_16_children, pack_nibbles, reconstruct_children, HexaryProof,
+            hash_16_children, reconstruct_children, HexaryProof,
         };
 
         // Create a simple proof with one level
@@ -1254,7 +1243,7 @@ mod tests {
     #[test]
     fn test_hexary_proof_verify_two_levels() {
         use crate::trie::proof::{
-            hash_16_children, pack_nibbles, reconstruct_children, HexaryProof,
+            hash_16_children, reconstruct_children, HexaryProof,
         };
 
         // Create a two-level proof

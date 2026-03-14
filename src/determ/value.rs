@@ -57,7 +57,7 @@ impl PartialEq for DetermValue {
             (DetermValue::Integer(a), DetermValue::Integer(b)) => a == b,
             (DetermValue::Float(a), DetermValue::Float(b)) => a.to_bits() == b.to_bits(),
             (DetermValue::InlineText(a_data, a_len), DetermValue::InlineText(b_data, b_len)) => {
-                a_len == b_len && &a_data[..*a_len as usize] == &b_data[..*b_len as usize]
+                a_len == b_len && a_data[..*a_len as usize] == b_data[..*b_len as usize]
             }
             (DetermValue::HeapText(a), DetermValue::HeapText(b)) => a == b,
             (DetermValue::Boolean(a), DetermValue::Boolean(b)) => a == b,

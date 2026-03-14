@@ -111,7 +111,7 @@ impl CairoProgram {
             .arg("--output")
             .arg("-") // Output to stdout
             .output()
-            .map_err(|e| CompileError::CompilerNotFound)?;
+            .map_err(|_e| CompileError::CompilerNotFound)?;
 
         // Check if compilation succeeded
         if !output.status.success() {
@@ -151,7 +151,7 @@ impl CairoProgram {
             .arg("--output")
             .arg("-") // Output to stdout
             .output()
-            .map_err(|e| CompileError::CompilerNotFound)?;
+            .map_err(|_e| CompileError::CompilerNotFound)?;
 
         // Check if compilation succeeded
         if !output.status.success() {
@@ -361,10 +361,9 @@ impl CairoProgramRegistry {
         self.programs
             .remove(hash)
             .ok_or(RegistryError::NotFound(*hash))
-            .map(|mut program| {
+            .inspect(|_program| {
                 // Also remove from allowlist if present
                 self.allowlist.remove(hash);
-                program
             })
     }
 

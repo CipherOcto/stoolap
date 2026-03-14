@@ -615,7 +615,7 @@ impl Value {
                     }
                     DataType::DeterministicFloat => {
                         // DFP support - downcast from string representation
-                        if let Some(s) = v.downcast_ref::<String>() {
+                        if let Some(_s) = v.downcast_ref::<String>() {
                             // Parse as DFP when implemented
                             Value::Null(data_type)
                         } else {
@@ -624,7 +624,7 @@ impl Value {
                     }
                     DataType::Quant => {
                         // DQA support - downcast from string representation
-                        if let Some(s) = v.downcast_ref::<String>() {
+                        if let Some(_s) = v.downcast_ref::<String>() {
                             // Parse as DQA when implemented
                             Value::Null(data_type)
                         } else {
@@ -838,15 +838,15 @@ impl Value {
             DataType::DeterministicFloat => {
                 // Convert to DFP - cast from Float or Integer
                 match self {
-                    Value::Float(v) => {
+                    Value::Float(_v) => {
                         // TODO: Convert f64 to DFP when octo-determin is integrated
                         Value::Null(target_type)
                     }
-                    Value::Integer(v) => {
+                    Value::Integer(_v) => {
                         // TODO: Convert i64 to DFP when octo-determin is integrated
                         Value::Null(target_type)
                     }
-                    Value::Text(s) => {
+                    Value::Text(_s) => {
                         // TODO: Parse string as DFP when octo-determin is integrated
                         Value::Null(target_type)
                     }
@@ -856,15 +856,15 @@ impl Value {
             DataType::Quant => {
                 // Convert to DQA - cast from Float or Integer
                 match self {
-                    Value::Float(v) => {
+                    Value::Float(_v) => {
                         // TODO: Convert f64 to DQA when octo-determin is integrated
                         Value::Null(target_type)
                     }
-                    Value::Integer(v) => {
+                    Value::Integer(_v) => {
                         // TODO: Convert i64 to DQA when octo-determin is integrated
                         Value::Null(target_type)
                     }
-                    Value::Text(s) => {
+                    Value::Text(_s) => {
                         // TODO: Parse string as DQA when octo-determin is integrated
                         Value::Null(target_type)
                     }
@@ -907,9 +907,9 @@ impl Value {
             },
             DataType::Quant => match self {
                 // DQA casts - placeholder until octo-determin integration
-                Value::Float(v) => Value::Null(target_type),
-                Value::Integer(v) => Value::Null(target_type),
-                Value::Text(s) => Value::Null(target_type),
+                Value::Float(_v) => Value::Null(target_type),
+                Value::Integer(_v) => Value::Null(target_type),
+                Value::Text(_s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::Null => Value::Null(DataType::Null),
@@ -1037,16 +1037,16 @@ impl Value {
             },
             DataType::Quant => match self {
                 // DQA casts - placeholder until octo-determin integration
-                Value::Float(v) => Value::Null(target_type),
-                Value::Integer(v) => Value::Null(target_type),
-                Value::Text(s) => Value::Null(target_type),
+                Value::Float(_v) => Value::Null(target_type),
+                Value::Integer(_v) => Value::Null(target_type),
+                Value::Text(_s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::DeterministicFloat => match self {
                 // DFP casts - placeholder until octo-determin integration
-                Value::Float(v) => Value::Null(target_type),
-                Value::Integer(v) => Value::Null(target_type),
-                Value::Text(s) => Value::Null(target_type),
+                Value::Float(_v) => Value::Null(target_type),
+                Value::Integer(_v) => Value::Null(target_type),
+                Value::Text(_s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::Null => Value::Null(DataType::Null),

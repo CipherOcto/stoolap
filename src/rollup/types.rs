@@ -16,8 +16,6 @@
 //!
 //! Core data structures for the L2 rollup protocol.
 
-#[cfg(feature = "zk")]
-use crate::zk::proof::StarkProof;
 use serde::{Deserialize, Serialize};
 
 /// Address size in bytes (Ethereum-style address)
@@ -119,13 +117,13 @@ impl RollupBatch {
     pub fn hash(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(&self.batch_number.to_le_bytes());
-        hasher.update(&self.parent_hash);
-        hasher.update(&self.pre_state_root);
-        hasher.update(&self.post_state_root);
-        hasher.update(&self.timestamp.to_le_bytes());
+        hasher.update(self.batch_number.to_le_bytes());
+        hasher.update(self.parent_hash);
+        hasher.update(self.pre_state_root);
+        hasher.update(self.post_state_root);
+        hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.sequencer.as_bytes());
-        hasher.update(&(self.transactions.len() as u64).to_le_bytes());
+        hasher.update((self.transactions.len() as u64).to_le_bytes());
         hasher.finalize().into()
     }
 

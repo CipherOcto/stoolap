@@ -42,7 +42,7 @@ impl BinaryQuantizer {
     /// Bitstream where bit i corresponds to dimension i
     pub fn encode(&self, vector: &[f32]) -> Vec<u8> {
         let bits = vector.len();
-        let bytes = (bits + 7) / 8;
+        let bytes = bits.div_ceil(8);
         let mut result = vec![0u8; bytes];
 
         for (i, &v) in vector.iter().enumerate() {
@@ -80,7 +80,7 @@ impl BinaryQuantizer {
 
     /// Get size of encoded vector in bytes
     pub fn encoded_size(&self) -> usize {
-        (self.dimension + 7) / 8
+        self.dimension.div_ceil(8)
     }
 }
 

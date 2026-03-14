@@ -105,24 +105,21 @@ impl VectorMvcc {
         if let Some(seg_id) = active_id {
             let mut segments = self.segments.write();
             if let Some(state) = segments.get_mut(&seg_id) {
-                match state {
-                    SegmentState::Active(segment) => {
-                        if let Some(seg) = Arc::get_mut(segment) {
-                            let idx = seg.push(vector_id, &embedding)?;
-                            self.version_tracker
-                                .write()
-                                .locations
-                                .insert(vector_id, (seg_id, idx));
+                if let SegmentState::Active(segment) = state {
+                    if let Some(seg) = Arc::get_mut(segment) {
+                        let idx = seg.push(vector_id, &embedding)?;
+                        self.version_tracker
+                            .write()
+                            .locations
+                            .insert(vector_id, (seg_id, idx));
 
-                            // WAL logging
-                            if let Some(ref wal) = self.wal {
-                                let _ =
-                                    wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
-                            }
-                            return Ok(());
+                        // WAL logging
+                        if let Some(ref wal) = self.wal {
+                            let _ =
+                                wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
                         }
+                        return Ok(());
                     }
-                    _ => {}
                 }
             }
         }

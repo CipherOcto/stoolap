@@ -263,9 +263,9 @@ impl RollupState {
     fn update_state_root(&mut self) {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(&self.state_root);
-        hasher.update(&self.batch_number.to_le_bytes());
-        hasher.update(&(self.pending_withdrawals.len() as u64).to_le_bytes());
+        hasher.update(self.state_root);
+        hasher.update(self.batch_number.to_le_bytes());
+        hasher.update((self.pending_withdrawals.len() as u64).to_le_bytes());
         self.state_root = hasher.finalize().into();
     }
 }

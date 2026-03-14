@@ -211,7 +211,7 @@ impl STWOProver {
     pub fn generate_real_proof(
         &self,
         program: &CairoProgram,
-        inputs: &[u8],
+        _inputs: &[u8],
     ) -> Result<StarkProof, ProverError> {
         // Compile program if needed
         let _compiled = CairoProgram::compile_to_casm(&program.sierra)

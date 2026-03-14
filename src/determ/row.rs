@@ -136,15 +136,14 @@ impl DetermRow {
             DetermValue::Timestamp(ts) => {
                 // Convert i64 nanoseconds to DateTime<Utc>
                 use chrono::DateTime;
-                use chrono::NaiveDateTime;
                 use chrono::Utc;
 
                 // Convert nanoseconds to seconds
                 let secs = ts / 1_000_000_000;
                 let nanos = (ts % 1_000_000_000) as u32;
                 if secs >= 0 {
-                    if let Some(naive) = NaiveDateTime::from_timestamp_opt(secs, nanos) {
-                        return Value::Timestamp(DateTime::<Utc>::from_utc(naive, Utc));
+                    if let Some(dt) = DateTime::<Utc>::from_timestamp(secs, nanos) {
+                        return Value::Timestamp(dt);
                     }
                 }
                 Value::Null(DataType::Timestamp)

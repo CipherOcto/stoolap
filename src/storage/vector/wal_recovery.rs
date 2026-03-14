@@ -85,7 +85,7 @@ impl VectorWalRecovery {
             let mut entry_data = Vec::with_capacity(2 + 2 + table_len + 4 + data_len);
             entry_data.extend_from_slice(&op);
             entry_data.extend_from_slice(&table_len_buf);
-            entry_data.extend_from_slice(&table_name.as_bytes());
+            entry_data.extend_from_slice(table_name.as_bytes());
             entry_data.extend_from_slice(&data_len_buf);
             entry_data.extend_from_slice(&data);
 

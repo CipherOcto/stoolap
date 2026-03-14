@@ -194,7 +194,7 @@ impl ChallengeContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rollup::types::TxType;
+    
 
     fn create_test_fraud_proof() -> FraudProof {
         FraudProof::new(

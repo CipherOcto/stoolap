@@ -145,7 +145,7 @@ impl MmapVectorSegmentMut {
     pub fn new(id: u64, dimension: usize, capacity: usize) -> Self {
         let vectors = vec![0.0; dimension * capacity];
         // Pre-allocate deleted flags (1 bit per vector)
-        let deleted_len = (capacity + 7) / 8;
+        let deleted_len = capacity.div_ceil(8);
         let deleted = vec![0u8; deleted_len];
         let vector_ids = Vec::with_capacity(capacity);
 
@@ -249,7 +249,7 @@ impl MmapVectorSegmentMut {
         let mut file = File::create(&file_path)?;
 
         // Write deletion flags directly (no header - metadata has count)
-        let deleted_len = (self.count + 7) / 8;
+        let deleted_len = self.count.div_ceil(8);
         file.write_all(&self.deleted[..deleted_len])?;
 
         // Sync

@@ -203,7 +203,7 @@ impl SubmissionContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rollup::types::TxType;
+    
 
     fn create_test_batch(batch_number: u64, parent_hash: [u8; 32]) -> RollupBatch {
         RollupBatch::new(

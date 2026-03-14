@@ -74,7 +74,7 @@ impl VectorSearch {
 
     /// Build index for a segment from its vectors
     pub fn build_index_for_segment(&mut self, segment: &VectorSegment) {
-        let index = self.get_or_create_index(segment);
+        let _index = self.get_or_create_index(segment);
 
         // TODO: Add vectors to HNSW
         // This requires integrating with the Index trait
@@ -131,7 +131,7 @@ impl VectorSearch {
         for segment in segments {
             if !self.indexes.contains_key(&segment.id) {
                 // Build from Arc reference - would need to dereference
-                let seg_ref: &VectorSegment = &*segment;
+                let seg_ref: &VectorSegment = &segment;
                 self.build_index_for_segment(seg_ref);
             }
         }

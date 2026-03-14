@@ -3445,7 +3445,7 @@ impl ExprVM {
         };
 
         // Helper to extract DFP from Extension
-        let extract_dfp = |ext: &crate::common::CompactArc<[u8]>| -> Dfp {
+        let _extract_dfp = |ext: &crate::common::CompactArc<[u8]>| -> Dfp {
             Self::extract_dfp_from_extension(ext).unwrap_or_else(Dfp::nan)
         };
 
@@ -3550,7 +3550,7 @@ impl ExprVM {
 
         match (a, b) {
             // DQA + DQA → DQA
-            (Value::Extension(ext_a), Value::Extension(ext_b)) => {
+            (Value::Extension(_ext_a), Value::Extension(_ext_b)) => {
                 let dqa_a = extract_dqa(a);
                 let dqa_b = extract_dqa(b);
 

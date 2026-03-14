@@ -75,7 +75,7 @@ impl VectorMerkle {
 
         let mut level: Vec<Vec<u8>> = leaf_hashes.to_vec();
         while level.len() > 1 {
-            let mut next_level = Vec::with_capacity((level.len() + 1) / 2);
+            let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
             for chunk in level.chunks(2) {
                 if chunk.len() == 2 {
                     next_level.push(Self::internal_hash(&chunk[0], &chunk[1]));
@@ -187,7 +187,7 @@ impl VectorMerkle {
 
         // Verify segment root -> global root
         // (simplified - actual impl would need sibling hashes)
-        &proof.segment_root == &proof.global_root || proof.global_root.len() == 32
+        proof.segment_root == proof.global_root || proof.global_root.len() == 32
     }
 }
 
