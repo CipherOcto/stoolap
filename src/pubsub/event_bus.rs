@@ -91,6 +91,38 @@ impl Default for EventBus {
     }
 }
 
+impl super::traits::EventPublisher for EventBus {
+    fn publish(&self, event: super::DatabaseEvent) -> crate::core::Result<()> {
+        self.publish(event)
+            .map_err(|_| crate::core::Error::internal("Failed to publish event"))
+    }
+
+    fn subscribe(&self) -> Box<dyn super::traits::EventSubscriber> {
+        Box::new(EventBusSubscriber {
+            receiver: self.subscribe(),
+        })
+    }
+
+    fn subscriber_count(&self) -> usize {
+        self.subscriber_count()
+    }
+}
+
+/// Subscriber wrapper for EventBus
+struct EventBusSubscriber {
+    receiver: channel::Receiver<DatabaseEvent>,
+}
+
+impl super::traits::EventSubscriber for EventBusSubscriber {
+    fn try_recv(&self) -> Option<super::DatabaseEvent> {
+        self.receiver.try_recv().ok()
+    }
+
+    fn is_ready(&self) -> bool {
+        self.receiver.try_recv().is_ok()
+    }
+}
+
 impl fmt::Debug for EventBus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EventBus")

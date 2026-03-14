@@ -18,6 +18,7 @@
 //! parameter handling, transaction state, and query options.
 
 use crate::common::time_compat::Instant;
+use crate::pubsub::EventPublisher;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
@@ -658,7 +659,7 @@ pub fn cache_exists_correlation(
 ///
 /// Note: This struct uses Arc for immutable shared data to make cloning cheap
 /// during correlated subquery processing where context is cloned per row.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExecutionContext {
     /// Query parameters ($1, $2, etc.) - wrapped in Arc for cheap cloning
     params: CompactArc<ParamVec>,
@@ -691,6 +692,20 @@ pub struct ExecutionContext {
     cte_data: Option<Arc<CteDataMap>>,
     /// Current transaction ID for CURRENT_TRANSACTION_ID() function
     transaction_id: Option<u64>,
+    /// Event publisher for pub/sub (optional)
+    event_publisher: Option<Arc<dyn EventPublisher>>,
+}
+
+impl std::fmt::Debug for ExecutionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionContext")
+            .field("param_count", &self.param_count())
+            .field("auto_commit", &self.auto_commit)
+            .field("timeout_ms", &self.timeout_ms)
+            .field("transaction_id", &self.transaction_id)
+            .field("event_publisher", &self.event_publisher.is_some())
+            .finish()
+    }
 }
 
 /// Type alias for CTE data: (columns, rows) with Arc for zero-copy sharing
@@ -726,6 +741,7 @@ impl ExecutionContext {
             outer_columns: None,
             cte_data: None,
             transaction_id: None,
+            event_publisher: None,
         }
     }
 
@@ -886,6 +902,7 @@ impl ExecutionContext {
             outer_columns: self.outer_columns.clone(),
             cte_data: self.cte_data.clone(),
             transaction_id: self.transaction_id,
+            event_publisher: self.event_publisher.clone(),
         }
     }
 
@@ -906,6 +923,7 @@ impl ExecutionContext {
             outer_columns: self.outer_columns.clone(),
             cte_data: self.cte_data.clone(),
             transaction_id: self.transaction_id,
+            event_publisher: self.event_publisher.clone(),
         }
     }
 
@@ -941,6 +959,7 @@ impl ExecutionContext {
             outer_columns: Some(outer_columns), // Arc clone = cheap
             cte_data: self.cte_data.clone(),    // Arc clone = cheap
             transaction_id: self.transaction_id,
+            event_publisher: self.event_publisher.clone(),
         }
     }
 
@@ -993,6 +1012,7 @@ impl ExecutionContext {
             outer_columns: self.outer_columns.clone(),
             cte_data: Some(cte_data),
             transaction_id: self.transaction_id,
+            event_publisher: self.event_publisher.clone(),
         }
     }
 
@@ -1004,6 +1024,16 @@ impl ExecutionContext {
     /// Set the transaction ID
     pub fn set_transaction_id(&mut self, txn_id: u64) {
         self.transaction_id = Some(txn_id);
+    }
+
+    /// Get the event publisher (if configured)
+    pub fn event_publisher(&self) -> Option<&Arc<dyn EventPublisher>> {
+        self.event_publisher.as_ref()
+    }
+
+    /// Set the event publisher
+    pub fn set_event_publisher(&mut self, publisher: Arc<dyn EventPublisher>) {
+        self.event_publisher = Some(publisher);
     }
 
     /// Create a new context with a transaction ID
@@ -1022,6 +1052,7 @@ impl ExecutionContext {
             outer_columns: self.outer_columns.clone(),
             cte_data: self.cte_data.clone(),
             transaction_id: Some(txn_id),
+            event_publisher: self.event_publisher.clone(),
         }
     }
 
@@ -1328,6 +1359,12 @@ impl ExecutionContextBuilder {
     /// Set the query timeout
     pub fn timeout_ms(mut self, timeout_ms: u64) -> Self {
         self.ctx.timeout_ms = timeout_ms;
+        self
+    }
+
+    /// Set the event publisher for pub/sub
+    pub fn event_publisher(mut self, publisher: Arc<dyn EventPublisher>) -> Self {
+        self.ctx.event_publisher = Some(publisher);
         self
     }
 

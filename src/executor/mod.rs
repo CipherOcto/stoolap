@@ -83,6 +83,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::api::params::ParamVec;
 use crate::core::{Error, Result, Value};
 use crate::functions::FunctionRegistry;
+use crate::pubsub::{DatabaseEvent, OperationType};
 
 /// Default function registry - shared across all executors to avoid per-database allocation
 static DEFAULT_FUNCTION_REGISTRY: OnceLock<Arc<FunctionRegistry>> = OnceLock::new();
@@ -231,6 +232,25 @@ impl Executor {
     fn get_query_planner(&self) -> &QueryPlanner {
         self.query_planner
             .get_or_init(|| QueryPlanner::new(Arc::clone(&self.engine)))
+    }
+
+    /// Emit a TableModified event for cache invalidation
+    fn emit_table_modified_event(
+        ctx: &ExecutionContext,
+        table_name: &str,
+        operation: OperationType,
+    ) -> Result<()> {
+        if let Some(ref publisher) = ctx.event_publisher() {
+            let event_id = crate::pubsub::generate_event_id();
+            let event = DatabaseEvent::TableModified {
+                table_name: table_name.to_string(),
+                operation,
+                txn_id: ctx.transaction_id().unwrap_or(0) as i64,
+                event_id,
+            };
+            publisher.publish(event)?;
+        }
+        Ok(())
     }
 
     /// Get or create a table within the active transaction
@@ -617,10 +637,22 @@ impl Executor {
             Statement::CreateView(stmt) => self.execute_create_view(stmt, &ctx),
             Statement::DropView(stmt) => self.execute_drop_view(stmt, &ctx),
 
-            // DML statements
-            Statement::Insert(stmt) => self.execute_insert(stmt, &ctx),
-            Statement::Update(stmt) => self.execute_update(stmt, &ctx),
-            Statement::Delete(stmt) => self.execute_delete(stmt, &ctx),
+            // DML statements - emit cache invalidation events on success
+            Statement::Insert(stmt) => {
+                let result = self.execute_insert(stmt, &ctx)?;
+                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Insert)?;
+                Ok(result)
+            }
+            Statement::Update(stmt) => {
+                let result = self.execute_update(stmt, &ctx)?;
+                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Update)?;
+                Ok(result)
+            }
+            Statement::Delete(stmt) => {
+                let result = self.execute_delete(stmt, &ctx)?;
+                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Delete)?;
+                Ok(result)
+            }
             Statement::Truncate(stmt) => self.execute_truncate(stmt, &ctx),
 
             // Query statements - try fast-path first for simple PK lookups
