@@ -1410,6 +1410,17 @@ pub fn parse_quant_scale(type_str: &str) -> u8 {
     }
 }
 
+/// Parse blob length from a type string like "BYTEA(256)".
+/// Returns 0 if no length is specified.
+pub fn parse_blob_length(type_str: &str) -> u32 {
+    let upper = type_str.to_uppercase();
+    if let Some(inner) = upper.strip_prefix("BYTEA(").and_then(|s| s.strip_suffix(')')) {
+        inner.trim().parse::<u32>().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 // ============================================================================
 // Expression Display Utilities
 // ============================================================================

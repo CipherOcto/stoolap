@@ -616,6 +616,37 @@ impl Schema {
         Ok(())
     }
 
+    /// Validate the schema for BYTEA/BLOB column constraints
+    ///
+    /// Per RFC-0201, BYTEA is orderable (uses byte-level comparison), so it can be
+    /// used in ORDER BY and as PRIMARY KEY. This validation ensures:
+    /// - Blob columns with blob_length set have valid length (non-zero, reasonable max)
+    pub fn validate_schema(&self) -> Result<()> {
+        const MAX_BLOB_LENGTH: u32 = 16 * 1024 * 1024; // 16 MiB reasonable max
+
+        for column in &self.columns {
+            if column.data_type == DataType::Blob {
+                if let Some(length) = column.blob_length {
+                    // blob_length must be non-zero
+                    if length == 0 {
+                        return Err(Error::invalid_argument(
+                            format!("column '{}' has invalid blob_length: length must be non-zero", column.name)
+                        ));
+                    }
+                    // blob_length must be reasonable
+                    if length > MAX_BLOB_LENGTH {
+                        return Err(Error::invalid_argument(
+                            format!("column '{}' has invalid blob_length: {} exceeds maximum allowed length of {}",
+                                column.name, length, MAX_BLOB_LENGTH)
+                        ));
+                    }
+                }
+                // Blob columns are orderable per RFC-0201, so no restrictions on ORDER BY or PRIMARY KEY
+            }
+        }
+        Ok(())
+    }
+
     /// Mark the schema as updated (sets updated_at to now)
     pub fn mark_updated(&mut self) {
         self.updated_at = Utc::now();
@@ -1121,5 +1152,59 @@ mod tests {
         assert_eq!(schema.get_column_type("name"), Some(DataType::Text));
         assert_eq!(schema.get_column_type("active"), Some(DataType::Boolean));
         assert_eq!(schema.get_column_type("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_validate_schema_blob_length_valid() {
+        // Blob without blob_length should be valid
+        let schema = SchemaBuilder::new("test")
+            .add("data", DataType::Blob)
+            .build();
+        assert!(schema.validate_schema().is_ok());
+
+        // Blob with valid blob_length should be valid
+        let schema = SchemaBuilder::new("test")
+            .add("data", DataType::Blob)
+            .build();
+        // Manually set blob_length on the column
+        let col = schema.columns.first_mut().unwrap();
+        col.blob_length = Some(1024);
+        assert!(schema.validate_schema().is_ok());
+    }
+
+    #[test]
+    fn test_validate_schema_blob_length_zero() {
+        let schema = SchemaBuilder::new("test")
+            .add("data", DataType::Blob)
+            .build();
+        let col = schema.columns.first_mut().unwrap();
+        col.blob_length = Some(0);
+
+        let err = schema.validate_schema().unwrap_err();
+        assert!(matches!(err, Error::InvalidArgument(_)));
+        assert!(err.to_string().contains("non-zero"));
+    }
+
+    #[test]
+    fn test_validate_schema_blob_length_exceeds_max() {
+        let schema = SchemaBuilder::new("test")
+            .add("data", DataType::Blob)
+            .build();
+        let col = schema.columns.first_mut().unwrap();
+        col.blob_length = Some(100 * 1024 * 1024); // 100 MiB, exceeds 16 MiB max
+
+        let err = schema.validate_schema().unwrap_err();
+        assert!(matches!(err, Error::InvalidArgument(_)));
+        assert!(err.to_string().contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn test_validate_schema_non_blob_ignored() {
+        // Non-blob columns should not affect validation
+        let schema = SchemaBuilder::new("test")
+            .add("id", DataType::Integer)
+            .add("name", DataType::Text)
+            .build();
+        assert!(schema.validate_schema().is_ok());
     }
 }

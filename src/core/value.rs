@@ -427,6 +427,20 @@ impl Value {
         }
     }
 
+    /// Extract blob as 32-byte array (for SHA256 key_hash values)
+    ///
+    /// Returns `None` if the value is not a Blob or is not exactly 32 bytes.
+    pub fn as_blob_32(&self) -> Option<[u8; 32]> {
+        match self {
+            Value::Blob(data) if data.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(data);
+                Some(arr)
+            }
+            _ => None,
+        }
+    }
+
     /// Convert value to DFP (deterministic floating-point)
     pub fn to_dfp(&self) -> Option<Dfp> {
         match self {

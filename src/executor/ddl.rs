@@ -257,6 +257,14 @@ impl Executor {
                 }
             }
 
+            // Store blob length in SchemaColumn if this is a BLOB type
+            if data_type == DataType::Blob {
+                let blob_len = crate::executor::utils::parse_blob_length(&col_def.data_type);
+                if blob_len > 0 {
+                    schema_builder = schema_builder.set_last_blob_length(blob_len);
+                }
+            }
+
             // Track UNIQUE columns for index creation
             if is_unique && !is_primary_key {
                 unique_columns.push(col_name.to_string());
@@ -1128,8 +1136,8 @@ impl Executor {
             // Date and time are all stored as Timestamp
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => Ok(DataType::Timestamp),
             "JSON" | "JSONB" => Ok(DataType::Json),
-            // Binary data stored as Text (base64 encoded)
-            "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Text),
+            // Binary large object
+            "BYTEA" | "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Blob),
             "VECTOR" => Ok(DataType::Vector),
             _ => Err(Error::Type(format!("Unknown data type: {}", type_str))),
         }

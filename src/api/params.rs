@@ -173,6 +173,24 @@ impl<T: ToParam> ToParam for &T {
     }
 }
 
+impl ToParam for Vec<u8> {
+    fn to_param(&self) -> Value {
+        Value::blob(self.clone())
+    }
+}
+
+impl<const N: usize> ToParam for [u8; N] {
+    fn to_param(&self) -> Value {
+        Value::blob(self.to_vec())
+    }
+}
+
+impl ToParam for &[u8] {
+    fn to_param(&self) -> Value {
+        Value::blob(self.to_vec())
+    }
+}
+
 /// Trait for collections of parameters
 ///
 /// This enables passing tuples, arrays, and slices as parameters.
