@@ -38,6 +38,9 @@ TODO.md
 *.disabled
 deny.toml
 
+# Git worktrees
+.worktrees/
+
 # Documentation build artifacts
 docs/_site/
 docs/.jekyll-cache/
