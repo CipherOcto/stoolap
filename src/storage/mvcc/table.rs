@@ -127,7 +127,8 @@ impl MVCCTable {
             | DataType::Float
             | DataType::Timestamp
             | DataType::DeterministicFloat
-            | DataType::Quant => IndexType::BTree,
+            | DataType::Quant
+            | DataType::Blob => IndexType::BTree,
 
             // Vector columns - use HNSW for approximate nearest neighbor search
             DataType::Vector => IndexType::Hnsw,

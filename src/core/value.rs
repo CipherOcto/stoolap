@@ -210,6 +210,14 @@ impl Value {
         Value::Extension(CompactArc::from(bytes))
     }
 
+    /// Create a Blob value from raw byte data (stored in Extension)
+    pub fn blob(data: Vec<u8>) -> Self {
+        let mut bytes = Vec::with_capacity(1 + data.len());
+        bytes.push(DataType::Blob as u8);
+        bytes.extend_from_slice(&data);
+        Value::Extension(CompactArc::from(bytes))
+    }
+
     // =========================================================================
     // Type accessors
     // =========================================================================
@@ -631,6 +639,14 @@ impl Value {
                             Value::Null(data_type)
                         }
                     }
+                    DataType::Blob => {
+                        // Blob support - downcast from Vec<u8>
+                        if let Some(vec) = v.downcast_ref::<Vec<u8>>() {
+                            Value::blob(vec.clone())
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
                     DataType::Null => Value::Null(DataType::Null),
                 }
             }
@@ -912,6 +928,14 @@ impl Value {
                 Value::Text(_s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
+            DataType::Blob => match self {
+                Value::Extension(data)
+                    if data.first().copied() == Some(DataType::Blob as u8) =>
+                {
+                    self.clone()
+                }
+                _ => Value::Null(target_type),
+            },
             DataType::Null => Value::Null(DataType::Null),
         }
     }
@@ -1047,6 +1071,14 @@ impl Value {
                 Value::Float(_v) => Value::Null(target_type),
                 Value::Integer(_v) => Value::Null(target_type),
                 Value::Text(_s) => Value::Null(target_type),
+                _ => Value::Null(target_type),
+            },
+            DataType::Blob => match self {
+                Value::Extension(ref data)
+                    if data.first() == Some(&(DataType::Blob as u8)) =>
+                {
+                    self
+                }
                 _ => Value::Null(target_type),
             },
             DataType::Null => Value::Null(DataType::Null),

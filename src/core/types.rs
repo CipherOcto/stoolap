@@ -61,6 +61,10 @@ pub enum DataType {
     /// 64-bit scaled integer with bounded range (0-18 decimal places)
     /// Scale is stored in SchemaColumn.quant_scale
     Quant = 9,
+
+    /// Binary large object for cryptographic hashes and binary data
+    /// Stored as BYTEA in PostgreSQL, supports comparison for ordering
+    Blob = 10,
 }
 
 impl DataType {
@@ -96,6 +100,7 @@ impl DataType {
             7 => Some(DataType::Vector),
             8 => Some(DataType::DeterministicFloat),
             9 => Some(DataType::Quant),
+            10 => Some(DataType::Blob),
             _ => None,
         }
     }
@@ -114,6 +119,7 @@ impl fmt::Display for DataType {
             DataType::Vector => write!(f, "VECTOR"),
             DataType::DeterministicFloat => write!(f, "DFP"),
             DataType::Quant => write!(f, "DQA"),
+            DataType::Blob => write!(f, "BYTEA"),
         }
     }
 }
@@ -140,6 +146,7 @@ impl FromStr for DataType {
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => Ok(DataType::Timestamp),
             "JSON" | "JSONB" => Ok(DataType::Json),
             "DFP" | "DETERMINISTICFLOAT" => Ok(DataType::DeterministicFloat),
+            "BYTEA" | "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Blob),
             _ => Err(Error::InvalidColumnType),
         }
     }
@@ -688,5 +695,39 @@ mod tests {
     fn test_default_values() {
         assert_eq!(DataType::default(), DataType::Null);
         assert_eq!(IsolationLevel::default(), IsolationLevel::ReadCommitted);
+    }
+
+    // =========================================================================
+    // DataType::Blob tests
+    // =========================================================================
+
+    #[test]
+    fn test_datatype_blob_from_str() {
+        assert!(matches!("BYTEA".parse::<DataType>(), Ok(DataType::Blob)));
+        assert!(matches!("BLOB".parse::<DataType>(), Ok(DataType::Blob)));
+        assert!(matches!("BINARY".parse::<DataType>(), Ok(DataType::Blob)));
+        assert!(matches!("VARBINARY".parse::<DataType>(), Ok(DataType::Blob)));
+    }
+
+    #[test]
+    fn test_datatype_blob_display() {
+        assert_eq!(DataType::Blob.to_string(), "BYTEA");
+    }
+
+    #[test]
+    fn test_datatype_blob_as_u8() {
+        assert_eq!(DataType::Blob.as_u8(), 10);
+    }
+
+    #[test]
+    fn test_datatype_blob_from_u8() {
+        assert_eq!(DataType::from_u8(10), Some(DataType::Blob));
+        assert_eq!(DataType::from_u8(11), None); // 11 is not yet used
+    }
+
+    #[test]
+    fn test_datatype_blob_is_orderable() {
+        // Blob IS orderable - binary data can be compared
+        assert!(DataType::Blob.is_orderable());
     }
 }

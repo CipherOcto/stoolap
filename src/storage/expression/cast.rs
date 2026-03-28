@@ -84,6 +84,10 @@ impl CastExpr {
                 format!("{:?}", value),
                 "DQA",
             )),
+            DataType::Blob => Err(crate::core::Error::type_conversion(
+                format!("{:?}", value),
+                "BLOB",
+            )),
             DataType::Null => Ok(Value::null(DataType::Null)),
         }
     }
