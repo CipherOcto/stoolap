@@ -64,6 +64,9 @@ pub struct SchemaColumn {
 
     /// Decimal scale for DQA/Quant columns (0-18, 0 = not a quant column)
     pub quant_scale: u8,
+
+    /// Maximum length for BLOB columns (None = no limit)
+    pub blob_length: Option<u32>,
 }
 
 impl SchemaColumn {
@@ -90,6 +93,7 @@ impl SchemaColumn {
             check_expr: None,
             vector_dimensions: 0,
             quant_scale: 0,
+            blob_length: None,
         }
     }
 
@@ -132,6 +136,7 @@ impl SchemaColumn {
             check_expr,
             vector_dimensions: 0,
             quant_scale: 0,
+            blob_length: None,
         }
     }
 
@@ -163,6 +168,7 @@ impl SchemaColumn {
             check_expr,
             vector_dimensions: 0,
             quant_scale: 0,
+            blob_length: None,
         }
     }
 

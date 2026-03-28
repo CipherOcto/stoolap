@@ -594,6 +594,7 @@ fn deserialize_snapshot_schema(data: &[u8]) -> Result<Schema> {
             check_expr,
             vector_dimensions,
             quant_scale,
+            blob_length: None,
         });
     }
 
