@@ -1316,5 +1316,11 @@ mod tests {
             DataType::Timestamp
         );
         assert_eq!(executor.parse_data_type("JSON").unwrap(), DataType::Json);
+        assert_eq!(executor.parse_data_type("BYTEA").unwrap(), DataType::Blob);
+        assert_eq!(executor.parse_data_type("BLOB").unwrap(), DataType::Blob);
+        assert_eq!(
+            executor.parse_data_type("BYTEA(256)").unwrap(),
+            DataType::Blob
+        );
     }
 }
