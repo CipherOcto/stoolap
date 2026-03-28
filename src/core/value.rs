@@ -213,12 +213,9 @@ impl Value {
         Value::Extension(CompactArc::from(bytes))
     }
 
-    /// Create a Blob value from raw byte data (stored in Extension)
+    /// Create a Blob value from raw byte data
     pub fn blob(data: Vec<u8>) -> Self {
-        let mut bytes = Vec::with_capacity(1 + data.len());
-        bytes.push(DataType::Blob as u8);
-        bytes.extend_from_slice(&data);
-        Value::Extension(CompactArc::from(bytes))
+        Value::Blob(CompactArc::from(data))
     }
 
     // =========================================================================

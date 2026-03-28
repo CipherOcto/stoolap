@@ -1748,6 +1748,37 @@ impl Parser {
             }
             // Set quant_scale on the column via a workaround: embed in data_type string
             SmartString::from_string(format!("DQA({})", scale))
+        // Handle BYTEA(n), BLOB(n), BINARY(n), VARBINARY(n) syntax — length is stored in SchemaColumn.vector_dimensions
+        } else if (data_type == "BYTEA" || data_type == "BLOB" || data_type == "BINARY" || data_type == "VARBINARY")
+            && self.peek_token_is_punctuator("(")
+        {
+            self.next_token(); // consume (
+            if self.peek_token.token_type != TokenType::Integer {
+                self.add_error(format!(
+                    "{} requires a positive integer length, e.g. {}(32)",
+                    data_type, data_type
+                ));
+                return None;
+            }
+            self.next_token(); // consume length number
+            let len_str = self.cur_token.literal.clone();
+            let _len: u32 = match len_str.parse::<u32>() {
+                Ok(l) if l > 0 => l,
+                _ => {
+                    self.add_error(format!(
+                        "{} length must be a positive integer, got '{}'",
+                        data_type, len_str
+                    ));
+                    return None;
+                }
+            };
+            // Consume closing )
+            if !self.expect_peek(TokenType::Punctuator) || self.cur_token.literal != ")" {
+                self.add_error(format!("expected ) after {} length", data_type));
+                return None;
+            }
+            // Preserve the length in the data_type string for SchemaColumn.vector_dimensions
+            SmartString::from_string(format!("{}({})", data_type, len_str))
         } else {
             data_type
         };

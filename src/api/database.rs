@@ -1139,6 +1139,18 @@ impl FromValue for Value {
     }
 }
 
+impl FromValue for Vec<u8> {
+    fn from_value(value: &Value) -> Result<Self> {
+        match value {
+            Value::Blob(data) => Ok(data.to_vec()),
+            _ => Err(Error::Type(format!(
+                "cannot convert {} to Vec<u8>",
+                value.data_type()
+            ))),
+        }
+    }
+}
+
 impl<T: FromValue> FromValue for Option<T> {
     fn from_value(value: &Value) -> Result<Self> {
         if value.is_null() {
