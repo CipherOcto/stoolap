@@ -863,8 +863,9 @@ pub fn serialize_value(value: &Value) -> Result<Vec<u8>> {
         }
         Value::Blob(data) => {
             // Tag 12: Blob (wire-compatible with RFC-0201)
+            // RFC-0201 §Serialization: [u8:12][u32_be:length][u8..len:data]
             buf.push(12);
-            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&(data.len() as u32).to_be_bytes());
             buf.extend_from_slice(data);
         }
     }
@@ -1027,11 +1028,12 @@ pub fn deserialize_value(data: &[u8]) -> Result<Value> {
             Ok(Value::Extension(CompactArc::from(bytes)))
         }
         12 => {
-            // Blob: len_u32 + raw bytes (stored directly, not in Extension)
+            // Blob: len_u32_be + raw bytes (stored directly, not in Extension)
+            // RFC-0201 §Serialization: [u8:12][u32_be:length][u8..len:data]
             if rest.len() < 4 {
                 return Err(Error::internal("missing blob length"));
             }
-            let len = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+            let len = u32::from_be_bytes(rest[..4].try_into().unwrap()) as usize;
             if rest.len() < 4 + len {
                 return Err(Error::internal("missing blob data"));
             }
