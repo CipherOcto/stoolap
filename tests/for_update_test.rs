@@ -192,12 +192,9 @@ fn test_concurrent_budget_updates() {
                     (),
                 );
 
-                if update_result.is_ok() {
-                    let commit_result = tx.commit();
-                    if commit_result.is_ok() {
-                        success.fetch_add(1, Ordering::SeqCst);
-                        return;
-                    }
+                if update_result.is_ok() && tx.commit().is_ok() {
+                    success.fetch_add(1, Ordering::SeqCst);
+                    return;
                 }
             }
 
@@ -318,11 +315,9 @@ fn test_for_update_serializes_updates() {
                 (),
             );
 
-            if update_result.is_ok() {
-                if tx.commit().is_ok() {
-                    success.fetch_add(1, Ordering::SeqCst);
-                    return;
-                }
+            if update_result.is_ok() && tx.commit().is_ok() {
+                success.fetch_add(1, Ordering::SeqCst);
+                return;
             }
 
             let _ = tx.rollback();
@@ -417,11 +412,9 @@ fn test_concurrent_updates_different_rows() {
                 (),
             );
 
-            if result.is_ok() {
-                if tx.commit().is_ok() {
-                    success.fetch_add(1, Ordering::SeqCst);
-                    return;
-                }
+            if result.is_ok() && tx.commit().is_ok() {
+                success.fetch_add(1, Ordering::SeqCst);
+                return;
             }
 
             let _ = tx.rollback();

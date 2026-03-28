@@ -105,7 +105,7 @@ fn test_single_row_trie_retrieve() {
     assert!(retrieved.is_some());
     let retrieved_row = retrieved.unwrap();
     assert_eq!(retrieved_row.len(), 2);
-    assert_eq!(retrieved_row.values.get(0), Some(&DetermValue::Integer(42)));
+    assert_eq!(retrieved_row.values.first(), Some(&DetermValue::Integer(42)));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_block_with_operations() {
         operation_root: BlockOperations::compute_operation_root(&operations),
         timestamp: 100,
         gas_limit: 100_000,
-        gas_used: gas_used,
+        gas_used,
         proposer: [0u8; 32],
         extra_data: vec![],
     };
@@ -351,7 +351,7 @@ fn test_multiple_tables_independent_state() {
     assert!(retrieved_b.is_some());
 
     assert_ne!(
-        retrieved_a.unwrap().values.get(0),
-        retrieved_b.unwrap().values.get(0)
+        retrieved_a.unwrap().values.first(),
+        retrieved_b.unwrap().values.first()
     );
 }

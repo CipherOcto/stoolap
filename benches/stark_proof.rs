@@ -54,7 +54,7 @@ mod mock_benches {
                 };
 
                 b.iter(|| {
-                    prover.generate_mock_proof(&program, &inputs);
+                    let _ = prover.generate_mock_proof(&program, &inputs);
                 });
             });
         }
@@ -81,7 +81,7 @@ mod mock_benches {
                 let proof = prover.generate_mock_proof(&program, &inputs).unwrap();
 
                 b.iter(|| {
-                    prover.verify(&proof, &inputs);
+                    let _ = prover.verify(&proof, &inputs);
                 });
             });
         }
@@ -106,7 +106,7 @@ mod mock_benches {
                 };
 
                 b.iter(|| {
-                    prover.generate_mock_proof(&program, &inputs);
+                    let _ = prover.generate_mock_proof(&program, &inputs);
                 });
             });
         }
@@ -133,7 +133,7 @@ mod mock_benches {
                 let proof = prover.generate_mock_proof(&program, &inputs).unwrap();
 
                 b.iter(|| {
-                    prover.verify(&proof, &inputs);
+                    let _ = prover.verify(&proof, &inputs);
                 });
             });
         }
@@ -158,7 +158,7 @@ mod mock_benches {
                 };
 
                 b.iter(|| {
-                    prover.generate_mock_proof(&program, &inputs);
+                    let _ = prover.generate_mock_proof(&program, &inputs);
                 });
             });
         }
@@ -185,7 +185,7 @@ mod mock_benches {
                 let proof = prover.generate_mock_proof(&program, &inputs).unwrap();
 
                 b.iter(|| {
-                    prover.verify(&proof, &inputs);
+                    let _ = prover.verify(&proof, &inputs);
                 });
             });
         }

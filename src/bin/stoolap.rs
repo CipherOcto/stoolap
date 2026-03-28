@@ -1407,7 +1407,7 @@ fn format_value(value: &Value) -> String {
             stoolap::core::value::format_vector_bytes(&data[1..])
         }
         Value::Extension(_) => "<extension>".to_string(),
-        Value::Blob(data) => format!("Blob({:02x}...)", &data[..data.len().min(8)]),
+        Value::Blob(data) => format!("Blob({:02x?}...)", &data[..data.len().min(8)]),
     }
 }
 
