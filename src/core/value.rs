@@ -816,7 +816,9 @@ impl Value {
                     Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                         Value::Text(SmartString::from_string(format_vector_bytes(&data[1..])))
                     }
-                    Value::Extension(_) | Value::Null(_) | Value::Blob(_) => Value::Null(target_type),
+                    Value::Extension(_) | Value::Null(_) | Value::Blob(_) => {
+                        Value::Null(target_type)
+                    }
                 }
             }
             DataType::Boolean => {
@@ -956,9 +958,7 @@ impl Value {
                 _ => Value::Null(target_type),
             },
             DataType::Blob => match self {
-                Value::Extension(data)
-                    if data.first().copied() == Some(DataType::Blob as u8) =>
-                {
+                Value::Extension(data) if data.first().copied() == Some(DataType::Blob as u8) => {
                     self.clone()
                 }
                 _ => Value::Null(target_type),
@@ -1101,11 +1101,7 @@ impl Value {
                 _ => Value::Null(target_type),
             },
             DataType::Blob => match self {
-                Value::Extension(ref data)
-                    if data.first() == Some(&(DataType::Blob as u8)) =>
-                {
-                    self
-                }
+                Value::Extension(ref data) if data.first() == Some(&(DataType::Blob as u8)) => self,
                 _ => Value::Null(target_type),
             },
             DataType::Null => Value::Null(DataType::Null),
@@ -1146,7 +1142,13 @@ impl fmt::Display for Value {
                 // Show hex preview of first 8 bytes
                 let preview = &data[..data.len().min(8)];
                 write!(f, "Blob({:02x?}", preview)
-                    .and_then(|_| if data.len() > 8 { write!(f, "...") } else { Ok(()) })
+                    .and_then(|_| {
+                        if data.len() > 8 {
+                            write!(f, "...")
+                        } else {
+                            Ok(())
+                        }
+                    })
                     .and_then(|_| write!(f, ")"))
             }
         }

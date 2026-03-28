@@ -706,7 +706,10 @@ mod tests {
         assert!(matches!("BYTEA".parse::<DataType>(), Ok(DataType::Blob)));
         assert!(matches!("BLOB".parse::<DataType>(), Ok(DataType::Blob)));
         assert!(matches!("BINARY".parse::<DataType>(), Ok(DataType::Blob)));
-        assert!(matches!("VARBINARY".parse::<DataType>(), Ok(DataType::Blob)));
+        assert!(matches!(
+            "VARBINARY".parse::<DataType>(),
+            Ok(DataType::Blob)
+        ));
     }
 
     #[test]

@@ -629,9 +629,10 @@ impl Schema {
                 if let Some(length) = column.blob_length {
                     // blob_length must be non-zero
                     if length == 0 {
-                        return Err(Error::invalid_argument(
-                            format!("column '{}' has invalid blob_length: length must be non-zero", column.name)
-                        ));
+                        return Err(Error::invalid_argument(format!(
+                            "column '{}' has invalid blob_length: length must be non-zero",
+                            column.name
+                        )));
                     }
                     // blob_length must be reasonable
                     if length > MAX_BLOB_LENGTH {
