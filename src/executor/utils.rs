@@ -455,6 +455,10 @@ pub fn hash_value_into<H: Hasher>(value: &Value, hasher: &mut H) {
             10u8.hash(hasher);
             data.hash(hasher);
         }
+        Value::Blob(data) => {
+            11u8.hash(hasher);
+            data.hash(hasher);
+        }
     }
 }
 
@@ -512,6 +516,7 @@ pub fn compare_values(a: &Value, b: &Value) -> Ordering {
                     Value::Text(_) => 4,
                     Value::Timestamp(_) => 5,
                     Value::Extension(_) => 6,
+                    Value::Blob(_) => 7,
                 }
             }
             type_code(a).cmp(&type_code(b))

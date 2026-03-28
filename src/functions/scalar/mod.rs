@@ -147,6 +147,7 @@ pub fn value_to_string(value: &Value) -> String {
             crate::core::value::format_vector_bytes(&data[1..])
         }
         Value::Extension(_) => String::new(),
+        Value::Blob(_) => String::new(),
     }
 }
 

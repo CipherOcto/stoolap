@@ -95,8 +95,11 @@ pub enum Value {
     /// Extension type: byte[0] = DataType tag, byte[1..] = payload
     /// - Json: byte[0]=6, byte[1..]=UTF-8 bytes (access via `as_json()`)
     /// - Vector: byte[0]=7, byte[1..]=packed LE f32 bytes (access via `as_vector_f32()`)
-    /// - Future types (Blob, Array, etc.) add DataType variants, not Value variants
+    /// - Future types add DataType variants, not Value variants
     Extension(CompactArc<[u8]>),
+
+    /// Binary large object: raw byte data for cryptographic hashes, binary keys
+    Blob(CompactArc<[u8]>),
 }
 
 /// Static NULL value for zero-cost reuse
@@ -235,6 +238,7 @@ impl Value {
                 .first()
                 .and_then(|&b| DataType::from_u8(b))
                 .unwrap_or(DataType::Null),
+            Value::Blob(_) => DataType::Blob,
         }
     }
 
@@ -265,6 +269,7 @@ impl Value {
             Value::Boolean(b) => Some(if *b { 1 } else { 0 }),
             Value::Timestamp(t) => Some(t.timestamp_nanos_opt().unwrap_or(0)),
             Value::Extension(_) => None,
+            Value::Blob(_) => None,
         }
     }
 
@@ -276,7 +281,7 @@ impl Value {
             Value::Float(v) => Some(*v),
             Value::Text(s) => s.parse::<f64>().ok(),
             Value::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
-            Value::Timestamp(_) | Value::Extension(_) => None,
+            Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
         }
     }
 
@@ -309,7 +314,7 @@ impl Value {
                 }
             }
             Value::Boolean(b) => Some(*b),
-            Value::Timestamp(_) | Value::Extension(_) => None,
+            Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
         }
     }
 
@@ -337,6 +342,7 @@ impl Value {
                     None
                 }
             }
+            Value::Blob(_) => None,
         }
     }
 
@@ -788,8 +794,7 @@ impl Value {
                     Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                         Value::Text(SmartString::from_string(format_vector_bytes(&data[1..])))
                     }
-                    Value::Extension(_) => Value::Null(target_type),
-                    Value::Null(_) => Value::Null(target_type),
+                    Value::Extension(_) | Value::Null(_) | Value::Blob(_) => Value::Null(target_type),
                 }
             }
             DataType::Boolean => {
@@ -991,7 +996,7 @@ impl Value {
                 Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                     Value::Text(SmartString::from_string(format_vector_bytes(&data[1..])))
                 }
-                Value::Extension(_) | Value::Null(_) => Value::Null(target_type),
+                Value::Extension(_) | Value::Null(_) | Value::Blob(_) => Value::Null(target_type),
             },
             DataType::Boolean => match &self {
                 Value::Boolean(b) => Value::Boolean(*b),
@@ -1115,6 +1120,13 @@ impl fmt::Display for Value {
                     write!(f, "<extension:{}>", tag)
                 }
             }
+            Value::Blob(data) => {
+                // Show hex preview of first 8 bytes
+                let preview = &data[..data.len().min(8)];
+                write!(f, "Blob({:02x?}", preview)
+                    .and_then(|_| if data.len() > 8 { write!(f, "...") } else { Ok(()) })
+                    .and_then(|_| write!(f, ")"))
+            }
         }
     }
 }
@@ -1147,6 +1159,7 @@ impl PartialEq for Value {
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::Timestamp(a), Value::Timestamp(b)) => a == b,
             (Value::Extension(a), Value::Extension(b)) => a == b,
+            (Value::Blob(a), Value::Blob(b)) => a == b,
             _ => false,
         }
     }
@@ -1287,6 +1300,34 @@ impl Hash for Value {
 
                 state.write_u64(h);
             }
+            Value::Blob(data) => {
+                // Pre-hash blob data with WyHash-style mixing
+                // Blob data is just bytes (no tag byte since it's its own variant)
+                let bytes: &[u8] = data;
+                let len = bytes.len();
+                let mut h = wymix(11 ^ (len as u64), WY_P1); // discriminant 11 for Blob
+
+                let chunks = len / 8;
+                let ptr = bytes.as_ptr();
+                for i in 0..chunks {
+                    // SAFETY: We iterate i from 0..chunks where chunks = len/8.
+                    // So i*8 is always < len, and we read 8 bytes which is valid
+                    // since (i+1)*8 <= chunks*8 <= len. read_unaligned handles alignment.
+                    let chunk = unsafe { (ptr.add(i * 8) as *const u64).read_unaligned() };
+                    h = wymix(h ^ chunk, WY_P2);
+                }
+
+                let tail_start = chunks * 8;
+                if tail_start < len {
+                    let mut tail = 0u64;
+                    for (j, &b) in bytes[tail_start..].iter().enumerate() {
+                        tail |= (b as u64) << (j * 8);
+                    }
+                    h = wymix(h ^ tail, WY_P1);
+                }
+
+                state.write_u64(h);
+            }
         }
     }
 }
@@ -1362,6 +1403,7 @@ impl Ord for Value {
                 Value::Text(_) => 3,
                 Value::Timestamp(_) => 4,
                 Value::Extension(_) => 5,
+                Value::Blob(_) => 6,
             }
         }
 
@@ -1389,6 +1431,13 @@ impl Ord for Value {
             (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
             (Value::Timestamp(a), Value::Timestamp(b)) => a.cmp(b),
             (Value::Extension(a), Value::Extension(b)) => a.cmp(b),
+            (Value::Blob(a), Value::Blob(b)) => {
+                // Compare by byte content first, then by length
+                match a.cmp(b) {
+                    Ordering::Equal => a.len().cmp(&b.len()),
+                    other => other,
+                }
+            }
             _ => Ordering::Equal, // Should not reach here
         }
     }

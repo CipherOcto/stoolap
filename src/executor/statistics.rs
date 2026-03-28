@@ -281,6 +281,7 @@ impl Executor {
             Value::Text(s) => s.len() + 4, // string + length prefix
             Value::Timestamp(_) => 8,
             Value::Extension(data) => data.len() + 4,
+            Value::Blob(data) => data.len() + 4,
         }
     }
 

@@ -704,6 +704,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
         }
         Value::Timestamp(t) => serde_json::Value::String(t.to_rfc3339()),
         Value::Extension(_) => serde_json::Value::Null,
+        Value::Blob(_) => serde_json::Value::Null,
     }
 }
 
@@ -1044,6 +1045,7 @@ impl ScalarFunction for TypeOfFunction {
             Value::Extension(data) if data.first() == Some(&(DataType::Json as u8)) => "JSON",
             Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => "VECTOR",
             Value::Extension(_) => "EXTENSION",
+            Value::Blob(_) => "BLOB",
         };
 
         Ok(Value::text(type_name))

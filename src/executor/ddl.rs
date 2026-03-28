@@ -566,6 +566,7 @@ impl Executor {
                 .first()
                 .and_then(|&b| DataType::from_u8(b))
                 .unwrap_or(DataType::Text),
+            crate::core::Value::Blob(_) => DataType::Blob,
             crate::core::Value::Null(_) => DataType::Text, // Default nulls to TEXT
         }
     }

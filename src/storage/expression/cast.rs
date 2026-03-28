@@ -466,6 +466,7 @@ fn cast_to_string(value: &Value) -> Result<Value> {
             Ok(Value::Text(SmartString::from(s)))
         }
         Value::Extension(_) => Ok(Value::Text(SmartString::from(""))),
+        Value::Blob(_) => Ok(Value::Text(SmartString::from(""))),
         Value::Null(_) => Ok(Value::null(DataType::Text)),
     }
 }

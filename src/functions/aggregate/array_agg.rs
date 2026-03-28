@@ -175,6 +175,12 @@ impl AggregateFunction for ArrayAggFunction {
                         v.to_string().replace('\\', "\\\\").replace('"', "\\\"")
                     )
                 }
+                Value::Blob(_) => {
+                    format!(
+                        "\"{}\"",
+                        v.to_string().replace('\\', "\\\\").replace('"', "\\\"")
+                    )
+                }
             })
             .collect();
         Value::text(format!("[{}]", json_elements.join(",")))

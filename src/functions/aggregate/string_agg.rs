@@ -122,6 +122,7 @@ impl AggregateFunction for StringAggFunction {
             Value::Boolean(b) => b.to_string(),
             Value::Timestamp(t) => t.to_string(),
             Value::Extension(_) => value.to_string(),
+            Value::Blob(_) => value.to_string(),
             Value::Null(_) => return,
         };
 
@@ -152,6 +153,7 @@ impl AggregateFunction for StringAggFunction {
             Value::Boolean(b) => b.to_string(),
             Value::Timestamp(t) => t.to_string(),
             Value::Extension(_) => value.to_string(),
+            Value::Blob(_) => value.to_string(),
             Value::Null(_) => return,
         };
 

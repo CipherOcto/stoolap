@@ -391,6 +391,10 @@ fn hash_value<H: Hasher>(hasher: &mut H, value: &Value) {
             10_u8.hash(hasher);
             data.hash(hasher);
         }
+        Value::Blob(data) => {
+            11_u8.hash(hasher);
+            data.hash(hasher);
+        }
     }
 }
 

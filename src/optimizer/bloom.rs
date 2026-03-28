@@ -233,6 +233,9 @@ impl BloomFilter {
             Value::Extension(data) => {
                 data.hash(&mut hasher);
             }
+            Value::Blob(data) => {
+                data.hash(&mut hasher);
+            }
         }
         hasher.finish()
     }

@@ -861,6 +861,12 @@ pub fn serialize_value(value: &Value) -> Result<Vec<u8>> {
                 buf.extend_from_slice(payload);
             }
         }
+        Value::Blob(data) => {
+            // Tag 12: Blob (wire-compatible with RFC-0201)
+            buf.push(12);
+            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(data);
+        }
     }
 
     Ok(buf)
@@ -1019,6 +1025,18 @@ pub fn deserialize_value(data: &[u8]) -> Result<Value> {
             bytes.push(dt_byte);
             bytes.extend_from_slice(payload);
             Ok(Value::Extension(CompactArc::from(bytes)))
+        }
+        12 => {
+            // Blob: len_u32 + raw bytes (stored directly, not in Extension)
+            if rest.len() < 4 {
+                return Err(Error::internal("missing blob length"));
+            }
+            let len = u32::from_le_bytes(rest[..4].try_into().unwrap()) as usize;
+            if rest.len() < 4 + len {
+                return Err(Error::internal("missing blob data"));
+            }
+            let payload = rest[4..4 + len].to_vec();
+            Ok(Value::Blob(CompactArc::from(payload)))
         }
         _ => Err(Error::internal(format!(
             "unknown value type tag: {}",

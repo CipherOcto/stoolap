@@ -1114,6 +1114,7 @@ impl FromValue for String {
             Value::Extension(_) => value
                 .as_string()
                 .ok_or_else(|| Error::invalid_argument("Cannot convert extension to String")),
+            Value::Blob(_) => Ok(String::new()), // Binary data can't be converted to String
             Value::Null(_) => Ok(String::new()),
         }
     }

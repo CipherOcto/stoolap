@@ -147,6 +147,7 @@ fn cast_to_integer(value: &Value) -> Result<Value> {
         }
         Value::Timestamp(t) => Ok(Value::Integer(t.timestamp())),
         Value::Extension(_) => Ok(Value::Integer(0)),
+        Value::Blob(_) => Err(Error::invalid_argument("Cannot convert BLOB to INTEGER")),
         Value::Null(dt) => Ok(Value::Null(*dt)),
     }
 }
@@ -171,6 +172,7 @@ fn cast_to_float(value: &Value) -> Result<Value> {
         }
         Value::Timestamp(t) => Ok(Value::Float(t.timestamp() as f64)),
         Value::Extension(_) => Err(Error::invalid_argument("Cannot convert JSON to FLOAT")),
+        Value::Blob(_) => Err(Error::invalid_argument("Cannot convert BLOB to FLOAT")),
         Value::Null(dt) => Ok(Value::Null(*dt)),
     }
 }
@@ -191,6 +193,7 @@ fn cast_to_string(value: &Value) -> Result<Value> {
             Ok(Value::Text(SmartString::from(s)))
         }
         Value::Extension(_) => Ok(Value::Text(SmartString::from(""))),
+        Value::Blob(_) => Ok(Value::Text(SmartString::from(""))),
         Value::Null(dt) => Ok(Value::Null(*dt)),
     }
 }
@@ -213,6 +216,7 @@ fn cast_to_boolean(value: &Value) -> Result<Value> {
             "Cannot convert TIMESTAMP to BOOLEAN",
         )),
         Value::Extension(_) => Err(Error::invalid_argument("Cannot convert JSON to BOOLEAN")),
+        Value::Blob(_) => Err(Error::invalid_argument("Cannot convert BLOB to BOOLEAN")),
         Value::Null(dt) => Ok(Value::Null(*dt)),
     }
 }
@@ -262,6 +266,7 @@ fn cast_to_json(value: &Value) -> Result<Value> {
         Value::Null(_) => Ok(Value::json("null")),
         Value::Timestamp(t) => Ok(Value::json(format!("\"{}\"", t.to_rfc3339()))),
         Value::Extension(_) => Ok(Value::json("null")),
+        Value::Blob(_) => Err(Error::invalid_argument("Cannot convert BLOB to JSON")),
     }
 }
 
@@ -315,6 +320,7 @@ impl ScalarFunction for CollateFunction {
                 std::str::from_utf8(&data[1..]).unwrap_or("").to_string()
             }
             Value::Extension(_) => String::new(),
+            Value::Blob(_) => String::new(),
             Value::Null(_) => return Ok(Value::null_unknown()),
         };
 

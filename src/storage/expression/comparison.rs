@@ -60,6 +60,7 @@ impl ComparisonValue {
             Value::Extension(data) => {
                 ComparisonValue::Text(String::from_utf8_lossy(&data[1..]).into_owned())
             }
+            Value::Blob(_) => ComparisonValue::Text(String::new()),
         }
     }
 
