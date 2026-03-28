@@ -419,6 +419,14 @@ impl Value {
         }
     }
 
+    /// Extract blob as byte slice
+    pub fn as_blob(&self) -> Option<&[u8]> {
+        match self {
+            Value::Blob(data) => Some(data),
+            _ => None,
+        }
+    }
+
     /// Convert value to DFP (deterministic floating-point)
     pub fn to_dfp(&self) -> Option<Dfp> {
         match self {
