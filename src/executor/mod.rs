@@ -240,7 +240,7 @@ impl Executor {
         table_name: &str,
         operation: OperationType,
     ) -> Result<()> {
-        if let Some(ref publisher) = ctx.event_publisher() {
+        if let Some(publisher) = ctx.event_publisher() {
             let event_id = crate::pubsub::generate_event_id();
             let event = DatabaseEvent::TableModified {
                 table_name: table_name.to_string(),
@@ -640,17 +640,29 @@ impl Executor {
             // DML statements - emit cache invalidation events on success
             Statement::Insert(stmt) => {
                 let result = self.execute_insert(stmt, &ctx)?;
-                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Insert)?;
+                Self::emit_table_modified_event(
+                    &ctx,
+                    &stmt.table_name.value_lower,
+                    OperationType::Insert,
+                )?;
                 Ok(result)
             }
             Statement::Update(stmt) => {
                 let result = self.execute_update(stmt, &ctx)?;
-                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Update)?;
+                Self::emit_table_modified_event(
+                    &ctx,
+                    &stmt.table_name.value_lower,
+                    OperationType::Update,
+                )?;
                 Ok(result)
             }
             Statement::Delete(stmt) => {
                 let result = self.execute_delete(stmt, &ctx)?;
-                Self::emit_table_modified_event(&ctx, &stmt.table_name.value_lower, OperationType::Delete)?;
+                Self::emit_table_modified_event(
+                    &ctx,
+                    &stmt.table_name.value_lower,
+                    OperationType::Delete,
+                )?;
                 Ok(result)
             }
             Statement::Truncate(stmt) => self.execute_truncate(stmt, &ctx),

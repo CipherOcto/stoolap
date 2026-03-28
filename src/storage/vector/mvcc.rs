@@ -115,8 +115,7 @@ impl VectorMvcc {
 
                         // WAL logging
                         if let Some(ref wal) = self.wal {
-                            let _ =
-                                wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
+                            let _ = wal.log_insert(&self.table_name, vector_id, seg_id, &embedding);
                         }
                         return Ok(());
                     }

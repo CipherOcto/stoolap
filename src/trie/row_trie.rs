@@ -557,7 +557,9 @@ impl RowTrie {
         match node {
             None => None,
             Some(RowNode::Leaf {
-                row_id: _, row_hash, ..
+                row_id: _,
+                row_hash,
+                ..
             }) => {
                 // Check if we've found the right leaf
                 // We've found it if we've consumed the entire key, OR if the remaining nibbles are all zeros (padding)
@@ -1115,7 +1117,7 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_confidential_query_empty() {
-        use crate::zk::confidential::{EncryptedFilter, EncryptedQuery, FilterOp};
+        use crate::zk::confidential::EncryptedQuery;
 
         let trie = RowTrie::new();
         let query = EncryptedQuery::new(b"test".to_vec(), vec![], [0u8; 32]);
@@ -1128,7 +1130,7 @@ mod tests {
     #[cfg(feature = "commitment")]
     #[test]
     fn test_confidential_query_with_rows() {
-        use crate::zk::confidential::{EncryptedFilter, EncryptedQuery, FilterOp};
+        use crate::zk::confidential::EncryptedQuery;
 
         let mut trie = RowTrie::new();
 

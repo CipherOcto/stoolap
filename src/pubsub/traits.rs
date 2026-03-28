@@ -89,7 +89,7 @@ mod tests {
 
         assert!(publisher.publish(event).is_ok());
 
-        let mut subscriber = publisher.subscribe();
+        let subscriber = publisher.subscribe();
         assert!(subscriber.try_recv().is_none());
     }
 }

@@ -177,10 +177,7 @@ impl GasMeter {
         let cost = self.prices.get_cost(price);
 
         // Check for overflow first
-        let new_gas_used = self
-            .gas_used
-            .checked_add(cost)
-            .ok_or(Error::GasOverflow)?;
+        let new_gas_used = self.gas_used.checked_add(cost).ok_or(Error::GasOverflow)?;
 
         // Check if this charge would exceed the limit
         if new_gas_used > self.gas_limit {

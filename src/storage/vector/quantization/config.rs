@@ -17,8 +17,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Quantization type
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum QuantizationType {
     /// Binary Quantization: 1 bit per dimension
     #[default]
@@ -28,7 +27,6 @@ pub enum QuantizationType {
     /// Product Quantization: sub-vector quantization (future)
     Product,
 }
-
 
 impl QuantizationType {
     /// Get compression ratio (original_size / compressed_size)

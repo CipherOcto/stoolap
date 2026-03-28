@@ -59,7 +59,7 @@ impl EventBus {
     }
 
     /// Publish an event to all subscribers
-    pub fn publish(&self, event: DatabaseEvent) -> Result<(), ()> {
+    pub fn publish(&self, event: DatabaseEvent) -> Result<(), std::io::Error> {
         let mut inner = self.inner.lock();
 
         // Collect dead subscribers to remove

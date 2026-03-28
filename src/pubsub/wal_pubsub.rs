@@ -92,6 +92,11 @@ impl IdempotencyTracker {
     pub fn len(&self) -> usize {
         self.seen.read().len()
     }
+
+    /// Check if no event IDs are tracked
+    pub fn is_empty(&self) -> bool {
+        self.seen.read().is_empty()
+    }
 }
 
 impl Default for IdempotencyTracker {
@@ -131,8 +136,9 @@ impl WalPubSub {
     /// Write an event to the WAL
     pub fn write(&self, event: &DatabaseEvent) -> Result<[u8; 32]> {
         // Serialize the event
-        let payload = serde_json::to_vec(event)
-            .map_err(|e| crate::core::Error::internal(format!("JSON serialization failed: {}", e)))?;
+        let payload = serde_json::to_vec(event).map_err(|e| {
+            crate::core::Error::internal(format!("JSON serialization failed: {}", e))
+        })?;
 
         // Compute event ID
         let event_id = compute_event_id(&payload);
@@ -164,7 +170,11 @@ impl WalPubSub {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Vec::new());
             }
-            Err(e) => return Err(crate::core::Error::Io { message: e.to_string() }),
+            Err(e) => {
+                return Err(crate::core::Error::Io {
+                    message: e.to_string(),
+                })
+            }
         };
 
         // Seek to position
@@ -182,7 +192,11 @@ impl WalPubSub {
                         entries.extend(parsed);
                     }
                 }
-                Err(e) => return Err(crate::core::Error::Io { message: e.to_string() }),
+                Err(e) => {
+                    return Err(crate::core::Error::Io {
+                        message: e.to_string(),
+                    })
+                }
             }
         }
 
@@ -210,11 +224,16 @@ impl WalPubSub {
             .create(true)
             .append(true)
             .open(&self.wal_path)
-            .map_err(|e| crate::core::Error::Io { message: e.to_string() })?;
+            .map_err(|e| crate::core::Error::Io {
+                message: e.to_string(),
+            })?;
 
         // Get current position (LSN)
-        let lsn = file.metadata()
-            .map_err(|e| crate::core::Error::Io { message: e.to_string() })?
+        let lsn = file
+            .metadata()
+            .map_err(|e| crate::core::Error::Io {
+                message: e.to_string(),
+            })?
             .len();
 
         // Serialize entry
@@ -222,7 +241,9 @@ impl WalPubSub {
 
         // Write to file
         file.write_all(&serialized)
-            .map_err(|e| crate::core::Error::Io { message: e.to_string() })?;
+            .map_err(|e| crate::core::Error::Io {
+                message: e.to_string(),
+            })?;
 
         // Update LSN
         *self.last_lsn.write() = lsn + serialized.len() as u64;
@@ -244,11 +265,13 @@ impl WalPubSub {
 
         // Channel length (4 bytes) + channel
         let channel_bytes = entry.channel.as_bytes();
-        data.write_all(&(channel_bytes.len() as u32).to_le_bytes()).unwrap();
+        data.write_all(&(channel_bytes.len() as u32).to_le_bytes())
+            .unwrap();
         data.write_all(channel_bytes).unwrap();
 
         // Payload length (4 bytes) + payload
-        data.write_all(&(entry.payload.len() as u32).to_le_bytes()).unwrap();
+        data.write_all(&(entry.payload.len() as u32).to_le_bytes())
+            .unwrap();
         data.write_all(&entry.payload).unwrap();
 
         Ok(data)
@@ -260,7 +283,7 @@ impl WalPubSub {
 
         let mut entries = Vec::new();
         let mut offset = 0;
-        let mut current_lsn = start_lsn;
+        let _current_lsn = start_lsn;
 
         while offset + 53 <= buffer.len() {
             // Read LSN (8 bytes)
@@ -268,7 +291,6 @@ impl WalPubSub {
             if lsn < start_lsn {
                 break;
             }
-            current_lsn = lsn;
             offset += 8;
 
             // Read timestamp (8 bytes)
@@ -284,13 +306,15 @@ impl WalPubSub {
             offset += 32;
 
             // Read channel
-            let channel_len = u32::from_le_bytes(buffer[offset..offset + 4].try_into().ok()?) as usize;
+            let channel_len =
+                u32::from_le_bytes(buffer[offset..offset + 4].try_into().ok()?) as usize;
             offset += 4;
             let channel = String::from_utf8(buffer[offset..offset + channel_len].to_vec()).ok()?;
             offset += channel_len;
 
             // Read payload
-            let payload_len = u32::from_le_bytes(buffer[offset..offset + 4].try_into().ok()?) as usize;
+            let payload_len =
+                u32::from_le_bytes(buffer[offset..offset + 4].try_into().ok()?) as usize;
             offset += 4;
             let payload = buffer[offset..offset + payload_len].to_vec();
             offset += payload_len;
@@ -313,7 +337,7 @@ impl WalPubSub {
 pub fn compute_event_id(payload: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(payload);
-    hasher.update(&epoch_millis().to_le_bytes());
+    hasher.update(epoch_millis().to_le_bytes());
     let result = hasher.finalize();
     result.into()
 }

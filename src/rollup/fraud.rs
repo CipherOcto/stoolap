@@ -194,7 +194,6 @@ impl ChallengeContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     fn create_test_fraud_proof() -> FraudProof {
         FraudProof::new(

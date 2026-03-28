@@ -266,10 +266,7 @@ fn check_cairo_version(compiler_path: &Path) -> Result<u32, CompileError> {
 /// Parse Cairo version string (e.g., "2.6.0" → 20600)
 fn parse_cairo_version(version_str: &str) -> Result<u32, CompileError> {
     // Parse version like "2.6.0" or "Cairo compiler version 2.6.0"
-    let version_str = version_str
-        .split_whitespace()
-        .last()
-        .unwrap_or(version_str);
+    let version_str = version_str.split_whitespace().last().unwrap_or(version_str);
 
     let parts: Vec<&str> = version_str.split('.').collect();
     if parts.len() < 2 {

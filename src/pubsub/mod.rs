@@ -23,22 +23,23 @@ pub mod traits;
 pub mod wal_pubsub;
 
 pub use event_bus::{
-    DatabaseEvent, EventBus, InvalidationReason, OperationType, PubSubEventType,
-    SchemaChangeType,
+    DatabaseEvent, EventBus, InvalidationReason, OperationType, PubSubEventType, SchemaChangeType,
 };
 pub use traits::{EventPublisher, EventSubscriber, NoopPublisher, NoopSubscriber};
 pub use wal_pubsub::{compute_event_id, IdempotencyTracker, WalPubSub, WalPubSubEntry};
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// Generate a unique event ID for table modification events
 pub fn generate_event_id() -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-        .to_le_bytes());
+    hasher.update(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .to_le_bytes(),
+    );
     let result = hasher.finalize();
     result.into()
 }

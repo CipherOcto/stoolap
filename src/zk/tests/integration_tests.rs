@@ -230,7 +230,10 @@ fn test_verify_with_mismatched_outputs() {
     // Verify with different outputs
     let result = prover.verify(&proof, &[99]);
     assert!(result.is_ok());
-    assert!(!result.unwrap(), "Proof should be invalid with mismatched outputs");
+    assert!(
+        !result.unwrap(),
+        "Proof should be invalid with mismatched outputs"
+    );
 }
 
 #[test]

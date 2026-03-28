@@ -453,8 +453,7 @@ impl Operation {
                 let index_type = IndexType::from_u8(data[pos])
                     .ok_or_else(|| OpError::InvalidIndexType(data[pos]))?;
                 pos += 1;
-                let (columns, new_pos) =
-                    decode_vec(data, pos, decode_usize)?;
+                let (columns, new_pos) = decode_vec(data, pos, decode_usize)?;
                 pos = new_pos;
 
                 Operation::CreateIndex {

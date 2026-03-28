@@ -28,8 +28,7 @@ use sha2::{Digest, Sha256};
 /// * `siblings` - The sibling hashes needed to reconstruct the root
 /// * `root` - The expected Merkle root
 /// * `path` - The path (indices) from root to leaf in the tree
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MerkleProof {
     /// Hash of the value being proven
     pub value_hash: [u8; 32],
@@ -480,7 +479,6 @@ impl MerkleProof {
         current == self.root
     }
 }
-
 
 /// Compute the Merkle root from a list of leaf hashes
 ///
@@ -1217,9 +1215,7 @@ mod tests {
 
     #[test]
     fn test_hexary_proof_verify_single_level() {
-        use crate::trie::proof::{
-            hash_16_children, reconstruct_children, HexaryProof,
-        };
+        use crate::trie::proof::{hash_16_children, reconstruct_children, HexaryProof};
 
         // Create a simple proof with one level
         // Path nibble is 5, siblings at positions 3 and 12
@@ -1242,9 +1238,7 @@ mod tests {
 
     #[test]
     fn test_hexary_proof_verify_two_levels() {
-        use crate::trie::proof::{
-            hash_16_children, reconstruct_children, HexaryProof,
-        };
+        use crate::trie::proof::{hash_16_children, reconstruct_children, HexaryProof};
 
         // Create a two-level proof
         let value_hash = [1u8; 32];

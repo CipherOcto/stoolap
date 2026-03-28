@@ -122,7 +122,7 @@ fn bench_proof_deserialization(c: &mut Criterion) {
 
             b.iter(|| {
                 for data in &serialized {
-                    std::hint::black_box(HexaryProof::deserialize(data));
+                    std::hint::black_box(HexaryProof::deserialize(data).unwrap());
                 }
             });
         });

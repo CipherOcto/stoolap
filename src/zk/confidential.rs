@@ -133,7 +133,6 @@ impl EncryptedQuery {
     /// Create a new encrypted query
     pub fn new(table: Vec<u8>, filters: Vec<EncryptedFilter>, nonce: [u8; 32]) -> Self {
         // Compute query commitment from components
-        
 
         let mut hasher = blake3::Hasher::new();
         hasher.update(&table);

@@ -1407,6 +1407,7 @@ fn format_value(value: &Value) -> String {
             stoolap::core::value::format_vector_bytes(&data[1..])
         }
         Value::Extension(_) => "<extension>".to_string(),
+        Value::Blob(data) => format!("Blob({:02x}...)", &data[..data.len().min(8)]),
     }
 }
 
@@ -1473,6 +1474,7 @@ fn value_to_json(value: &Value) -> serde_json::Value {
             serde_json::json!(stoolap::core::value::format_vector_bytes(&data[1..]))
         }
         Value::Extension(_) => serde_json::Value::Null,
+        Value::Blob(data) => serde_json::json!(hex::encode(data)),
     }
 }
 

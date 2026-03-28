@@ -73,7 +73,10 @@ fn test_for_update_read_then_update() {
 
     // Select with FOR UPDATE
     let result = tx
-        .query("SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE", ())
+        .query(
+            "SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE",
+            (),
+        )
         .expect("FOR UPDATE query failed");
 
     let initial_quota: i64 = result
@@ -242,7 +245,8 @@ fn test_concurrent_budget_updates() {
     assert!(
         total_decremented >= min_expected,
         "Too many lost updates! Reported {} successes, but only {} decrements applied",
-        reported_successes, total_decremented
+        reported_successes,
+        total_decremented
     );
 
     // Basic sanity: some updates should have succeeded
@@ -266,11 +270,8 @@ fn test_for_update_serializes_updates() {
     .expect("Failed to create table");
 
     // Insert initial counter
-    db.execute(
-        "INSERT INTO counters (id, value) VALUES (1, 100)",
-        (),
-    )
-    .expect("Failed to insert");
+    db.execute("INSERT INTO counters (id, value) VALUES (1, 100)", ())
+        .expect("Failed to insert");
 
     let num_increments = 20;
     let success_count = Arc::new(AtomicI32::new(0));
@@ -359,11 +360,15 @@ fn test_for_update_serializes_updates() {
     assert!(
         actual_increments >= min_expected as i64,
         "Lost updates detected! {} reported successes, but only {} increments applied",
-        successes, actual_increments
+        successes,
+        actual_increments
     );
 
     // Final value must be at least 100 (initial) + some increments
-    assert!(final_value > 100, "At least some increments should have applied");
+    assert!(
+        final_value > 100,
+        "At least some increments should have applied"
+    );
 }
 
 /// Test that different rows can be updated concurrently without blocking
@@ -380,7 +385,10 @@ fn test_concurrent_updates_different_rows() {
     // Insert budgets for different API keys
     for i in 1..=5 {
         db.execute(
-            &format!("INSERT INTO budgets (id, api_key, remaining_quota) VALUES ({}, 'key-{}', 100)", i, i),
+            &format!(
+                "INSERT INTO budgets (id, api_key, remaining_quota) VALUES ({}, 'key-{}', 100)",
+                i, i
+            ),
             (),
         )
         .expect("Failed to insert");
@@ -402,7 +410,10 @@ fn test_concurrent_updates_different_rows() {
 
             // Update different rows with FOR UPDATE
             let result = tx.execute(
-                &format!("UPDATE budgets SET remaining_quota = remaining_quota - 10 WHERE id = {}", i),
+                &format!(
+                    "UPDATE budgets SET remaining_quota = remaining_quota - 10 WHERE id = {}",
+                    i
+                ),
                 (),
             );
 
@@ -448,7 +459,10 @@ fn test_for_update_with_where_clause() {
     // Transaction 1: Lock only row 1
     let mut tx1 = db.begin().expect("Failed to begin transaction");
     let result1 = tx1
-        .query("SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE", ())
+        .query(
+            "SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE",
+            (),
+        )
         .expect("Query failed");
     let quota1: i64 = result1
         .into_iter()
@@ -462,7 +476,10 @@ fn test_for_update_with_where_clause() {
     // Transaction 2: Should be able to lock row 2 (different row)
     let mut tx2 = db.begin().expect("Failed to begin transaction");
     let result2 = tx2
-        .query("SELECT remaining_quota FROM budgets WHERE id = 2 FOR UPDATE", ())
+        .query(
+            "SELECT remaining_quota FROM budgets WHERE id = 2 FOR UPDATE",
+            (),
+        )
         .expect("Query failed");
     let quota2: i64 = result2
         .into_iter()
@@ -496,6 +513,9 @@ fn test_for_update_implicit_transaction() {
     .expect("Failed to insert");
 
     // FOR UPDATE in auto-commit mode (default)
-    let result = db.query("SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE", ());
+    let result = db.query(
+        "SELECT remaining_quota FROM budgets WHERE id = 1 FOR UPDATE",
+        (),
+    );
     assert!(result.is_ok(), "FOR UPDATE should work in auto-commit");
 }
