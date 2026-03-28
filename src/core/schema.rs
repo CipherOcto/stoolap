@@ -884,6 +884,14 @@ impl SchemaBuilder {
         self
     }
 
+    /// Set blob length on the last added column (for BYTEA columns)
+    pub fn set_last_blob_length(mut self, length: u32) -> Self {
+        if let Some(col) = self.columns.last_mut() {
+            col.blob_length = Some(length);
+        }
+        self
+    }
+
     /// Find column index by name (case-insensitive)
     pub fn column_index(&self, name: &str) -> Option<usize> {
         let lower = name.to_lowercase();
@@ -1163,7 +1171,7 @@ mod tests {
         assert!(schema.validate_schema().is_ok());
 
         // Blob with valid blob_length should be valid
-        let schema = SchemaBuilder::new("test")
+        let mut schema = SchemaBuilder::new("test")
             .add("data", DataType::Blob)
             .build();
         // Manually set blob_length on the column
@@ -1174,7 +1182,7 @@ mod tests {
 
     #[test]
     fn test_validate_schema_blob_length_zero() {
-        let schema = SchemaBuilder::new("test")
+        let mut schema = SchemaBuilder::new("test")
             .add("data", DataType::Blob)
             .build();
         let col = schema.columns.first_mut().unwrap();
@@ -1187,7 +1195,7 @@ mod tests {
 
     #[test]
     fn test_validate_schema_blob_length_exceeds_max() {
-        let schema = SchemaBuilder::new("test")
+        let mut schema = SchemaBuilder::new("test")
             .add("data", DataType::Blob)
             .build();
         let col = schema.columns.first_mut().unwrap();
