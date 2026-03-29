@@ -518,3 +518,58 @@ fn test_blob_mixed_with_text() {
     }
     assert_eq!(count, 1, "Expected exactly one row");
 }
+
+/// Test hash index on BYTEA column
+#[test]
+fn test_hash_index_on_blob_column() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    db.execute(
+        "CREATE TABLE api_keys (id INTEGER PRIMARY KEY, key_hash BYTEA(32))",
+        (),
+    )
+    .expect("Failed to create table");
+
+    // Create hash index on BYTEA column
+    db.execute("CREATE INDEX idx_hash ON api_keys(key_hash) USING HASH", ())
+        .expect("Failed to create hash index");
+
+    let key1 = vec![0x01u8; 32];
+    let key2 = vec![0x02u8; 32];
+
+    db.execute("INSERT INTO api_keys VALUES (1, $1)", (key1.clone(),))
+        .unwrap();
+    db.execute("INSERT INTO api_keys VALUES (2, $1)", (key2.clone(),))
+        .unwrap();
+
+    // Lookup by blob value - should use hash index
+    let count: i64 = db
+        .query_one(
+            "SELECT COUNT(*) FROM api_keys WHERE key_hash = $1",
+            (key1.clone(),),
+        )
+        .expect("Failed to query");
+
+    assert_eq!(count, 1, "Should find exactly 1 row by blob hash");
+    
+    // Lookup the second key
+    let count2: i64 = db
+        .query_one(
+            "SELECT COUNT(*) FROM api_keys WHERE key_hash = $1",
+            (key2.clone(),),
+        )
+        .expect("Failed to query");
+        
+    assert_eq!(count2, 1, "Should find exactly 1 row for key2");
+    
+    // Non-existent key
+    let key3 = vec![0x03u8; 32];
+    let count3: i64 = db
+        .query_one(
+            "SELECT COUNT(*) FROM api_keys WHERE key_hash = $1",
+            (key3,),
+        )
+        .expect("Failed to query");
+        
+    assert_eq!(count3, 0, "Should not find non-existent key");
+}
