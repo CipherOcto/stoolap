@@ -545,6 +545,13 @@ impl Value {
             (Value::Text(a), Value::Text(b)) => Ok(a.cmp(b)),
             (Value::Boolean(a), Value::Boolean(b)) => Ok(a.cmp(b)),
             (Value::Timestamp(a), Value::Timestamp(b)) => Ok(a.cmp(b)),
+            (Value::Blob(a), Value::Blob(b)) => {
+                // Blob comparison: byte-by-byte until difference, then by length
+                match a.as_ref().cmp(b.as_ref()) {
+                    Ordering::Equal => Ok(a.len().cmp(&b.len())),
+                    ord => Ok(ord),
+                }
+            }
             (Value::Extension(a), Value::Extension(b)) => {
                 // Extension: tag byte is [0], so same-tag comparison is data equality
                 if a.first() != b.first() {
@@ -2262,5 +2269,23 @@ mod tests {
         // Verify they're equal in PartialEq
         assert_eq!(nan1, nan2);
         assert_eq!(nan2, nan3);
+    }
+
+    #[test]
+    fn test_blob_compare() {
+        use std::cmp::Ordering;
+
+        let blob1 = Value::blob(vec![0x01u8; 32]);
+        let blob2 = Value::blob(vec![0x01u8; 32]);
+        let blob3 = Value::blob(vec![0x02u8; 32]);
+
+        // Test compare() - should return Ok(Ordering::Equal) for equal blobs
+        assert_eq!(blob1.compare(&blob2).unwrap(), Ordering::Equal);
+        assert_eq!(blob1.compare(&blob3).unwrap(), Ordering::Less);
+        assert_eq!(blob3.compare(&blob1).unwrap(), Ordering::Greater);
+
+        // Test PartialEq - should return true for equal blobs
+        assert!(blob1 == blob2);
+        assert!(blob1 != blob3);
     }
 }

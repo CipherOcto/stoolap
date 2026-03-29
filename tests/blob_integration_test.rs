@@ -18,6 +18,142 @@
 
 use stoolap::api::Database;
 
+/// Test direct Value::Blob comparison
+#[test]
+fn test_blob_direct_comparison() {
+    use stoolap::core::Value;
+
+    let blob1 = Value::blob(vec![0x01u8; 32]);
+    let blob2 = Value::blob(vec![0x01u8; 32]);
+    let blob3 = Value::blob(vec![0x02u8; 32]);
+
+    // Same blobs should be equal
+    assert_eq!(blob1, blob2, "Same blob values should be equal");
+
+    // Different blobs should not be equal
+    assert_ne!(blob1, blob3, "Different blob values should not be equal");
+
+    // Verify PartialEq gives true for equal blobs
+    assert!(blob1 == blob2);
+    assert!(blob1 != blob3);
+}
+
+/// Test that blob round-trip (insert -> retrieve -> compare) works
+#[test]
+fn test_blob_round_trip() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BYTEA)", ())
+        .expect("Failed to create table");
+
+    let original = vec![0x01u8; 32];
+    db.execute("INSERT INTO t VALUES (1, $1)", (original.clone(),))
+        .expect("Failed to insert");
+
+    // Retrieve the blob
+    let retrieved: Vec<u8> = db
+        .query_one("SELECT v FROM t WHERE id = 1", ())
+        .expect("Failed to retrieve");
+
+    assert_eq!(retrieved, original, "Retrieved blob should match original");
+
+    // Now test if we can find it by comparing with original
+    let ids: Vec<i64> = db
+        .query("SELECT id FROM t WHERE v = $1", (original.clone(),))
+        .unwrap()
+        .map(|r| r.unwrap().get::<i64>(0).unwrap())
+        .collect();
+
+    assert_eq!(ids, vec![1], "Should find blob by value");
+}
+
+/// Test blob comparison with blob retrieved from a Row
+#[test]
+fn test_blob_row_comparison() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v BYTEA)", ())
+        .expect("Failed to create table");
+
+    let original = vec![0x01u8; 32];
+    db.execute("INSERT INTO t VALUES (1, $1)", (original.clone(),))
+        .expect("Failed to insert");
+
+    // Retrieve the blob value directly
+    let retrieved_blob: Vec<u8> = db
+        .query_one("SELECT v FROM t WHERE id = 1", ())
+        .expect("Failed to query");
+
+    assert_eq!(retrieved_blob, original);
+
+    // Now try to use that blob value in a comparison
+    let ids: Vec<i64> = db
+        .query("SELECT id FROM t WHERE v = $1", (retrieved_blob,))
+        .unwrap()
+        .map(|r| r.unwrap().get::<i64>(0).unwrap())
+        .collect();
+
+    assert_eq!(ids, vec![1], "Should find blob by value from row");
+}
+
+/// Debug test to see what's happening with blob comparison
+#[test]
+fn test_blob_debug_comparison() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    db.execute("CREATE TABLE t (id INTEGER, v BYTEA)", ())
+        .expect("Failed to create table");
+
+    let original = vec![0x01u8; 32];
+
+    // Insert
+    db.execute("INSERT INTO t VALUES (1, $1)", (original.clone(),))
+        .expect("Failed to insert");
+
+    // Check EXPLAIN for the blob query
+    let explain_count = db.query("EXPLAIN QUERY PLAN SELECT id FROM t WHERE v = $1", (original.clone(),))
+        .map(|r| r.count()).unwrap_or(0);
+    println!("EXPLAIN blob query count: {}", explain_count);
+
+    // Check EXPLAIN for integer query
+    let explain_int_count = db.query("EXPLAIN QUERY PLAN SELECT id FROM t WHERE id = $1", (1,))
+        .map(|r| r.count()).unwrap_or(0);
+    println!("EXPLAIN int query count: {}", explain_int_count);
+
+    // Select all without WHERE
+    let all_rows = db.query("SELECT id, v FROM t", ()).unwrap();
+    for row in all_rows {
+        let row = row.unwrap();
+        let id: i64 = row.get(0).unwrap();
+        let v: Vec<u8> = row.get(1).unwrap();
+        println!("All rows - id={}, v len={}", id, v.len());
+    }
+
+    // Test with a filter that's always true
+    let always_true = db.query("SELECT id FROM t WHERE 1=1", ());
+    println!("Always true filter: {:?}", always_true.map(|r| r.count()));
+
+    // Test with v IS NOT NULL
+    let not_null = db.query("SELECT id FROM t WHERE v IS NOT NULL", ());
+    println!("v IS NOT NULL: {:?}", not_null.map(|r| r.count()));
+
+    // Test with id = 1 (integer comparison should work)
+    let by_int = db.query("SELECT id FROM t WHERE id = 1", ());
+    println!("id = 1: {:?}", by_int.map(|r| r.count()));
+
+    // Test with v = $1 (blob param)
+    let by_blob = db.query("SELECT id FROM t WHERE v = $1", (original.clone(),));
+    println!("v = $1 (blob): {:?}", by_blob.map(|r| r.count()));
+
+    // Test by first selecting the blob value and then using it
+    let retrieved: Vec<u8> = db.query_one("SELECT v FROM t WHERE id = 1", ()).unwrap();
+    println!("Retrieved blob len={}", retrieved.len());
+
+    // Use the retrieved blob in a query
+    let by_retrieved = db.query("SELECT id FROM t WHERE v = $1", (retrieved,));
+    println!("v = $1 (retrieved): {:?}", by_retrieved.map(|r| r.count()));
+}
+
 /// Test basic BYTEA insertion and retrieval via query
 #[test]
 fn test_blob_basic_insert_and_select() {
@@ -117,12 +253,145 @@ fn test_blob_equality_in_where() {
     db.execute("INSERT INTO events VALUES (2, $1)", (event2.clone(),))
         .expect("Failed to insert event2");
 
-    // Query by exact event_id match
+    // First verify data was inserted - get all rows
     let result = db
-        .query_one::<Vec<u8>, _>("SELECT event_id FROM events WHERE id = 1", ())
+        .query("SELECT id FROM events", ())
         .expect("Failed to query");
 
-    assert_eq!(result, event1);
+    let mut count = 0;
+    for row_result in result {
+        let _row = row_result.expect("Row error");
+        count += 1;
+    }
+    assert_eq!(count, 2, "Should have 2 rows");
+
+    // Query by integer id (works)
+    let result: Vec<i64> = db
+        .query("SELECT id FROM events WHERE id = 1", ())
+        .expect("Failed to query")
+        .map(|r| r.unwrap().get::<i64>(0).unwrap())
+        .collect();
+    assert_eq!(result, vec![1]);
+}
+
+/// Test BYTEA parameter comparison in WHERE clause (separate test to isolate issue)
+#[test]
+fn test_blob_param_comparison() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    // First test with TEXT to verify TEXT parameter comparison works
+    db.execute("CREATE TABLE text_test (id INTEGER PRIMARY KEY, val TEXT)", ())
+        .expect("Failed to create table");
+
+    db.execute("INSERT INTO text_test VALUES (1, 'hello')", ())
+        .expect("Failed to insert text");
+
+    let text_result: Vec<i64> = db
+        .query("SELECT id FROM text_test WHERE val = $1", ("hello",))
+        .unwrap()
+        .map(|r| r.unwrap().get::<i64>(0).unwrap())
+        .collect();
+    assert_eq!(text_result, vec![1], "TEXT param comparison should work");
+
+    // Now test with BYTEA
+    db.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)", ())
+        .expect("Failed to create table");
+
+    let event1 = vec![0x01u8; 32];
+
+    db.execute("INSERT INTO events VALUES (1, $1)", (event1.clone(),))
+        .expect("Failed to insert");
+
+    // Step 1: Verify data is there by selecting all
+    let all_result = db
+        .query("SELECT id, event_id FROM events", ())
+        .expect("Failed to query all");
+    let mut all_count = 0;
+    for r in all_result {
+        let _row = r.expect("Row error");
+        all_count += 1;
+    }
+    assert_eq!(all_count, 1, "Step 1: Should have 1 row total");
+
+    // Step 2: Try WHERE id = 1 (integer comparison with literal)
+    let result = db
+        .query("SELECT id FROM events WHERE id = 1", ())
+        .expect("Step 2a: Failed to query");
+    let mut count = 0;
+    for _row_result in result {
+        count += 1;
+    }
+    assert_eq!(count, 1, "Step 2a: Should find row by id=1");
+
+    // Step 3: Try WHERE id = $1 with integer param
+    let result = db
+        .query("SELECT id FROM events WHERE id = $1", (1,))
+        .expect("Step 3: Failed to query");
+    let mut count = 0;
+    for _row_result in result {
+        count += 1;
+    }
+    assert_eq!(count, 1, "Step 3: Should find row by id=$1 (integer param)");
+
+    // Step 4: Try WHERE event_id = $1 with Vec<u8> param
+    let result = db
+        .query("SELECT id FROM events WHERE event_id = $1", (event1.clone(),))
+        .expect("Step 4: Failed to query");
+    let mut ids: Vec<i64> = Vec::new();
+    for row_result in result {
+        let row = row_result.expect("Step 4: Row error");
+        let id: i64 = row.get(0).expect("Step 4: Failed to get id");
+        ids.push(id);
+    }
+    assert_eq!(ids, vec![1], "Step 4: Should find row by blob equality, got: {:?}", ids);
+}
+
+/// Test BYTEA inequality in WHERE clause
+#[test]
+fn test_blob_inequality_in_where() {
+    let db = Database::open_in_memory().expect("Failed to create database");
+
+    db.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)", ())
+        .expect("Failed to create table");
+
+    let event1 = vec![0x01u8; 32];
+    let event2 = vec![0x02u8; 32];
+    let event3 = vec![0x03u8; 32];
+
+    db.execute("INSERT INTO events VALUES (1, $1)", (event1.clone(),))
+        .expect("Failed to insert");
+    db.execute("INSERT INTO events VALUES (2, $1)", (event2.clone(),))
+        .expect("Failed to insert");
+    db.execute("INSERT INTO events VALUES (3, $1)", (event3.clone(),))
+        .expect("Failed to insert");
+
+    // Query for event_id NOT equal to event1
+    let result = db
+        .query("SELECT id FROM events WHERE event_id <> $1", (event1.clone(),))
+        .expect("Failed to query");
+
+    let mut ids: Vec<i64> = Vec::new();
+    for row_result in result {
+        let row = row_result.expect("Row error");
+        let id: i64 = row.get(0).expect("Failed to get id");
+        ids.push(id);
+    }
+    ids.sort();
+    assert_eq!(ids, vec![2, 3]);
+
+    // Query for event_id greater than event1
+    let result = db
+        .query("SELECT id FROM events WHERE event_id > $1", (event1.clone(),))
+        .expect("Failed to query");
+
+    let mut ids: Vec<i64> = Vec::new();
+    for row_result in result {
+        let row = row_result.expect("Row error");
+        let id: i64 = row.get(0).expect("Failed to get id");
+        ids.push(id);
+    }
+    ids.sort();
+    assert_eq!(ids, vec![2, 3]);
 }
 
 /// Test BYTEA with fixed array syntax

@@ -39,6 +39,7 @@ pub enum ComparisonValue {
     Text(String),
     Boolean(bool),
     Timestamp(DateTime<Utc>),
+    Blob(Vec<u8>),
 }
 
 impl ComparisonValue {
@@ -60,7 +61,7 @@ impl ComparisonValue {
             Value::Extension(data) => {
                 ComparisonValue::Text(String::from_utf8_lossy(&data[1..]).into_owned())
             }
-            Value::Blob(_) => ComparisonValue::Text(String::new()),
+            Value::Blob(data) => ComparisonValue::Blob(data.to_vec()),
         }
     }
 
@@ -73,6 +74,7 @@ impl ComparisonValue {
             ComparisonValue::Text(_) => DataType::Text,
             ComparisonValue::Boolean(_) => DataType::Boolean,
             ComparisonValue::Timestamp(_) => DataType::Timestamp,
+            ComparisonValue::Blob(_) => DataType::Blob,
         }
     }
 
@@ -90,6 +92,7 @@ impl ComparisonValue {
             ComparisonValue::Text(s) => Value::Text(SmartString::new(s)),
             ComparisonValue::Boolean(b) => Value::Boolean(*b),
             ComparisonValue::Timestamp(t) => Value::Timestamp(*t),
+            ComparisonValue::Blob(data) => Value::blob(data.clone()),
         }
     }
 }
@@ -253,6 +256,20 @@ impl ComparisonExpr {
             _ => false,
         }
     }
+
+    /// Compare two blobs with the configured operator
+    #[inline]
+    fn compare_blobs(&self, col_val: &[u8], cmp_val: &[u8]) -> bool {
+        match self.operator {
+            Operator::Eq => col_val == cmp_val,
+            Operator::Ne => col_val != cmp_val,
+            Operator::Gt => col_val > cmp_val,
+            Operator::Gte => col_val >= cmp_val,
+            Operator::Lt => col_val < cmp_val,
+            Operator::Lte => col_val <= cmp_val,
+            _ => false,
+        }
+    }
 }
 
 impl Expression for ComparisonExpr {
@@ -314,6 +331,11 @@ impl Expression for ComparisonExpr {
                 Ok(self.compare_timestamps(*col_val, *cmp_val))
             }
 
+            // Blob comparisons
+            (ComparisonValue::Blob(cmp_val), Value::Blob(col_val)) => {
+                Ok(self.compare_blobs(col_val, cmp_val))
+            }
+
             // Cross-type numeric comparisons (integer vs float)
             (ComparisonValue::Integer(cmp_val), Value::Float(col_val)) => {
                 Ok(self.compare_floats(*col_val, *cmp_val as f64))
@@ -370,6 +392,9 @@ impl Expression for ComparisonExpr {
             }
             (ComparisonValue::Timestamp(cmp_val), Value::Timestamp(col_val)) => {
                 self.compare_timestamps(*col_val, *cmp_val)
+            }
+            (ComparisonValue::Blob(cmp_val), Value::Blob(col_val)) => {
+                self.compare_blobs(col_val, cmp_val)
             }
             // Cross-type numeric
             (ComparisonValue::Integer(cmp_val), Value::Float(col_val)) => {
