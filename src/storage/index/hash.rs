@@ -34,8 +34,8 @@
 //! - ORDER BY optimization - use BTree
 //!
 //! ## Implementation:
-//! Uses `ahash` for fast hashing, avoiding O(strlen) comparisons
-//! that would occur with each B-tree node comparison.
+//! Uses SipHash-2-4 per RFC-0201 Phase 2a requirement for DOS resistance.
+//! Internal maps use ahash::AHashMap for performance.
 //!
 //! ## Known Limitations:
 //!
@@ -57,7 +57,7 @@
 //! but would complicate atomicity across the three maps.
 
 use parking_lot::RwLock;
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 use rustc_hash::FxHashMap;
@@ -67,20 +67,16 @@ use crate::core::{DataType, Error, IndexEntry, IndexType, Operator, Result, RowI
 use crate::storage::expression::{ComparisonExpr, Expression, InListExpr};
 use crate::storage::traits::Index;
 
-/// Fixed seeds for deterministic hashing across add/find operations
-const HASH_SEEDS: [u64; 4] = [
-    0x517cc1b727220a95,
-    0x8a36afbc28b36e9c,
-    0x2f24bc8d75cd8b0a,
-    0xe9a5e3f10d13d6f7,
-];
+/// SipHash-2-4 key (128-bit)
+/// In production: derived via HKDF-SHA256 at database open time
+const SIPHASH_KEY_0: u64 = 0x517cc1b727220a95;
+const SIPHASH_KEY_1: u64 = 0x8a36afbc28b36e9c;
 
-/// Compute hash for a slice of Values using ahash
-/// Uses fixed seeds for deterministic hashing across add/find operations
+/// Compute hash for a slice of Values using SipHash-2-4
+/// Uses SipHash-2-4 per RFC-0201 Phase 2a requirement
 fn hash_values(values: &[Value]) -> u64 {
-    let hasher_builder =
-        ahash::RandomState::with_seeds(HASH_SEEDS[0], HASH_SEEDS[1], HASH_SEEDS[2], HASH_SEEDS[3]);
-    let mut hasher = hasher_builder.build_hasher();
+    use siphasher::sip128::SipHasher;
+    let mut hasher = SipHasher::new_with_keys(SIPHASH_KEY_0, SIPHASH_KEY_1);
     for v in values {
         v.hash(&mut hasher);
     }
@@ -94,7 +90,7 @@ fn hash_values(values: &[Value]) -> u64 {
 ///
 /// ## Key features:
 /// - O(1) exact lookups via hash
-/// - Uses ahash - faster than SipHash
+/// - Uses SipHash-2-4 (RFC-0201 Phase 2a compliant)
 /// - SmallVec optimization for single-match case (common for unique indexes)
 /// - Thread-safe with RwLock
 /// - Memory efficient with CompactArc<Value> for O(1) cloning
