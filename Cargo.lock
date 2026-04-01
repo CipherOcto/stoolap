@@ -2701,7 +2701,7 @@ dependencies = [
 [[package]]
 name = "octo-determin"
 version = "0.1.0"
-source = "git+https://github.com/CipherOcto/cipherocto?branch=next#0088159ad98ae9142d032b3eca68db9ff96c9c7a"
+source = "git+https://github.com/CipherOcto/cipherocto?branch=next#00b14db3c927ceb3cf7018c2f58fbbe16e20f89b"
 dependencies = [
  "hex",
  "num-bigint",

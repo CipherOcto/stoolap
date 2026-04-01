@@ -516,6 +516,9 @@ mod tests {
         assert!(!DataType::Json.is_numeric());
         assert!(!DataType::Null.is_numeric());
         assert!(!DataType::Vector.is_numeric());
+        assert!(DataType::DeterministicFloat.is_numeric());
+        assert!(DataType::Quant.is_numeric());
+        assert!(!DataType::Blob.is_numeric());
     }
 
     #[test]
@@ -540,6 +543,9 @@ mod tests {
             DataType::Timestamp,
             DataType::Json,
             DataType::Vector,
+            DataType::DeterministicFloat,
+            DataType::Quant,
+            DataType::Blob,
         ]
         .iter()
         .enumerate()

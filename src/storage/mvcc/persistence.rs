@@ -1022,6 +1022,20 @@ pub fn deserialize_value(data: &[u8]) -> Result<Value> {
             if dt == DataType::Json && std::str::from_utf8(payload).is_err() {
                 return Err(Error::internal("corrupted JSON extension: invalid UTF-8"));
             }
+            // Validate DFP extension: payload must be exactly 24 bytes (DfpEncoding)
+            if dt == DataType::DeterministicFloat && len != 24 {
+                return Err(Error::internal(format!(
+                    "corrupted DFP extension: expected 24 bytes, got {}",
+                    len
+                )));
+            }
+            // Validate Quant extension: payload must be exactly 16 bytes (i64 + scale + reserved)
+            if dt == DataType::Quant && len != 16 {
+                return Err(Error::internal(format!(
+                    "corrupted DQA extension: expected 16 bytes, got {}",
+                    len
+                )));
+            }
             let mut bytes = Vec::with_capacity(1 + payload.len());
             bytes.push(dt_byte);
             bytes.extend_from_slice(payload);

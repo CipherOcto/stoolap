@@ -865,7 +865,7 @@ impl ExprVM {
                 Op::Div => {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = Self::div_op(&a, &b);
+                    let result = self.arithmetic_op(&a, &b, ArithmeticOp::Div, |x, y| x / y)?;
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -873,7 +873,7 @@ impl ExprVM {
                 Op::Mod => {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = Self::mod_op(&a, &b);
+                    let result = self.arithmetic_op(&a, &b, ArithmeticOp::Mod, |x, y| x % y)?;
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -887,6 +887,30 @@ impl ExprVM {
                         },
                         Value::Float(f) => Value::Float(-f),
                         Value::Null(dt) => Value::Null(dt),
+                        Value::Extension(ref data)
+                            if data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            // DFP negation: flip sign
+                            if let Some(mut dfp) = Self::extract_dfp_from_extension(data) {
+                                dfp.sign = !dfp.sign;
+                                Value::dfp(dfp)
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        Value::Extension(ref data)
+                            if data.first().copied() == Some(DataType::Quant as u8) =>
+                        {
+                            // DQA negation
+                            if let Some(dqa) = Self::extract_dqa_from_extension(data) {
+                                octo_determin::dqa::dqa_negate(dqa)
+                                    .map(Value::quant)
+                                    .unwrap_or_else(|_| Value::Null(DataType::Quant))
+                            } else {
+                                Value::Null(DataType::Quant)
+                            }
+                        }
                         _ => Value::Null(DataType::Null),
                     };
                     self.stack.push(result);
@@ -3304,9 +3328,27 @@ impl ExprVM {
                     ))),
                 }
             }
-            (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_op(*x, *y))),
-            (Value::Integer(x), Value::Float(y)) => Ok(Value::Float(float_op(*x as f64, *y))),
-            (Value::Float(x), Value::Integer(y)) => Ok(Value::Float(float_op(*x, *y as f64))),
+            (Value::Float(x), Value::Float(y)) => {
+                if matches!(int_op, ArithmeticOp::Div | ArithmeticOp::Mod) && *y == 0.0 {
+                    Ok(Value::Null(DataType::Float))
+                } else {
+                    Ok(Value::Float(float_op(*x, *y)))
+                }
+            }
+            (Value::Integer(x), Value::Float(y)) => {
+                if matches!(int_op, ArithmeticOp::Div | ArithmeticOp::Mod) && *y == 0.0 {
+                    Ok(Value::Null(DataType::Float))
+                } else {
+                    Ok(Value::Float(float_op(*x as f64, *y)))
+                }
+            }
+            (Value::Float(x), Value::Integer(y)) => {
+                if matches!(int_op, ArithmeticOp::Div | ArithmeticOp::Mod) && *y == 0 {
+                    Ok(Value::Null(DataType::Float))
+                } else {
+                    Ok(Value::Float(float_op(*x, *y as f64)))
+                }
+            }
             // DFP arithmetic - deterministic floating-point
             (Value::Extension(a), Value::Extension(b)) => {
                 let dfp_a = Self::extract_dfp_from_extension(a);
@@ -3391,7 +3433,7 @@ impl ExprVM {
                 let value_bytes: [u8; 8] = data[1..9].try_into().ok()?;
                 let scale = data[9];
                 let value = i64::from_be_bytes(value_bytes);
-                Some(Dqa { value, scale })
+                Dqa::new(value, scale).ok()
             } else {
                 None
             }
@@ -3525,8 +3567,8 @@ impl ExprVM {
             }
         };
 
-        // Helper to convert Integer to Dqa with scale 0
-        let int_to_dqa = |i: i64| Dqa { value: i, scale: 0 };
+        // Helper to convert Integer to Dqa with scale 0 (safe: scale 0 always valid)
+        let int_to_dqa = |i: i64| Dqa::new(i, 0).unwrap();
 
         // Helper to convert DqaError to crate::core::Error
         let map_err = |e: octo_determin::dqa::DqaError| -> crate::core::Error {
@@ -3603,30 +3645,6 @@ impl ExprVM {
             // Null handling
             _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::Quant)),
             _ => Ok(Value::Null(DataType::Quant)),
-        }
-    }
-
-    #[inline]
-    fn div_op(a: &Value, b: &Value) -> Value {
-        match (a, b) {
-            (Value::Integer(x), Value::Integer(y)) if *y != 0 => Value::Integer(x / y),
-            (Value::Float(x), Value::Float(y)) if *y != 0.0 => Value::Float(x / y),
-            (Value::Integer(x), Value::Float(y)) if *y != 0.0 => Value::Float(*x as f64 / y),
-            (Value::Float(x), Value::Integer(y)) if *y != 0 => Value::Float(x / *y as f64),
-            _ if a.is_null() || b.is_null() => Value::Null(DataType::Float),
-            _ => Value::Null(DataType::Null), // Division by zero returns NULL
-        }
-    }
-
-    #[inline]
-    fn mod_op(a: &Value, b: &Value) -> Value {
-        match (a, b) {
-            (Value::Integer(x), Value::Integer(y)) if *y != 0 => Value::Integer(x % y),
-            (Value::Float(x), Value::Float(y)) if *y != 0.0 => Value::Float(x % y),
-            (Value::Integer(x), Value::Float(y)) if *y != 0.0 => Value::Float(*x as f64 % y),
-            (Value::Float(x), Value::Integer(y)) if *y != 0 => Value::Float(x % *y as f64),
-            _ if a.is_null() || b.is_null() => Value::Null(DataType::Float),
-            _ => Value::Null(DataType::Null),
         }
     }
 

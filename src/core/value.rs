@@ -278,6 +278,15 @@ impl Value {
             Value::Float(v) => Some(*v),
             Value::Text(s) => s.parse::<f64>().ok(),
             Value::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+            Value::Extension(data)
+                if data.first() == Some(&(DataType::DeterministicFloat as u8)) =>
+            {
+                self.as_dfp().map(|d| d.to_f64())
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => {
+                self.as_dqa()
+                    .map(|q| (q.value as f64) / 10f64.powi(q.scale as i32))
+            }
             Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
         }
     }
@@ -330,6 +339,14 @@ impl Value {
             }
             Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                 Some(format_vector_bytes(&data[1..]))
+            }
+            Value::Extension(data)
+                if data.first() == Some(&(DataType::DeterministicFloat as u8)) =>
+            {
+                self.as_dfp().map(|d| d.to_string())
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => {
+                self.as_dqa().map(format_dqa)
             }
             Value::Extension(data) => {
                 // Generic fallback: try payload as UTF-8
@@ -683,19 +700,25 @@ impl Value {
                         }
                     }
                     DataType::DeterministicFloat => {
-                        // DFP support - downcast from string representation
-                        if let Some(_s) = v.downcast_ref::<String>() {
-                            // Parse as DFP when implemented
-                            Value::Null(data_type)
+                        if let Some(s) = v.downcast_ref::<String>() {
+                            s.parse::<f64>()
+                                .map(|f| Value::dfp(Dfp::from_f64(f)))
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&i) = v.downcast_ref::<i64>() {
+                            Value::dfp(Dfp::from_i64(i))
                         } else {
                             Value::Null(data_type)
                         }
                     }
                     DataType::Quant => {
-                        // DQA support - downcast from string representation
-                        if let Some(_s) = v.downcast_ref::<String>() {
-                            // Parse as DQA when implemented
-                            Value::Null(data_type)
+                        if let Some(s) = v.downcast_ref::<String>() {
+                            parse_string_to_dqa(s)
+                                .map(Value::quant)
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&i) = v.downcast_ref::<i64>() {
+                            Dqa::new(i, 0)
+                                .map(Value::quant)
+                                .unwrap_or(Value::Null(data_type))
                         } else {
                             Value::Null(data_type)
                         }
@@ -913,38 +936,34 @@ impl Value {
                     _ => Value::Null(target_type),
                 }
             }
-            DataType::DeterministicFloat => {
-                // Convert to DFP - cast from Float or Integer
-                match self {
-                    Value::Float(_v) => {
-                        // TODO: Convert f64 to DFP when octo-determin is integrated
-                        Value::Null(target_type)
-                    }
-                    Value::Integer(_v) => {
-                        // TODO: Convert i64 to DFP when octo-determin is integrated
-                        Value::Null(target_type)
-                    }
-                    Value::Text(_s) => {
-                        // TODO: Parse string as DFP when octo-determin is integrated
-                        Value::Null(target_type)
-                    }
-                    _ => Value::Null(target_type),
-                }
-            }
             DataType::Quant => {
-                // Convert to DQA - cast from Float or Integer
+                // Convert to DQA (Deterministic Quant Arithmetic)
                 match self {
-                    Value::Float(_v) => {
-                        // TODO: Convert f64 to DQA when octo-determin is integrated
-                        Value::Null(target_type)
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::Quant as u8) =>
+                    {
+                        // Already Quant
+                        self.clone()
                     }
-                    Value::Integer(_v) => {
-                        // TODO: Convert i64 to DQA when octo-determin is integrated
-                        Value::Null(target_type)
+                    Value::Integer(v) => {
+                        Dqa::new(*v, 0).map(Value::quant).unwrap_or(Value::Null(target_type))
                     }
-                    Value::Text(_s) => {
-                        // TODO: Parse string as DQA when octo-determin is integrated
-                        Value::Null(target_type)
+                    Value::Float(v) => {
+                        // Convert via string to preserve decimal precision
+                        let s = format!("{}", v);
+                        parse_string_to_dqa(&s)
+                            .map(Value::quant)
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Text(s) => {
+                        parse_string_to_dqa(s.as_ref())
+                            .map(Value::quant)
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Boolean(b) => {
+                        Dqa::new(if *b { 1 } else { 0 }, 0)
+                            .map(Value::quant)
+                            .unwrap_or(Value::Null(target_type))
                     }
                     _ => Value::Null(target_type),
                 }
@@ -981,13 +1000,6 @@ impl Value {
                         Value::Null(target_type)
                     }
                 }
-                _ => Value::Null(target_type),
-            },
-            DataType::Quant => match self {
-                // DQA casts - placeholder until octo-determin integration
-                Value::Float(_v) => Value::Null(target_type),
-                Value::Integer(_v) => Value::Null(target_type),
-                Value::Text(_s) => Value::Null(target_type),
                 _ => Value::Null(target_type),
             },
             DataType::Blob => match self {
@@ -1119,18 +1131,35 @@ impl Value {
                 }
                 _ => Value::Null(target_type),
             },
-            DataType::Quant => match self {
-                // DQA casts - placeholder until octo-determin integration
-                Value::Float(_v) => Value::Null(target_type),
-                Value::Integer(_v) => Value::Null(target_type),
-                Value::Text(_s) => Value::Null(target_type),
+            DataType::Quant => match &self {
+                Value::Extension(data)
+                    if data.first().copied() == Some(DataType::Quant as u8) => self,
+                Value::Integer(v) => {
+                    Dqa::new(*v, 0).map(Value::quant).unwrap_or(Value::Null(target_type))
+                }
+                Value::Float(v) => {
+                    let s = format!("{}", v);
+                    parse_string_to_dqa(&s)
+                        .map(Value::quant)
+                        .unwrap_or(Value::Null(target_type))
+                }
+                Value::Text(s) => {
+                    parse_string_to_dqa(s.as_ref())
+                        .map(Value::quant)
+                        .unwrap_or(Value::Null(target_type))
+                }
                 _ => Value::Null(target_type),
             },
-            DataType::DeterministicFloat => match self {
-                // DFP casts - placeholder until octo-determin integration
-                Value::Float(_v) => Value::Null(target_type),
-                Value::Integer(_v) => Value::Null(target_type),
-                Value::Text(_s) => Value::Null(target_type),
+            DataType::DeterministicFloat => match &self {
+                Value::Extension(data)
+                    if data.first().copied() == Some(DataType::DeterministicFloat as u8) => self,
+                Value::Integer(v) => Value::dfp(Dfp::from_i64(*v)),
+                Value::Float(v) => Value::dfp(Dfp::from_f64(*v)),
+                Value::Text(s) => {
+                    s.parse::<f64>()
+                        .map(|f| Value::dfp(Dfp::from_f64(f)))
+                        .unwrap_or(Value::Null(target_type))
+                }
                 _ => Value::Null(target_type),
             },
             DataType::Blob => match self {
@@ -1167,6 +1196,18 @@ impl fmt::Display for Value {
                     write!(f, "{}", std::str::from_utf8(&data[1..]).unwrap_or(""))
                 } else if tag == DataType::Vector as u8 {
                     write!(f, "{}", format_vector_bytes(&data[1..]))
+                } else if tag == DataType::DeterministicFloat as u8 {
+                    if let Some(dfp) = self.as_dfp() {
+                        write!(f, "{}", dfp.to_string())
+                    } else {
+                        write!(f, "<invalid DFP>")
+                    }
+                } else if tag == DataType::Quant as u8 {
+                    if let Some(dqa) = self.as_dqa() {
+                        write!(f, "{}", format_dqa(dqa))
+                    } else {
+                        write!(f, "<invalid DQA>")
+                    }
                 } else {
                     write!(f, "<extension:{}>", tag)
                 }
@@ -1708,6 +1749,48 @@ fn format_float(v: f64) -> String {
         } else {
             s
         }
+    }
+}
+
+/// Format a DQA value as a decimal string
+/// e.g., Dqa { value: 123, scale: 2 } → "1.23"
+fn format_dqa(dqa: Dqa) -> String {
+    if dqa.scale == 0 {
+        return dqa.value.to_string();
+    }
+    let abs_val = dqa.value.unsigned_abs();
+    let divisor = 10u64.pow(dqa.scale as u32);
+    let whole = abs_val / divisor;
+    let frac = abs_val % divisor;
+    let frac_str = format!("{:0>width$}", frac, width = dqa.scale as usize);
+    let frac_trimmed = frac_str.trim_end_matches('0');
+    let sign = if dqa.value < 0 { "-" } else { "" };
+    if frac_trimmed.is_empty() {
+        format!("{}{}", sign, whole)
+    } else {
+        format!("{}{}.{}", sign, whole, frac_trimmed)
+    }
+}
+
+/// Parse a decimal string into a DQA value
+/// e.g., "1.23" → Dqa { value: 123, scale: 2 }
+fn parse_string_to_dqa(s: &str) -> Option<Dqa> {
+    let s = s.trim();
+    if let Some(dot_pos) = s.find('.') {
+        let int_part: i64 = s[..dot_pos].parse().ok()?;
+        let frac_str = &s[dot_pos + 1..];
+        let scale = frac_str.len() as u8;
+        if scale == 0 || scale > 18 {
+            return None;
+        }
+        let frac_val: u64 = frac_str.parse().ok()?;
+        let magnitude = 10i64.pow(scale as u32);
+        let combined = int_part.abs().saturating_mul(magnitude).saturating_add(frac_val as i64);
+        let value = if int_part < 0 { -combined } else { combined };
+        Dqa::new(value, scale).ok()
+    } else {
+        let value: i64 = s.parse().ok()?;
+        Dqa::new(value, 0).ok()
     }
 }
 
@@ -2408,5 +2491,222 @@ mod tests {
         let vn = Value::quant(Dqa::new(-5, 0).unwrap());
         let vp = Value::quant(Dqa::new(5, 0).unwrap());
         assert!(vn < vp, "dqa(-5) should be less than dqa(5)");
+    }
+
+    // =========================================================================
+    // Integration tests: DFP/DQA fixes from code reviews
+    // =========================================================================
+
+    #[test]
+    fn test_as_float64_dfp() {
+        // DFP values should convert to f64 for cross-type comparison
+        let v = Value::dfp(Dfp::from_f64(2.75));
+        assert_eq!(v.as_float64(), Some(2.75));
+
+        let v_zero = Value::dfp(Dfp::from_f64(0.0));
+        assert_eq!(v_zero.as_float64(), Some(0.0));
+
+        let v_neg = Value::dfp(Dfp::from_f64(-42.5));
+        assert_eq!(v_neg.as_float64(), Some(-42.5));
+    }
+
+    #[test]
+    fn test_as_float64_dqa() {
+        // DQA values should convert to f64 for cross-type comparison
+        let v = Value::quant(Dqa::new(315, 2).unwrap()); // 3.15
+        let f = v.as_float64().unwrap();
+        assert!((f - 3.15).abs() < 1e-10, "DQA(315,2) should be ~3.15, got {}", f);
+
+        let v_int = Value::quant(Dqa::new(42, 0).unwrap());
+        assert_eq!(v_int.as_float64(), Some(42.0));
+
+        let v_neg = Value::quant(Dqa::new(-150, 2).unwrap()); // -1.50
+        assert_eq!(v_neg.as_float64(), Some(-1.50));
+    }
+
+    #[test]
+    fn test_as_string_dfp() {
+        let v = Value::dfp(Dfp::from_f64(2.75));
+        let s = v.as_string().expect("DFP as_string should work");
+        assert!(!s.contains("extension"), "should not contain <extension:...>, got: {}", s);
+    }
+
+    #[test]
+    fn test_as_string_dqa() {
+        let v = Value::quant(Dqa::new(123, 2).unwrap()); // 1.23
+        let s = v.as_string().expect("DQA as_string should work");
+        assert_eq!(s, "1.23");
+
+        let v_int = Value::quant(Dqa::new(42, 0).unwrap());
+        assert_eq!(v_int.as_string(), Some("42".to_string()));
+    }
+
+    #[test]
+    fn test_display_dfp() {
+        let v = Value::dfp(Dfp::from_f64(2.5));
+        let display = format!("{}", v);
+        assert!(
+            !display.contains("extension"),
+            "DFP display should show numeric value, got: {}",
+            display
+        );
+    }
+
+    #[test]
+    fn test_display_dqa() {
+        let v = Value::quant(Dqa::new(123, 2).unwrap()); // 1.23
+        let display = format!("{}", v);
+        assert_eq!(display, "1.23");
+
+        let v_int = Value::quant(Dqa::new(42, 0).unwrap());
+        assert_eq!(format!("{}", v_int), "42");
+    }
+
+    #[test]
+    fn test_cast_to_dqa() {
+        // Integer → DQA
+        let v = Value::integer(42);
+        let cast = v.cast_to_type(DataType::Quant);
+        let dqa = cast.as_dqa().expect("should be DQA");
+        assert_eq!(dqa.value, 42);
+        assert_eq!(dqa.scale, 0);
+
+        // Float → DQA
+        let v = Value::float(1.5);
+        let cast = v.cast_to_type(DataType::Quant);
+        let dqa = cast.as_dqa().expect("should be DQA");
+        assert_eq!(dqa.value, 15);
+        assert_eq!(dqa.scale, 1);
+
+        // Text → DQA
+        let v = Value::text("2.50");
+        let cast = v.cast_to_type(DataType::Quant);
+        let dqa = cast.as_dqa().expect("should be DQA from text");
+        assert_eq!(dqa.value, 250);
+        assert_eq!(dqa.scale, 2);
+
+        // Same type → identity
+        let v = Value::quant(Dqa::new(99, 1).unwrap());
+        let cast = v.cast_to_type(DataType::Quant);
+        assert_eq!(cast.as_dqa().unwrap().value, 99);
+    }
+
+    #[test]
+    fn test_into_coerce_dfp() {
+        // Integer → DFP
+        let v = Value::integer(42);
+        let coerced = v.into_coerce_to_type(DataType::DeterministicFloat);
+        assert!(coerced.as_dfp().is_some());
+
+        // Float → DFP
+        let v = Value::float(2.75);
+        let coerced = v.into_coerce_to_type(DataType::DeterministicFloat);
+        assert!(coerced.as_dfp().is_some());
+
+        // Same type → identity
+        let v = Value::dfp(Dfp::from_f64(1.0));
+        let coerced = v.into_coerce_to_type(DataType::DeterministicFloat);
+        assert!(coerced.as_dfp().is_some());
+    }
+
+    #[test]
+    fn test_into_coerce_dqa() {
+        // Integer → DQA
+        let v = Value::integer(42);
+        let coerced = v.into_coerce_to_type(DataType::Quant);
+        let dqa = coerced.as_dqa().expect("should be DQA");
+        assert_eq!(dqa.value, 42);
+        assert_eq!(dqa.scale, 0);
+
+        // Float → DQA
+        let v = Value::float(1.5);
+        let coerced = v.into_coerce_to_type(DataType::Quant);
+        let dqa = coerced.as_dqa().expect("should be DQA");
+        assert_eq!(dqa.value, 15);
+        assert_eq!(dqa.scale, 1);
+
+        // Same type → identity
+        let v = Value::quant(Dqa::new(99, 1).unwrap());
+        let coerced = v.into_coerce_to_type(DataType::Quant);
+        assert_eq!(coerced.as_dqa().unwrap().value, 99);
+    }
+
+    #[test]
+    fn test_from_typed_dfp() {
+        // String → DFP
+        let boxed = "2.75".to_string();
+        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::DeterministicFloat);
+        assert!(v.as_dfp().is_some());
+
+        // Integer → DFP
+        let boxed = 42i64;
+        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::DeterministicFloat);
+        assert!(v.as_dfp().is_some());
+    }
+
+    #[test]
+    fn test_from_typed_dqa() {
+        // String → DQA
+        let boxed = "1.50".to_string();
+        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::Quant);
+        let dqa = v.as_dqa().expect("should be DQA");
+        assert_eq!(dqa.value, 150);
+        assert_eq!(dqa.scale, 2);
+
+        // Integer → DQA
+        let boxed = 42i64;
+        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::Quant);
+        let dqa = v.as_dqa().expect("should be DQA from int");
+        assert_eq!(dqa.value, 42);
+        assert_eq!(dqa.scale, 0);
+    }
+
+    #[test]
+    fn test_cross_type_compare_dfp_int() {
+        // DFP vs Integer: should not panic, should compare by numeric value
+        let dfp = Value::dfp(Dfp::from_f64(5.0));
+        let int = Value::integer(5);
+        assert_eq!(dfp.compare(&int).unwrap(), Ordering::Equal);
+
+        let dfp = Value::dfp(Dfp::from_f64(3.0));
+        let int = Value::integer(5);
+        assert_eq!(dfp.compare(&int).unwrap(), Ordering::Less);
+
+        let dfp = Value::dfp(Dfp::from_f64(10.0));
+        let int = Value::integer(5);
+        assert_eq!(dfp.compare(&int).unwrap(), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_cross_type_compare_dqa_float() {
+        // DQA vs Float: should not panic, should compare by numeric value
+        let dqa = Value::quant(Dqa::new(15, 1).unwrap()); // 1.5
+        let float = Value::float(1.5);
+        assert_eq!(dqa.compare(&float).unwrap(), Ordering::Equal);
+
+        let dqa = Value::quant(Dqa::new(10, 1).unwrap()); // 1.0
+        let float = Value::float(1.5);
+        assert_eq!(dqa.compare(&float).unwrap(), Ordering::Less);
+    }
+
+    #[test]
+    fn test_cross_type_compare_dqa_int() {
+        // DQA vs Integer: should not panic
+        let dqa = Value::quant(Dqa::new(50, 1).unwrap()); // 5.0
+        let int = Value::integer(5);
+        assert_eq!(dqa.compare(&int).unwrap(), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_format_dqa_values() {
+        // Scale 0: no decimal point
+        assert_eq!(format_dqa(Dqa::new(42, 0).unwrap()), "42");
+        assert_eq!(format_dqa(Dqa::new(-5, 0).unwrap()), "-5");
+
+        // Scale 2: decimal formatting
+        assert_eq!(format_dqa(Dqa::new(123, 2).unwrap()), "1.23");
+        assert_eq!(format_dqa(Dqa::new(-123, 2).unwrap()), "-1.23");
+        assert_eq!(format_dqa(Dqa::new(100, 2).unwrap()), "1");
+        assert_eq!(format_dqa(Dqa::new(1, 2).unwrap()), "0.01");
     }
 }

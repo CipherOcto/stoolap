@@ -76,14 +76,8 @@ impl CastExpr {
                 format!("{:?}", value),
                 "VECTOR",
             )),
-            DataType::DeterministicFloat => Err(crate::core::Error::type_conversion(
-                format!("{:?}", value),
-                "DFP",
-            )),
-            DataType::Quant => Err(crate::core::Error::type_conversion(
-                format!("{:?}", value),
-                "DQA",
-            )),
+            DataType::DeterministicFloat => Ok(value.cast_to_type(DataType::DeterministicFloat)),
+            DataType::Quant => Ok(value.cast_to_type(DataType::Quant)),
             DataType::Blob => Err(crate::core::Error::type_conversion(
                 format!("{:?}", value),
                 "BLOB",
