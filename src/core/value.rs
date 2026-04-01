@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use octo_determin::{Dfp, DfpClass, DfpEncoding, Dqa};
+use octo_determin::{dqa_cmp, Dfp, DfpClass, DfpEncoding, Dqa};
 
 use super::error::{Error, Result};
 use super::types::DataType;
@@ -209,7 +209,7 @@ impl Value {
         // DqaEncoding is 16 bytes: value(i64) + scale(u8) + reserved[7]
         bytes.extend_from_slice(&dqa.value.to_be_bytes());
         bytes.push(dqa.scale);
-        // reserved bytes are already zero (Vec::with_capacity initializes to 0)
+        bytes.extend_from_slice(&[0u8; 7]); // reserved bytes
         Value::Extension(CompactArc::from(bytes))
     }
 
@@ -409,8 +409,22 @@ impl Value {
             Value::Extension(data)
                 if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
             {
-                let encoding_bytes: [u8; 24] = data[1..25].try_into().ok()?;
-                Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
+                extract_dfp_from_extension(data)
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract DQA from Extension payload
+    pub fn as_dqa(&self) -> Option<Dqa> {
+        match self {
+            Value::Extension(data) if data.first().copied() == Some(DataType::Quant as u8) => {
+                if data.len() < 10 {
+                    return None;
+                }
+                let value = i64::from_be_bytes(data[1..9].try_into().ok()?);
+                let scale = data[9];
+                Dqa::new(value, scale).ok()
             }
             _ => None,
         }
@@ -482,17 +496,9 @@ impl Value {
             return self.compare_same_type(other);
         }
 
-        // Cross-type numeric comparison (integer vs float vs DFP)
+        // Cross-type numeric comparison (integer vs float vs DFP vs DQA)
         if self.data_type().is_numeric() && other.data_type().is_numeric() {
-            // If both are DFP, use DFP comparison for deterministic results
-            if self.data_type() == DataType::DeterministicFloat
-                && other.data_type() == DataType::DeterministicFloat
-            {
-                if let (Some(dfp1), Some(dfp2)) = (self.as_dfp(), other.as_dfp()) {
-                    return Ok(compare_dfp(&dfp1, &dfp2));
-                }
-            }
-            // Otherwise, convert to f64 for comparison
+            // Convert to f64 for comparison
             let v1 = self.as_float64().unwrap();
             let v2 = other.as_float64().unwrap();
             return Ok(compare_floats(v1, v2));
@@ -553,15 +559,38 @@ impl Value {
                 }
             }
             (Value::Extension(a), Value::Extension(b)) => {
-                // Extension: tag byte is [0], so same-tag comparison is data equality
                 if a.first() != b.first() {
                     return Err(Error::IncomparableTypes);
                 }
-                // All extension types: equality only (not orderable)
-                if a == b {
-                    Ok(Ordering::Equal)
-                } else {
-                    Err(Error::IncomparableTypes)
+                let tag = a.first().copied().unwrap_or(0);
+                match tag {
+                    t if t == DataType::DeterministicFloat as u8 => {
+                        let da = extract_dfp_from_extension(a)
+                            .ok_or(Error::Internal { message: "invalid dfp data".into() })?;
+                        let db = extract_dfp_from_extension(b)
+                            .ok_or(Error::Internal { message: "invalid dfp data".into() })?;
+                        Ok(compare_dfp(&da, &db))
+                    }
+                    t if t == DataType::Quant as u8 => {
+                        let da = self.as_dqa().ok_or(Error::Internal { message: "invalid dqa data".into() })?;
+                        let db = other.as_dqa().ok_or(Error::Internal { message: "invalid dqa data".into() })?;
+                        Ok(match dqa_cmp(da, db) {
+                            -1 => Ordering::Less,
+                            0 => Ordering::Equal,
+                            1 => Ordering::Greater,
+                            _ => {
+                                return Err(Error::Internal { message: "invalid dqa comparison".into() });
+                            }
+                        })
+                    }
+                    _ => {
+                        // Other extension types: equality only
+                        if a == b {
+                            Ok(Ordering::Equal)
+                        } else {
+                            Err(Error::IncomparableTypes)
+                        }
+                    }
                 }
             }
             _ => Err(Error::IncomparableTypes),
@@ -1458,7 +1487,32 @@ impl Ord for Value {
             (Value::Text(a), Value::Text(b)) => a.cmp(b),
             (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
             (Value::Timestamp(a), Value::Timestamp(b)) => a.cmp(b),
-            (Value::Extension(a), Value::Extension(b)) => a.cmp(b),
+            (Value::Extension(a), Value::Extension(b)) => {
+                if a.first() != b.first() {
+                    return a.cmp(b); // different extension types: byte order
+                }
+                let tag = a.first().copied().unwrap_or(0);
+                match tag {
+                    t if t == DataType::DeterministicFloat as u8 => {
+                        match (extract_dfp_from_extension(a), extract_dfp_from_extension(b)) {
+                            (Some(da), Some(db)) => compare_dfp(&da, &db),
+                            _ => a.cmp(b), // fallback on deserialization failure
+                        }
+                    }
+                    t if t == DataType::Quant as u8 => {
+                        match (Value::as_dqa(self), Value::as_dqa(other)) {
+                            (Some(da), Some(db)) => match dqa_cmp(da, db) {
+                                -1 => Ordering::Less,
+                                0 => Ordering::Equal,
+                                1 => Ordering::Greater,
+                                _ => Ordering::Equal,
+                            },
+                            _ => a.cmp(b),
+                        }
+                    }
+                    _ => a.cmp(b), // other extensions: byte order
+                }
+            }
             (Value::Blob(a), Value::Blob(b)) => {
                 // Compare by byte content first, then by length
                 match a.cmp(b) {
@@ -1698,6 +1752,15 @@ pub fn parse_vector_str(s: &str) -> Option<Vec<f32>> {
         result.push(val);
     }
     Some(result)
+}
+
+/// Extract DFP from raw Extension bytes
+fn extract_dfp_from_extension(data: &CompactArc<[u8]>) -> Option<Dfp> {
+    if data.len() < 25 {
+        return None;
+    }
+    let encoding_bytes: [u8; 24] = data[1..25].try_into().ok()?;
+    Some(DfpEncoding::from_bytes(encoding_bytes).to_dfp())
 }
 
 /// Compare two floats with proper NaN handling
@@ -2287,5 +2350,63 @@ mod tests {
         // Test PartialEq - should return true for equal blobs
         assert!(blob1 == blob2);
         assert!(blob1 != blob3);
+    }
+
+    // =========================================================================
+    // Bug fix tests: DQA round-trip, DFP/DQA same-type compare, DFP/DQA Ord
+    // =========================================================================
+
+    #[test]
+    fn test_dqa_quant_round_trip() {
+        let dqa = Dqa::new(12345, 2).unwrap();
+        let v = Value::quant(dqa);
+        // as_dqa() should extract the same value
+        let extracted = v.as_dqa().expect("as_dqa should succeed");
+        assert_eq!(extracted.value, 12345);
+        assert_eq!(extracted.scale, 2);
+    }
+
+    #[test]
+    fn test_dfp_same_type_compare() {
+        let v1 = Value::dfp(Dfp::from_f64(1.0));
+        let v2 = Value::dfp(Dfp::from_f64(2.0));
+        let v3 = Value::dfp(Dfp::from_f64(1.0));
+        // Should return ordering, not IncomparableTypes
+        assert_eq!(v1.compare(&v2).unwrap(), Ordering::Less);
+        assert_eq!(v2.compare(&v1).unwrap(), Ordering::Greater);
+        assert_eq!(v1.compare(&v3).unwrap(), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_dqa_same_type_compare() {
+        let v1 = Value::quant(Dqa::new(1, 0).unwrap());
+        let v2 = Value::quant(Dqa::new(2, 0).unwrap());
+        let v3 = Value::quant(Dqa::new(1, 0).unwrap());
+        assert_eq!(v1.compare(&v2).unwrap(), Ordering::Less);
+        assert_eq!(v2.compare(&v1).unwrap(), Ordering::Greater);
+        assert_eq!(v1.compare(&v3).unwrap(), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_dfp_ord() {
+        let v1 = Value::dfp(Dfp::from_f64(1.0));
+        let v2 = Value::dfp(Dfp::from_f64(2.0));
+        assert!(v1 < v2, "dfp(1.0) should be less than dfp(2.0)");
+        assert!(v2 > v1, "dfp(2.0) should be greater than dfp(1.0)");
+    }
+
+    #[test]
+    fn test_dqa_ord() {
+        let v1 = Value::quant(Dqa::new(1, 0).unwrap());
+        let v2 = Value::quant(Dqa::new(2, 0).unwrap());
+        assert!(v1 < v2, "dqa(1,0) should be less than dqa(2,0)");
+        assert!(v2 > v1, "dqa(2,0) should be greater than dqa(1,0)");
+    }
+
+    #[test]
+    fn test_dqa_ord_negative() {
+        let vn = Value::quant(Dqa::new(-5, 0).unwrap());
+        let vp = Value::quant(Dqa::new(5, 0).unwrap());
+        assert!(vn < vp, "dqa(-5) should be less than dqa(5)");
     }
 }

@@ -3385,8 +3385,9 @@ impl ExprVM {
     #[inline]
     fn extract_dqa_from_extension(data: &crate::common::CompactArc<[u8]>) -> Option<Dqa> {
         if data.first().copied() == Some(DataType::Quant as u8) {
-            // DqaEncoding is 16 bytes: value(i64) + scale(u8) + reserved[7]
-            if data.len() >= 17 {
+            // DqaEncoding: value(i64) + scale(u8) [+ reserved[7]]
+            // Minimum 10 bytes (tag + i64 + scale), canonical is 18 (tag + 16 + reserved)
+            if data.len() >= 10 {
                 let value_bytes: [u8; 8] = data[1..9].try_into().ok()?;
                 let scale = data[9];
                 let value = i64::from_be_bytes(value_bytes);
