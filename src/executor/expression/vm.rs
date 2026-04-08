@@ -1019,6 +1019,136 @@ impl ExprVM {
                     pc += 1;
                 }
 
+                Op::DfpAdd => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (&a, &b) {
+                        (
+                            Value::Extension(ref a_data),
+                            Value::Extension(ref b_data),
+                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
+                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            if let (Some(dfp_a), Some(dfp_b)) = (
+                                Self::extract_dfp_from_extension(a_data),
+                                Self::extract_dfp_from_extension(b_data),
+                            ) {
+                                Value::dfp(dfp_add(dfp_a, dfp_b))
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ => Value::Null(DataType::DeterministicFloat),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DfpSub => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (&a, &b) {
+                        (
+                            Value::Extension(ref a_data),
+                            Value::Extension(ref b_data),
+                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
+                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            if let (Some(dfp_a), Some(dfp_b)) = (
+                                Self::extract_dfp_from_extension(a_data),
+                                Self::extract_dfp_from_extension(b_data),
+                            ) {
+                                Value::dfp(dfp_sub(dfp_a, dfp_b))
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ => Value::Null(DataType::DeterministicFloat),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DfpMul => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (&a, &b) {
+                        (
+                            Value::Extension(ref a_data),
+                            Value::Extension(ref b_data),
+                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
+                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            if let (Some(dfp_a), Some(dfp_b)) = (
+                                Self::extract_dfp_from_extension(a_data),
+                                Self::extract_dfp_from_extension(b_data),
+                            ) {
+                                Value::dfp(dfp_mul(dfp_a, dfp_b))
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ => Value::Null(DataType::DeterministicFloat),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DfpDiv => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (&a, &b) {
+                        (
+                            Value::Extension(ref a_data),
+                            Value::Extension(ref b_data),
+                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
+                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            if let (Some(dfp_a), Some(dfp_b)) = (
+                                Self::extract_dfp_from_extension(a_data),
+                                Self::extract_dfp_from_extension(b_data),
+                            ) {
+                                if dfp_b.to_f64() == 0.0 {
+                                    Value::Null(DataType::DeterministicFloat)
+                                } else {
+                                    Value::dfp(dfp_div(dfp_a, dfp_b))
+                                }
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ => Value::Null(DataType::DeterministicFloat),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DfpNeg => {
+                    let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match v {
+                        Value::Extension(ref data)
+                            if data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8) =>
+                        {
+                            if let Some(dfp) = Self::extract_dfp_from_extension(data) {
+                                // DFP negation via 0 - value
+                                let zero = Dfp::from_f64(0.0);
+                                Value::dfp(dfp_sub(zero, dfp))
+                            } else {
+                                Value::Null(DataType::DeterministicFloat)
+                            }
+                        }
+                        Value::Null(dt) => Value::Null(dt),
+                        _ => Value::Null(DataType::DeterministicFloat),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
                 // =============================================================
                 // BITWISE OPERATIONS (inlined for performance)
                 // =============================================================

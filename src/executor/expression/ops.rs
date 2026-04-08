@@ -518,6 +518,21 @@ pub enum Op {
     /// DFP square root: sqrt(a)
     /// Stack: [value] -> [sqrt(value)]
     DfpSqrt,
+    /// DFP addition: a + b
+    /// Stack: [a, b] -> [a + b]
+    DfpAdd,
+    /// DFP subtraction: a - b
+    /// Stack: [a, b] -> [a - b]
+    DfpSub,
+    /// DFP multiplication: a * b
+    /// Stack: [a, b] -> [a * b]
+    DfpMul,
+    /// DFP division: a / b
+    /// Stack: [a, b] -> [a / b]
+    DfpDiv,
+    /// DFP unary negation: -a
+    /// Stack: [a] -> [-a]
+    DfpNeg,
 
     // =========================================================================
     // BITWISE OPERATIONS
@@ -999,6 +1014,11 @@ impl std::fmt::Debug for Op {
             Op::NativeFn1(_) => write!(f, "NativeFn1(...)"),
             Op::ConcatN(n) => write!(f, "ConcatN({})", n),
             Op::DfpSqrt => write!(f, "DfpSqrt"),
+            Op::DfpAdd => write!(f, "DfpAdd"),
+            Op::DfpSub => write!(f, "DfpSub"),
+            Op::DfpMul => write!(f, "DfpMul"),
+            Op::DfpDiv => write!(f, "DfpDiv"),
+            Op::DfpNeg => write!(f, "DfpNeg"),
         }
     }
 }

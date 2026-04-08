@@ -251,6 +251,10 @@ impl Program {
                 | Op::DqaMul
                 | Op::DqaDiv
                 | Op::DqaCmp
+                | Op::DfpAdd
+                | Op::DfpSub
+                | Op::DfpMul
+                | Op::DfpDiv
                 | Op::BitAnd
                 | Op::BitOr
                 | Op::BitXor
@@ -288,6 +292,7 @@ impl Program {
                 | Op::DqaNeg
                 | Op::DqaAbs
                 | Op::DfpSqrt
+                | Op::DfpNeg
                 | Op::BitNot
                 | Op::Like(_, _)
                 | Op::LikeEscape(_, _, _)
