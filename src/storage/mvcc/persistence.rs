@@ -32,6 +32,7 @@ use crate::common::time_compat::{SystemTime, UNIX_EPOCH};
 
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Error, IndexType, Result, Row, Schema, Value};
+use octo_determin::DfpEncoding;
 use crate::storage::mvcc::version_store::RowVersion;
 use crate::storage::mvcc::wal_manager::{WALEntry, WALManager, WALOperationType};
 use crate::storage::PersistenceConfig;
@@ -853,6 +854,11 @@ pub fn serialize_value(value: &Value) -> Result<Vec<u8>> {
                 let dim = (payload.len() / 4) as u32;
                 buf.extend_from_slice(&dim.to_le_bytes());
                 buf.extend_from_slice(payload);
+            } else if tag == DataType::DeterministicFloat as u8 {
+                // Tag 13: DFP (Deterministic Floating Point) — RFC-0104
+                // 24-byte canonical DfpEncoding stored directly
+                buf.push(13);
+                buf.extend_from_slice(payload); // payload is exactly 24 bytes
             } else {
                 // Tag 11: generic extension (dt_u8 + len + raw bytes)
                 buf.push(11);
@@ -1053,6 +1059,19 @@ pub fn deserialize_value(data: &[u8]) -> Result<Value> {
             }
             let payload = rest[4..4 + len].to_vec();
             Ok(Value::Blob(CompactArc::from(payload)))
+        }
+        13 => {
+            // DFP (Deterministic Floating Point) — RFC-0104, 24-byte canonical encoding
+            if rest.len() < 24 {
+                return Err(Error::internal(format!(
+                    "missing DFP data: expected 24 bytes, got {}",
+                    rest.len()
+                )));
+            }
+            let encoding_bytes: [u8; 24] = rest[..24].try_into().unwrap();
+            let encoding = DfpEncoding::from_bytes(encoding_bytes);
+            let dfp = encoding.to_dfp();
+            Ok(Value::dfp(dfp))
         }
         _ => Err(Error::internal(format!(
             "unknown value type tag: {}",
@@ -1294,5 +1313,61 @@ mod tests {
         assert!(checkpoint_path.exists());
 
         pm.stop().unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::approx_constant)]
+    fn test_dfp_serialize_roundtrip() {
+        // Test DFP serialization round-trip via wire tag 13
+        use octo_determin::Dfp;
+
+        // Create a DFP value
+        let dfp = Dfp::from_f64(3.14159265358979);
+        let value = Value::dfp(dfp);
+
+        // Serialize
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13, "wire tag should be 13 for DFP");
+
+        // Deserialize
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
+
+        // Verify value matches
+        let original_f64 = dfp.to_f64();
+        let deserialized_f64 = deserialized_dfp.to_f64();
+        assert_eq!(original_f64, deserialized_f64, "DFP round-trip should preserve value");
+    }
+
+    #[test]
+    fn test_dfp_zero_roundtrip() {
+        use octo_determin::Dfp;
+
+        let dfp_zero = Dfp::from_f64(0.0);
+        let value = Value::dfp(dfp_zero);
+
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
+
+        assert_eq!(dfp_zero.to_f64(), deserialized_dfp.to_f64());
+    }
+
+    #[test]
+    fn test_dfp_negative_roundtrip() {
+        use octo_determin::Dfp;
+
+        let dfp_neg = Dfp::from_f64(-273.15);
+        let value = Value::dfp(dfp_neg);
+
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
+
+        assert_eq!(dfp_neg.to_f64(), deserialized_dfp.to_f64());
     }
 }
