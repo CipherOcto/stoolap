@@ -111,6 +111,10 @@ pub struct CompileContext<'a> {
 
     /// Column aliases
     column_aliases: StringMap<String>,
+
+    /// Column types for type-aware compilation
+    /// Maps column name (lowercase) -> DataType
+    column_types: StringMap<DataType>,
 }
 
 impl<'a> CompileContext<'a> {
@@ -147,6 +151,7 @@ impl<'a> CompileContext<'a> {
             functions,
             expression_aliases: StringMap::new(),
             column_aliases: StringMap::new(),
+            column_types: StringMap::new(),
         }
     }
 
@@ -204,6 +209,35 @@ impl<'a> CompileContext<'a> {
     pub fn with_column_aliases(mut self, aliases: StringMap<String>) -> Self {
         self.column_aliases = aliases;
         self
+    }
+
+    /// Add column types for type-aware compilation
+    pub fn with_column_types(mut self, types: StringMap<DataType>) -> Self {
+        self.column_types = types;
+        self
+    }
+
+    /// Get column type if known
+    pub fn get_column_type(&self, name: &str) -> Option<DataType> {
+        let lower = name.to_lowercase();
+        self.column_types.get(&lower).copied()
+    }
+
+    /// Resolve a column name to its type (for qualified and unqualified names)
+    fn resolve_column_type(&self, table: Option<&str>, column: &str) -> Option<DataType> {
+        let col_lower = column.to_lowercase();
+
+        // Try qualified lookup first
+        if let Some(table_name) = table {
+            let table_lower = table_name.to_lowercase();
+            let key = format!("{}.{}", table_lower, col_lower);
+            if let Some(&dt) = self.column_types.get(&key) {
+                return Some(dt);
+            }
+        }
+
+        // Fall back to unqualified
+        self.column_types.get(&col_lower).copied()
     }
 
     /// Resolve a column name to its source (Row1 or Row2)
@@ -305,6 +339,56 @@ impl<'a> ExprCompiler<'a> {
         self.compile_expr(expr, &mut builder)?;
         builder.emit(Op::Return);
         Ok(builder.build())
+    }
+
+    /// Infer the result DataType of an expression (for type-aware opcode selection)
+    fn infer_expr_type(&self, expr: &Expression) -> Option<DataType> {
+        match expr {
+            Expression::IntegerLiteral(_) => Some(DataType::Integer),
+            Expression::FloatLiteral(_) => Some(DataType::Float),
+            Expression::StringLiteral(_) => Some(DataType::Text),
+            Expression::BooleanLiteral(_) => Some(DataType::Boolean),
+            Expression::NullLiteral(_) => Some(DataType::Null),
+            Expression::Identifier(id) => {
+                // Check for qualified name
+                if let Some(dot_idx) = id.value_lower.rfind('.') {
+                    let table = &id.value_lower[..dot_idx];
+                    let column = &id.value_lower[dot_idx + 1..];
+                    self.ctx.resolve_column_type(Some(table), column)
+                } else {
+                    self.ctx.resolve_column_type(None, &id.value_lower)
+                }
+            }
+            Expression::QualifiedIdentifier(qid) => {
+                self.ctx.resolve_column_type(Some(&qid.qualifier.value_lower), &qid.name.value_lower)
+            }
+            // For binary operations, infer from operands if both are known
+            Expression::Infix(infix) => {
+                let left_type = self.infer_expr_type(&infix.left);
+                let right_type = self.infer_expr_type(&infix.right);
+                match (left_type, right_type) {
+                    (Some(DataType::DeterministicFloat), _) => Some(DataType::DeterministicFloat),
+                    (_, Some(DataType::DeterministicFloat)) => Some(DataType::DeterministicFloat),
+                    (Some(DataType::Quant), _) => Some(DataType::Quant),
+                    (_, Some(DataType::Quant)) => Some(DataType::Quant),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Infer type from an InfixExpression directly (avoiding wrapper overhead)
+    fn infer_infix_type(&self, infix: &InfixExpression) -> Option<DataType> {
+        let left_type = self.infer_expr_type(&infix.left);
+        let right_type = self.infer_expr_type(&infix.right);
+        match (left_type, right_type) {
+            (Some(DataType::DeterministicFloat), _) => Some(DataType::DeterministicFloat),
+            (_, Some(DataType::DeterministicFloat)) => Some(DataType::DeterministicFloat),
+            (Some(DataType::Quant), _) => Some(DataType::Quant),
+            (_, Some(DataType::Quant)) => Some(DataType::Quant),
+            _ => None,
+        }
     }
 
     /// Flatten chained concatenation operators into a list of operands.
@@ -707,25 +791,45 @@ impl<'a> ExprCompiler<'a> {
             InfixOperator::Add => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Add);
+                // Use DFP-specific opcode if type is known
+                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
+                    builder.emit(Op::DfpAdd);
+                } else {
+                    builder.emit(Op::Add);
+                }
             }
 
             InfixOperator::Subtract => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Sub);
+                // Use DFP-specific opcode if type is known
+                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
+                    builder.emit(Op::DfpSub);
+                } else {
+                    builder.emit(Op::Sub);
+                }
             }
 
             InfixOperator::Multiply => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Mul);
+                // Use DFP-specific opcode if type is known
+                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
+                    builder.emit(Op::DfpMul);
+                } else {
+                    builder.emit(Op::Mul);
+                }
             }
 
             InfixOperator::Divide => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Div);
+                // Use DFP-specific opcode if type is known
+                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
+                    builder.emit(Op::DfpDiv);
+                } else {
+                    builder.emit(Op::Div);
+                }
             }
 
             InfixOperator::Modulo => {
@@ -996,7 +1100,14 @@ impl<'a> ExprCompiler<'a> {
 
         match prefix.operator.to_uppercase().as_str() {
             "NOT" => builder.emit(Op::Not),
-            "-" => builder.emit(Op::Neg),
+            "-" => {
+                // Use DFP-specific opcode if type is known
+                if self.infer_expr_type(&prefix.right) == Some(DataType::DeterministicFloat) {
+                    builder.emit(Op::DfpNeg);
+                } else {
+                    builder.emit(Op::Neg);
+                }
+            }
             "+" => {} // Unary plus is a no-op
             "~" => builder.emit(Op::BitNot),
             _ => {
@@ -1573,5 +1684,68 @@ mod tests {
         let program = compiler.compile(&expr).unwrap();
         assert!(!program.is_empty());
         println!("{}", program.disassemble());
+    }
+
+    #[test]
+    fn test_compile_dfp_type_aware() {
+        use crate::common::StringMap;
+
+        let columns = vec!["a".to_string(), "b".to_string()];
+        let mut column_types = StringMap::new();
+        column_types.insert("a".to_string(), DataType::DeterministicFloat);
+        column_types.insert("b".to_string(), DataType::DeterministicFloat);
+
+        let ctx = CompileContext::with_global_registry(&columns).with_column_types(column_types);
+        let compiler = ExprCompiler::new(&ctx);
+
+        // a + b should emit DfpAdd when both operands are DFP type
+        let expr = Expression::Infix(InfixExpression {
+            token: make_token(),
+            left: Box::new(Expression::Identifier(Identifier::new(make_token(), "a".to_string()))),
+            operator: "+".into(),
+            op_type: InfixOperator::Add,
+            right: Box::new(Expression::Identifier(Identifier::new(make_token(), "b".to_string()))),
+        });
+
+        let program = compiler.compile(&expr).unwrap();
+        let disassembly = program.disassemble();
+
+        // The program should contain DfpAdd since both columns are DFP type
+        assert!(
+            disassembly.contains("DfpAdd"),
+            "Expected DfpAdd opcode, got:\n{}",
+            disassembly
+        );
+        println!("DFP type-aware compilation:\n{}", disassembly);
+    }
+
+    #[test]
+    fn test_compile_dfp_negation() {
+        use crate::common::StringMap;
+
+        let columns = vec!["x".to_string()];
+        let mut column_types = StringMap::new();
+        column_types.insert("x".to_string(), DataType::DeterministicFloat);
+
+        let ctx = CompileContext::with_global_registry(&columns).with_column_types(column_types);
+        let compiler = ExprCompiler::new(&ctx);
+
+        // -x should emit DfpNeg when operand is DFP type
+        let expr = Expression::Prefix(PrefixExpression {
+            token: make_token(),
+            operator: "-".into(),
+            op_type: PrefixOperator::Negate,
+            right: Box::new(Expression::Identifier(Identifier::new(make_token(), "x".to_string()))),
+        });
+
+        let program = compiler.compile(&expr).unwrap();
+        let disassembly = program.disassemble();
+
+        assert!(
+            disassembly.contains("DfpNeg"),
+            "Expected DfpNeg opcode, got:\n{}",
+            disassembly
+        );
+        println!("DFP negation compilation:\n{}", disassembly);
     }
 }
