@@ -547,6 +547,21 @@ impl CompiledAggregate {
                 }
                 SumState::Float(sum) => *sum += f,
             },
+            // DFP: convert to f64 and add
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = value.as_dfp() {
+                    let f = dfp.to_f64();
+                    match state {
+                        SumState::Empty => *state = SumState::Float(f),
+                        SumState::Integer(sum) => {
+                            *state = SumState::Float(*sum as f64 + f);
+                        }
+                        SumState::Float(sum) => *sum += f,
+                    }
+                }
+            }
             _ => {} // Ignore non-numeric types
         }
     }
@@ -557,6 +572,12 @@ impl CompiledAggregate {
         match value {
             Value::Integer(i) => Some(*i as f64),
             Value::Float(f) => Some(*f),
+            // DFP: convert to f64
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+            {
+                value.as_dfp().map(|d| d.to_f64())
+            }
             _ => None,
         }
     }

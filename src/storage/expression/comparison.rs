@@ -58,6 +58,16 @@ impl ComparisonValue {
             Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => {
                 ComparisonValue::Text(crate::core::value::format_vector_bytes(&data[1..]))
             }
+            // DFP: convert to Float for comparison
+            Value::Extension(data)
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = value.as_dfp() {
+                    ComparisonValue::Float(dfp.to_f64())
+                } else {
+                    ComparisonValue::Null
+                }
+            }
             Value::Extension(data) => {
                 ComparisonValue::Text(String::from_utf8_lossy(&data[1..]).into_owned())
             }
@@ -344,6 +354,26 @@ impl Expression for ComparisonExpr {
                 Ok(self.compare_floats(*col_val as f64, *cmp_val))
             }
 
+            // DFP (Extension) comparisons with numeric types
+            (ComparisonValue::Float(cmp_val), Value::Extension(data))
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = col_value.as_dfp() {
+                    Ok(self.compare_floats(dfp.to_f64(), *cmp_val))
+                } else {
+                    Err(Error::type_conversion("DFP", "Float"))
+                }
+            }
+            (ComparisonValue::Integer(cmp_val), Value::Extension(data))
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = col_value.as_dfp() {
+                    Ok(self.compare_floats(dfp.to_f64(), *cmp_val as f64))
+                } else {
+                    Err(Error::type_conversion("DFP", "Float"))
+                }
+            }
+
             // Type mismatch
             _ => Err(Error::type_conversion(
                 format!("{:?}", col_value.data_type()),
@@ -402,6 +432,25 @@ impl Expression for ComparisonExpr {
             }
             (ComparisonValue::Float(cmp_val), Value::Integer(col_val)) => {
                 self.compare_floats(*col_val as f64, *cmp_val)
+            }
+            // DFP (Extension) comparisons with numeric types
+            (ComparisonValue::Float(cmp_val), Value::Extension(data))
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = col_value.as_dfp() {
+                    self.compare_floats(dfp.to_f64(), *cmp_val)
+                } else {
+                    false
+                }
+            }
+            (ComparisonValue::Integer(cmp_val), Value::Extension(data))
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = col_value.as_dfp() {
+                    self.compare_floats(dfp.to_f64(), *cmp_val as f64)
+                } else {
+                    false
+                }
             }
             _ => false,
         }

@@ -1139,6 +1139,8 @@ impl Executor {
             // Binary large object
             "BYTEA" | "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Blob),
             "VECTOR" => Ok(DataType::Vector),
+            "DFP" => Ok(DataType::DeterministicFloat),
+            "DQA" => Ok(DataType::Quant),
             _ => Err(Error::Type(format!("Unknown data type: {}", type_str))),
         }
     }

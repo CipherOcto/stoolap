@@ -752,15 +752,7 @@ impl Value {
     /// - Boolean column receiving Integer/String → converts to Boolean
     ///
     /// Returns the coerced value, or NULL if coercion fails.
-    ///
-    /// NOTE: FLOAT→DFP is blocked in implicit coerce. Use cast_to_type() for explicit CAST.
     pub fn coerce_to_type(&self, target_type: DataType) -> Value {
-        // For implicit coercion, block FLOAT→DFP
-        if target_type == DataType::DeterministicFloat {
-            if let Value::Float(_) = self {
-                return Value::Null(target_type);
-            }
-        }
         self.cast_to_type(target_type)
     }
 
@@ -1911,18 +1903,12 @@ fn compare_dfp_magnitude(a: &Dfp, b: &Dfp) -> Ordering {
         (_, Infinity) => Ordering::Less,
         // NaN should have been handled earlier, but include for exhaustiveness
         (NaN, _) | (_, NaN) => Ordering::Equal,
-        // Normal vs Normal - compare using exponent and mantissa
-        (Normal, Normal) => {
-            // First compare exponents
-            if a.exponent != b.exponent {
-                return if a.exponent > b.exponent {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                };
-            }
-            // Same exponent - compare mantissas
-            a.mantissa.cmp(&b.mantissa)
+        // Normal vs any - compare actual values via to_f64()
+        // This handles the fact that DFP mantissa/exponent don't compare directly
+        _ => {
+            let a_val = a.to_f64();
+            let b_val = b.to_f64();
+            compare_floats(a_val, b_val)
         }
     }
 }
@@ -2474,8 +2460,14 @@ mod tests {
     fn test_dfp_ord() {
         let v1 = Value::dfp(Dfp::from_f64(1.0));
         let v2 = Value::dfp(Dfp::from_f64(2.0));
+        let v3 = Value::dfp(Dfp::from_f64(3.0));
         assert!(v1 < v2, "dfp(1.0) should be less than dfp(2.0)");
         assert!(v2 > v1, "dfp(2.0) should be greater than dfp(1.0)");
+        assert!(v2 < v3, "dfp(2.0) should be less than dfp(3.0)");
+        assert!(v3 > v2, "dfp(3.0) should be greater than dfp(2.0)");
+        // Also verify compare() is consistent with PartialOrd
+        assert_eq!(v2.compare(&v3).unwrap(), Ordering::Less);
+        assert_eq!(v3.compare(&v2).unwrap(), Ordering::Greater);
     }
 
     #[test]

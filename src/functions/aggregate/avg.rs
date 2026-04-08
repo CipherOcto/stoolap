@@ -66,6 +66,16 @@ impl AggregateFunction for AvgFunction {
         let numeric_value = match value {
             Value::Integer(i) => *i as f64,
             Value::Float(f) => *f,
+            // DFP: convert to f64
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = value.as_dfp() {
+                    dfp.to_f64()
+                } else {
+                    return; // Invalid DFP data
+                }
+            }
             _ => return, // Ignore non-numeric types
         };
 

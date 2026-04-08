@@ -1067,25 +1067,105 @@ impl CompiledFilter {
 
             // Float comparisons
             CompiledFilter::FloatEq { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f == *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f == *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| (dfp.to_f64() - *value).abs() < f64::EPSILON)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatNe { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f != *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f != *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_none_or(|dfp| (dfp.to_f64() - *value).abs() >= f64::EPSILON)
+                    }
+                    _ => true,
+                }
             }
             CompiledFilter::FloatGt { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f > *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f > *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() > *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatGte { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f >= *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f >= *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() >= *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatLt { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f < *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f < *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() < *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatLte { col_idx, value } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f <= *value)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f <= *value,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() <= *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatBetween { col_idx, min, max } => {
-                matches!(row.get(*col_idx), Some(Value::Float(f)) if *f >= *min && *f <= *max)
+                match row.get(*col_idx) {
+                    Some(Value::Float(f)) => *f >= *min && *f <= *max,
+                    Some(Value::Extension(data))
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        row.get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| {
+                                let f = dfp.to_f64();
+                                f >= *min && f <= *max
+                            })
+                    }
+                    _ => false,
+                }
             }
 
             // String comparisons
@@ -1408,25 +1488,112 @@ impl CompiledFilter {
 
             // Float comparisons
             CompiledFilter::FloatEq { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f == *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f == *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| (dfp.to_f64() - *value).abs() < f64::EPSILON)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatNe { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f != *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f != *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_none_or(|dfp| (dfp.to_f64() - *value).abs() >= f64::EPSILON)
+                    }
+                    _ => true,
+                }
             }
             CompiledFilter::FloatGt { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f > *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f > *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() > *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatGte { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f >= *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f >= *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() >= *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatLt { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f < *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f < *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() < *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatLte { col_idx, value } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f <= *value)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f <= *value,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| dfp.to_f64() <= *value)
+                    }
+                    _ => false,
+                }
             }
             CompiledFilter::FloatBetween { col_idx, min, max } => {
-                matches!(get_val!(col_idx), Value::Float(f) if *f >= *min && *f <= *max)
+                match get_val!(col_idx) {
+                    Value::Float(f) => *f >= *min && *f <= *max,
+                    Value::Extension(data)
+                        if data.first().copied()
+                            == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                    {
+                        values
+                            .get(*col_idx)
+                            .and_then(|v| v.as_dfp())
+                            .is_some_and(|dfp| {
+                                let f = dfp.to_f64();
+                                f >= *min && f <= *max
+                            })
+                    }
+                    _ => false,
+                }
             }
 
             // String comparisons

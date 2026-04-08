@@ -287,6 +287,7 @@ impl Program {
                 | Op::Neg
                 | Op::DqaNeg
                 | Op::DqaAbs
+                | Op::DfpSqrt
                 | Op::BitNot
                 | Op::Like(_, _)
                 | Op::LikeEscape(_, _, _)

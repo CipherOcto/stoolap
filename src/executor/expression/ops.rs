@@ -513,6 +513,13 @@ pub enum Op {
     DqaCmp,
 
     // =========================================================================
+    // DFP (Deterministic Floating-Point) OPERATIONS
+    // =========================================================================
+    /// DFP square root: sqrt(a)
+    /// Stack: [value] -> [sqrt(value)]
+    DfpSqrt,
+
+    // =========================================================================
     // BITWISE OPERATIONS
     // =========================================================================
     BitAnd,
@@ -991,6 +998,7 @@ impl std::fmt::Debug for Op {
             Op::ReturnNull(dt) => write!(f, "ReturnNull({:?})", dt),
             Op::NativeFn1(_) => write!(f, "NativeFn1(...)"),
             Op::ConcatN(n) => write!(f, "ConcatN({})", n),
+            Op::DfpSqrt => write!(f, "DfpSqrt"),
         }
     }
 }

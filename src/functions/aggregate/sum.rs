@@ -95,6 +95,21 @@ impl AggregateFunction for SumFunction {
                 }
                 SumState::Float(sum) => *sum += f,
             },
+            // DFP: convert to f64 and add
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+            {
+                if let Some(dfp) = value.as_dfp() {
+                    let f = dfp.to_f64();
+                    match &mut self.state {
+                        SumState::Empty => self.state = SumState::Float(f),
+                        SumState::Integer(sum) => {
+                            self.state = SumState::Float(*sum as f64 + f);
+                        }
+                        SumState::Float(sum) => *sum += f,
+                    }
+                }
+            }
             _ => {} // Ignore non-numeric types
         }
     }

@@ -574,6 +574,95 @@ fn compare_values(a: &Value, b: &Value) -> i32 {
                 0
             }
         }
+        // DFP comparison
+        (Value::Extension(data_a), Value::Extension(data_b))
+            if data_a.first().copied() == Some(DataType::DeterministicFloat as u8)
+                && data_b.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+        {
+            let dfp_a = a.as_dfp();
+            let dfp_b = b.as_dfp();
+            match (dfp_a, dfp_b) {
+                (Some(av), Some(bv)) => {
+                    let af = av.to_f64();
+                    let bf = bv.to_f64();
+                    if af < bf {
+                        -1
+                    } else if af > bf {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                _ => 0,
+            }
+        }
+        // Mixed numeric: DFP with Integer or Float
+        (Value::Extension(data_a), Value::Integer(bv))
+            if data_a.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+        {
+            if let Some(av) = a.as_dfp() {
+                let af = av.to_f64();
+                let bf = *bv as f64;
+                if af < bf {
+                    -1
+                } else if af > bf {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
+        (Value::Integer(av), Value::Extension(data_b))
+            if data_b.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+        {
+            if let Some(bv) = b.as_dfp() {
+                let af = *av as f64;
+                let bf = bv.to_f64();
+                if af < bf {
+                    -1
+                } else if af > bf {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
+        (Value::Extension(data_a), Value::Float(bv))
+            if data_a.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+        {
+            if let Some(av) = a.as_dfp() {
+                let af = av.to_f64();
+                if af < *bv {
+                    -1
+                } else if af > *bv {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
+        (Value::Float(av), Value::Extension(data_b))
+            if data_b.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+        {
+            if let Some(bv) = b.as_dfp() {
+                let bf = bv.to_f64();
+                if *av < bf {
+                    -1
+                } else if *av > bf {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
         // Mixed numeric types
         (Value::Integer(av), Value::Float(bv)) => {
             let af = *av as f64;

@@ -281,6 +281,8 @@ pub static KEYWORDS: &[&str] = &[
     "TIME",
     "JSON",
     "VECTOR",
+    "DFP",
+    "DQA",
     "BYTEA",
     "BLOB",
     "BINARY",

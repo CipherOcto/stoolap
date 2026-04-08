@@ -1087,6 +1087,19 @@ impl FromValue for f64 {
         match value {
             Value::Float(f) => Ok(*f),
             Value::Integer(i) => Ok(*i as f64),
+            Value::Extension(data)
+                if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+            {
+                // DFP → Float
+                if let Some(dfp) = value.as_dfp() {
+                    Ok(dfp.to_f64())
+                } else {
+                    Err(Error::TypeConversion {
+                        from: format!("{:?}", value),
+                        to: "Float".to_string(),
+                    })
+                }
+            }
             _ => Err(Error::TypeConversion {
                 from: format!("{:?}", value),
                 to: "Float".to_string(),
