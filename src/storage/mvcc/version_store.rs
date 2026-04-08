@@ -3645,6 +3645,16 @@ impl VersionStore {
                     *float_sum += *f;
                     *count += 1;
                 }
+                // DFP: convert to f64 and add
+                Value::Extension(data)
+                    if data.first().copied()
+                        == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                {
+                    if let Some(dfp) = val.as_dfp() {
+                        *float_sum += dfp.to_f64();
+                        *count += 1;
+                    }
+                }
                 _ => {} // NULL or non-numeric
             }
         }
