@@ -65,6 +65,9 @@ pub struct SchemaColumn {
     /// Decimal scale for DQA/Quant columns (0-18, 0 = not a quant column)
     pub quant_scale: u8,
 
+    /// Decimal scale for DECIMAL columns (None = not a decimal column, Some(s) = scale s)
+    pub decimal_scale: Option<u8>,
+
     /// Maximum length for BLOB columns (None = no limit)
     pub blob_length: Option<u32>,
 }
@@ -93,6 +96,7 @@ impl SchemaColumn {
             check_expr: None,
             vector_dimensions: 0,
             quant_scale: 0,
+            decimal_scale: None,
             blob_length: None,
         }
     }
@@ -106,6 +110,12 @@ impl SchemaColumn {
     /// Set quant scale (for DQA columns)
     pub fn with_quant_scale(mut self, scale: u8) -> Self {
         self.quant_scale = scale;
+        self
+    }
+
+    /// Set decimal scale (for DECIMAL columns)
+    pub fn with_decimal_scale(mut self, scale: u8) -> Self {
+        self.decimal_scale = Some(scale);
         self
     }
 
@@ -136,6 +146,7 @@ impl SchemaColumn {
             check_expr,
             vector_dimensions: 0,
             quant_scale: 0,
+            decimal_scale: None,
             blob_length: None,
         }
     }
@@ -168,6 +179,7 @@ impl SchemaColumn {
             check_expr,
             vector_dimensions: 0,
             quant_scale: 0,
+            decimal_scale: None,
             blob_length: None,
         }
     }
@@ -881,6 +893,14 @@ impl SchemaBuilder {
     pub fn set_last_quant_scale(mut self, scale: u8) -> Self {
         if let Some(col) = self.columns.last_mut() {
             col.quant_scale = scale;
+        }
+        self
+    }
+
+    /// Set decimal scale on the last added column (for DECIMAL columns)
+    pub fn set_last_decimal_scale(mut self, scale: u8) -> Self {
+        if let Some(col) = self.columns.last_mut() {
+            col.decimal_scale = Some(scale);
         }
         self
     }

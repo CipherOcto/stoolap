@@ -24,7 +24,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use octo_determin::{decimal_to_bytes, dqa_cmp, BigInt, Decimal, Dfp, DfpClass, DfpEncoding, Dqa};
+use octo_determin::decimal::{decimal_cmp, decimal_from_bytes, decimal_to_string};
+use octo_determin::{
+    decimal_to_bytes, dqa_cmp, BigInt, Decimal, DecimalError, Dfp, DfpClass, DfpEncoding, Dqa,
+};
 
 use super::error::{Error, Result};
 use super::types::DataType;
@@ -214,6 +217,27 @@ impl Value {
         Value::Extension(CompactArc::from(bytes))
     }
 
+    /// Create a BIGINT value from BigInt struct
+    /// Uses BigIntEncoding wire format: [version:1][sign:1][reserved:2][num_limbs:1][reserved:3][limb0:8]...[limbN:8]
+    pub fn bigint(bi: BigInt) -> Self {
+        let encoding = bi.serialize();
+        let bytes = encoding.to_bytes();
+        let mut buf = Vec::with_capacity(1 + bytes.len());
+        buf.push(DataType::Bigint as u8);
+        buf.extend_from_slice(&bytes);
+        Value::Extension(CompactArc::from(buf))
+    }
+
+    /// Create a DECIMAL value from Decimal struct
+    /// Uses 24-byte fixed format: [version:1][reserved:3][scale:1][mantissa:16]
+    pub fn decimal(d: Decimal) -> Self {
+        let bytes = decimal_to_bytes(&d);
+        let mut buf = Vec::with_capacity(1 + 24);
+        buf.push(DataType::Decimal as u8);
+        buf.extend_from_slice(&bytes);
+        Value::Extension(CompactArc::from(buf))
+    }
+
     /// Create a Blob value from raw byte data
     pub fn blob(data: Vec<u8>) -> Self {
         Value::Blob(CompactArc::from(data))
@@ -266,8 +290,10 @@ impl Value {
                 .or_else(|| s.parse::<f64>().ok().map(|f| f as i64)),
             Value::Boolean(b) => Some(if *b { 1 } else { 0 }),
             Value::Timestamp(t) => Some(t.timestamp_nanos_opt().unwrap_or(0)),
-            Value::Extension(_) => None,
-            Value::Blob(_) => None,
+            Value::Extension(data) if data.first() == Some(&(DataType::Bigint as u8)) => {
+                self.as_bigint().and_then(|bi| i64::try_from(bi).ok())
+            }
+            Value::Extension(_) | Value::Blob(_) => None,
         }
     }
 
@@ -287,6 +313,9 @@ impl Value {
             Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => self
                 .as_dqa()
                 .map(|q| (q.value as f64) / 10f64.powi(q.scale as i32)),
+            Value::Extension(data) if data.first() == Some(&(DataType::Decimal as u8)) => self
+                .as_decimal()
+                .map(|d| (d.mantissa() as f64) / 10f64.powi(d.scale() as i32)),
             Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
         }
     }
@@ -347,6 +376,12 @@ impl Value {
             }
             Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => {
                 self.as_dqa().map(format_dqa)
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Bigint as u8)) => {
+                self.as_bigint().map(|bi| bi.to_string())
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Decimal as u8)) => {
+                self.as_decimal().and_then(|d| decimal_to_string(&d).ok())
             }
             Value::Extension(data) => {
                 // Generic fallback: try payload as UTF-8
@@ -442,6 +477,32 @@ impl Value {
                 let value = i64::from_be_bytes(data[1..9].try_into().ok()?);
                 let scale = data[9];
                 Dqa::new(value, scale).ok()
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract BIGINT from Extension payload (variable-length limb array)
+    pub fn as_bigint(&self) -> Option<BigInt> {
+        match self {
+            Value::Extension(data) if data.first().copied() == Some(DataType::Bigint as u8) => {
+                // Skip tag byte, pass variable-length limb data
+                BigInt::deserialize(&data[1..]).ok()
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract DECIMAL from Extension payload (fixed 24-byte format)
+    pub fn as_decimal(&self) -> Option<Decimal> {
+        match self {
+            Value::Extension(data) if data.first().copied() == Some(DataType::Decimal as u8) => {
+                // Need at least 1 (tag) + 24 (decimal encoding) = 25 bytes
+                if data.len() < 25 {
+                    return None;
+                }
+                let bytes: [u8; 24] = data[1..25].try_into().ok()?;
+                decimal_from_bytes(bytes).ok()
             }
             _ => None,
         }
@@ -601,10 +662,43 @@ impl Value {
                             -1 => Ordering::Less,
                             0 => Ordering::Equal,
                             1 => Ordering::Greater,
-                            _ => {
-                                return Err(Error::Internal {
-                                    message: "invalid dqa comparison".into(),
-                                });
+                            n => {
+                                debug_assert!(false, "invalid dqa comparison result: {}", n);
+                                Ordering::Greater
+                            }
+                        })
+                    }
+                    t if t == DataType::Bigint as u8 => {
+                        let ba = self.as_bigint().ok_or(Error::Internal {
+                            message: "invalid bigint data".into(),
+                        })?;
+                        let bb = other.as_bigint().ok_or(Error::Internal {
+                            message: "invalid bigint data".into(),
+                        })?;
+                        Ok(match ba.compare(&bb) {
+                            -1 => Ordering::Less,
+                            0 => Ordering::Equal,
+                            1 => Ordering::Greater,
+                            n => {
+                                debug_assert!(false, "invalid bigint comparison result: {}", n);
+                                Ordering::Greater
+                            }
+                        })
+                    }
+                    t if t == DataType::Decimal as u8 => {
+                        let da = self.as_decimal().ok_or(Error::Internal {
+                            message: "invalid decimal data".into(),
+                        })?;
+                        let db = other.as_decimal().ok_or(Error::Internal {
+                            message: "invalid decimal data".into(),
+                        })?;
+                        Ok(match decimal_cmp(&da, &db) {
+                            -1 => Ordering::Less,
+                            0 => Ordering::Equal,
+                            1 => Ordering::Greater,
+                            n => {
+                                debug_assert!(false, "invalid decimal comparison result: {}", n);
+                                Ordering::Greater
                             }
                         })
                     }
@@ -1032,9 +1126,36 @@ impl Value {
                 }
                 _ => Value::Null(target_type),
             },
-            DataType::Bigint | DataType::Decimal => {
-                // BIGINT and DECIMAL cast from other types not yet implemented
-                Value::Null(target_type)
+            DataType::Bigint => {
+                // BIGINT target type
+                match self {
+                    Value::Integer(i) => Value::bigint(BigInt::from(*i)),
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::Bigint as u8) =>
+                    {
+                        // Already BIGINT
+                        self.clone()
+                    }
+                    _ => Value::Null(target_type),
+                }
+            }
+            DataType::Decimal => {
+                // DECIMAL target type
+                match self {
+                    Value::Integer(i) => {
+                        // INTEGER→DECIMAL shortcut: Decimal::new(i128, 0)
+                        Decimal::new((*i).into(), 0)
+                            .map(Value::decimal)
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Extension(data)
+                        if data.first().copied() == Some(DataType::Decimal as u8) =>
+                    {
+                        // Already DECIMAL
+                        self.clone()
+                    }
+                    _ => Value::Null(target_type),
+                }
             }
             DataType::Null => Value::Null(DataType::Null),
         }
@@ -1195,9 +1316,36 @@ impl Value {
                 Value::Extension(ref data) if data.first() == Some(&(DataType::Blob as u8)) => self,
                 _ => Value::Null(target_type),
             },
-            DataType::Bigint | DataType::Decimal => {
-                // BIGINT and DECIMAL cast from other types not yet implemented
-                Value::Null(target_type)
+            DataType::Bigint => {
+                // BIGINT target type
+                match self {
+                    Value::Integer(i) => Value::bigint(BigInt::from(i)),
+                    Value::Extension(ref data)
+                        if data.first().copied() == Some(DataType::Bigint as u8) =>
+                    {
+                        // Already BIGINT
+                        self
+                    }
+                    _ => Value::Null(target_type),
+                }
+            }
+            DataType::Decimal => {
+                // DECIMAL target type
+                match self {
+                    Value::Integer(i) => {
+                        // INTEGER→DECIMAL shortcut: Decimal::new(i128, 0)
+                        Decimal::new(i.into(), 0)
+                            .map(Value::decimal)
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Extension(ref data)
+                        if data.first().copied() == Some(DataType::Decimal as u8) =>
+                    {
+                        // Already DECIMAL
+                        self
+                    }
+                    _ => Value::Null(target_type),
+                }
             }
             DataType::Null => Value::Null(DataType::Null),
         }
@@ -1240,6 +1388,20 @@ impl fmt::Display for Value {
                         write!(f, "{}", format_dqa(dqa))
                     } else {
                         write!(f, "<invalid DQA>")
+                    }
+                } else if tag == DataType::Bigint as u8 {
+                    if let Some(bi) = self.as_bigint() {
+                        write!(f, "{}", bi)
+                    } else {
+                        write!(f, "<invalid BIGINT>")
+                    }
+                } else if tag == DataType::Decimal as u8 {
+                    if let Some(d) = self.as_decimal() {
+                        decimal_to_string(&d)
+                            .map(|s| write!(f, "{}", s))
+                            .unwrap_or_else(|_| write!(f, "<invalid DECIMAL>"))
+                    } else {
+                        write!(f, "<invalid DECIMAL>")
                     }
                 } else {
                     write!(f, "<extension:{}>", tag)
@@ -1584,6 +1746,34 @@ impl Ord for Value {
                             _ => a.cmp(b),
                         }
                     }
+                    t if t == DataType::Bigint as u8 => {
+                        match (Value::as_bigint(self), Value::as_bigint(other)) {
+                            (Some(ba), Some(bb)) => match ba.compare(&bb) {
+                                -1 => Ordering::Less,
+                                0 => Ordering::Equal,
+                                1 => Ordering::Greater,
+                                _ => {
+                                    debug_assert!(false, "invalid bigint comparison result");
+                                    a.cmp(b) // fallback on unexpected result
+                                }
+                            },
+                            _ => a.cmp(b), // fallback on deserialization failure
+                        }
+                    }
+                    t if t == DataType::Decimal as u8 => {
+                        match (Value::as_decimal(self), Value::as_decimal(other)) {
+                            (Some(da), Some(db)) => match decimal_cmp(&da, &db) {
+                                -1 => Ordering::Less,
+                                0 => Ordering::Equal,
+                                1 => Ordering::Greater,
+                                _ => {
+                                    debug_assert!(false, "invalid decimal comparison result");
+                                    a.cmp(b) // fallback on unexpected result
+                                }
+                            },
+                            _ => a.cmp(b), // fallback on deserialization failure
+                        }
+                    }
                     _ => a.cmp(b), // other extensions: byte order
                 }
             }
@@ -1828,6 +2018,77 @@ fn parse_string_to_dqa(s: &str) -> Option<Dqa> {
         let value: i64 = s.parse().ok()?;
         Dqa::new(value, 0).ok()
     }
+}
+
+/// Parse a decimal string into a Decimal value per RFC-0202-A §6.8a.
+/// Input format: `^[+-]?[0-9]+(\.[0-9]+)?$` (rejects scientific notation, bare dots, whitespace-only)
+/// Returns DecimalError::InvalidScale if fractional digits > 36
+/// Returns DecimalError::Overflow if mantissa exceeds i128 range (>38 digits)
+/// Returns DecimalError::NonCanonical for malformed input
+pub fn stoolap_parse_decimal(s: &str) -> std::result::Result<Decimal, DecimalError> {
+    let s = s.trim();
+
+    // Check for empty string
+    if s.is_empty() {
+        return Err(DecimalError::NonCanonical);
+    }
+
+    let (sign, rest) = match s.starts_with('-') {
+        true => (-1, &s[1..]),
+        false => (1, s),
+    };
+
+    // Must start with digit (after optional sign)
+    if rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return Err(DecimalError::NonCanonical);
+    }
+
+    // Split on decimal point if present
+    let (int_part, frac_part) = match rest.find('.') {
+        Some(pos) => (&rest[..pos], Some(&rest[pos + 1..])),
+        None => (rest, None),
+    };
+
+    // Integer part must not be empty and must be all digits
+    if int_part.is_empty() || !int_part.chars().all(|c| c.is_ascii_digit()) {
+        return Err(DecimalError::NonCanonical);
+    }
+
+    // Fractional part must be all digits if present
+    if let Some(frac) = frac_part {
+        if frac.is_empty() || !frac.chars().all(|c| c.is_ascii_digit()) {
+            return Err(DecimalError::NonCanonical);
+        }
+    }
+
+    // Total digits check for overflow (>38 digits in i128)
+    // i128 max is about 1.7e38, which is 39 digits, but 10^38 is the boundary
+    let total_digits = int_part.len() + frac_part.map(|f| f.len()).unwrap_or(0);
+    if total_digits > 38 {
+        return Err(DecimalError::Overflow);
+    }
+
+    // Build mantissa string and parse as i128
+    let mantissa_str = if let Some(frac) = frac_part {
+        format!("{}{}", int_part, frac)
+    } else {
+        int_part.to_string()
+    };
+
+    let mantissa: i128 = mantissa_str.parse().map_err(|_| DecimalError::Overflow)?;
+
+    // Scale is the number of fractional digits
+    let scale = frac_part.map(|f| f.len()).unwrap_or(0) as u8;
+
+    // Scale must be <= 36
+    if scale > 36 {
+        return Err(DecimalError::InvalidScale);
+    }
+
+    // Apply sign
+    let mantissa = mantissa * (sign as i128);
+
+    Decimal::new(mantissa, scale)
 }
 
 /// Format packed LE f32 bytes as "[1.0, 2.0, 3.0]" string
