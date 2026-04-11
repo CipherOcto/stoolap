@@ -18,6 +18,7 @@ use crate::core::Value;
 use crate::functions::{
     AggregateFunction, FunctionDataType, FunctionInfo, FunctionSignature, FunctionType,
 };
+use octo_determin::decimal::decimal_cmp;
 
 /// MAX aggregate function
 ///
@@ -89,6 +90,40 @@ fn is_greater_than(a: &Value, b: &Value) -> bool {
         (Value::Text(a), Value::Text(b)) => a > b,
         (Value::Boolean(a), Value::Boolean(b)) => *a && !b, // true > false
         (Value::Timestamp(a), Value::Timestamp(b)) => a > b,
+        // DFP comparison
+        (Value::Extension(a_data), Value::Extension(b_data))
+            if a_data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8)
+                && b_data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
+        {
+            if let (Some(dfp_a), Some(dfp_b)) = (a.as_dfp(), b.as_dfp()) {
+                dfp_a.to_f64() > dfp_b.to_f64()
+            } else {
+                false
+            }
+        }
+        // BIGINT comparison
+        (Value::Extension(a_data), Value::Extension(b_data))
+            if a_data.first().copied() == Some(crate::core::DataType::Bigint as u8)
+                && b_data.first().copied() == Some(crate::core::DataType::Bigint as u8) =>
+        {
+            if let (Some(big_a), Some(big_b)) = (a.as_bigint(), b.as_bigint()) {
+                big_a.compare(&big_b) > 0
+            } else {
+                false
+            }
+        }
+        // DECIMAL comparison
+        (Value::Extension(a_data), Value::Extension(b_data))
+            if a_data.first().copied() == Some(crate::core::DataType::Decimal as u8)
+                && b_data.first().copied() == Some(crate::core::DataType::Decimal as u8) =>
+        {
+            if let (Some(dec_a), Some(dec_b)) = (a.as_decimal(), b.as_decimal()) {
+                decimal_cmp(&dec_a, &dec_b) > 0
+            } else {
+                false
+            }
+        }
         _ => false, // Different types are not comparable
     }
 }

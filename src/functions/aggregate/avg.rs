@@ -62,7 +62,7 @@ impl AggregateFunction for AvgFunction {
             }
         }
 
-        // Extract numeric value
+        // Extract numeric value as f64
         let numeric_value = match value {
             Value::Integer(i) => *i as f64,
             Value::Float(f) => *f,
@@ -75,6 +75,30 @@ impl AggregateFunction for AvgFunction {
                     dfp.to_f64()
                 } else {
                     return; // Invalid DFP data
+                }
+            }
+            // BIGINT: convert to f64
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::Bigint as u8) =>
+            {
+                if let Some(big) = value.as_bigint() {
+                    if let Ok(i) = i128::try_from(big) {
+                        i as f64
+                    } else {
+                        return; // Out of range for f64
+                    }
+                } else {
+                    return;
+                }
+            }
+            // DECIMAL: convert to f64
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::Decimal as u8) =>
+            {
+                if let Some(dec) = value.as_decimal() {
+                    dec.mantissa() as f64 * 10f64.powi(-(dec.scale() as i32))
+                } else {
+                    return;
                 }
             }
             _ => return, // Ignore non-numeric types

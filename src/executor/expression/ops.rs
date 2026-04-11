@@ -535,6 +535,45 @@ pub enum Op {
     DfpNeg,
 
     // =========================================================================
+    // BIGINT OPERATIONS (RFC-0202-A §7)
+    // =========================================================================
+    /// BIGINT addition: a + b
+    /// Stack: [a, b] -> [a + b]
+    BigintAdd,
+    /// BIGINT subtraction: a - b
+    BigintSub,
+    /// BIGINT multiplication: a * b
+    BigintMul,
+    /// BIGINT division: a / b
+    BigintDiv,
+    /// BIGINT modulo: a % b
+    BigintMod,
+    /// BIGINT comparison: returns -1, 0, or 1
+    BigintCmp,
+    /// BIGINT shift left: a << b
+    BigintShl,
+    /// BIGINT shift right: a >> b
+    BigintShr,
+    /// BIGINT bit length
+    BigintBitlen,
+
+    // =========================================================================
+    // DECIMAL OPERATIONS (RFC-0202-A §7)
+    // =========================================================================
+    /// DECIMAL addition: a + b
+    DecimalAdd,
+    /// DECIMAL subtraction: a - b
+    DecimalSub,
+    /// DECIMAL multiplication: a * b
+    DecimalMul,
+    /// DECIMAL division: a / b
+    DecimalDiv,
+    /// DECIMAL square root: sqrt(a)
+    DecimalSqrt,
+    /// DECIMAL comparison: returns -1, 0, or 1
+    DecimalCmp,
+
+    // =========================================================================
     // BITWISE OPERATIONS
     // =========================================================================
     BitAnd,
@@ -928,6 +967,21 @@ impl std::fmt::Debug for Op {
             Op::DqaNeg => write!(f, "DqaNeg"),
             Op::DqaAbs => write!(f, "DqaAbs"),
             Op::DqaCmp => write!(f, "DqaCmp"),
+            Op::BigintAdd => write!(f, "BigintAdd"),
+            Op::BigintSub => write!(f, "BigintSub"),
+            Op::BigintMul => write!(f, "BigintMul"),
+            Op::BigintDiv => write!(f, "BigintDiv"),
+            Op::BigintMod => write!(f, "BigintMod"),
+            Op::BigintCmp => write!(f, "BigintCmp"),
+            Op::BigintShl => write!(f, "BigintShl"),
+            Op::BigintShr => write!(f, "BigintShr"),
+            Op::BigintBitlen => write!(f, "BigintBitlen"),
+            Op::DecimalAdd => write!(f, "DecimalAdd"),
+            Op::DecimalSub => write!(f, "DecimalSub"),
+            Op::DecimalMul => write!(f, "DecimalMul"),
+            Op::DecimalDiv => write!(f, "DecimalDiv"),
+            Op::DecimalSqrt => write!(f, "DecimalSqrt"),
+            Op::DecimalCmp => write!(f, "DecimalCmp"),
             Op::BitAnd => write!(f, "BitAnd"),
             Op::BitOr => write!(f, "BitOr"),
             Op::BitXor => write!(f, "BitXor"),

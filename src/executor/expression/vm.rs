@@ -1158,6 +1158,284 @@ impl ExprVM {
                 }
 
                 // =============================================================
+                // BIGINT OPERATIONS (RFC-0202-A §7)
+                // =============================================================
+                Op::BigintAdd => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => {
+                            use octo_determin::bigint_add;
+                            match bigint_add(a_big, b_big) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintSub => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => {
+                            use octo_determin::bigint_sub;
+                            match bigint_sub(a_big, b_big) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintMul => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => {
+                            use octo_determin::bigint_mul;
+                            match bigint_mul(a_big, b_big) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintDiv => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => {
+                            if b_big.is_zero() {
+                                return Err(crate::core::Error::DivisionByZero);
+                            }
+                            use octo_determin::bigint_div;
+                            match bigint_div(a_big, b_big) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintMod => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => {
+                            if b_big.is_zero() {
+                                return Err(crate::core::Error::DivisionByZero);
+                            }
+                            use octo_determin::bigint_mod;
+                            match bigint_mod(a_big, b_big) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintCmp => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), b.as_bigint()) {
+                        (Some(a_big), Some(b_big)) => Value::Integer(a_big.compare(&b_big).into()),
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Integer),
+                        _ => Value::Null(DataType::Integer),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintShl => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), &b) {
+                        (Some(a_big), Value::Integer(shift)) => {
+                            if *shift < 0 || *shift >= 256 {
+                                return Err(crate::core::Error::InvalidArgument(
+                                    "shift out of range".to_string(),
+                                ));
+                            }
+                            use octo_determin::bigint::bigint_shl;
+                            match bigint_shl(a_big.clone(), *shift as usize) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintShr => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_bigint(), &b) {
+                        (Some(a_big), Value::Integer(shift)) => {
+                            if *shift < 0 || *shift >= 256 {
+                                return Err(crate::core::Error::InvalidArgument(
+                                    "shift out of range".to_string(),
+                                ));
+                            }
+                            use octo_determin::bigint::bigint_shr;
+                            match bigint_shr(a_big.clone(), *shift as usize) {
+                                Ok(r) => Value::bigint(r),
+                                Err(_) => Value::Null(DataType::Bigint),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Bigint),
+                        _ => Value::Null(DataType::Bigint),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::BigintBitlen => {
+                    let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match v.as_bigint() {
+                        Some(big) => {
+                            let bits = if big.is_zero() { 0 } else { big.bit_length() };
+                            Value::Integer(bits as i64)
+                        }
+                        None if v.is_null() => v.clone(),
+                        None => Value::Null(DataType::Integer),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                // =============================================================
+                // DECIMAL OPERATIONS (RFC-0202-A §7)
+                // =============================================================
+                Op::DecimalAdd => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_decimal(), b.as_decimal()) {
+                        (Some(a_dec), Some(b_dec)) => {
+                            use octo_determin::decimal::decimal_add;
+                            match decimal_add(&a_dec, &b_dec) {
+                                Ok(r) => Value::decimal(r),
+                                Err(_) => Value::Null(DataType::Decimal),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Decimal),
+                        _ => Value::Null(DataType::Decimal),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DecimalSub => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_decimal(), b.as_decimal()) {
+                        (Some(a_dec), Some(b_dec)) => {
+                            use octo_determin::decimal::decimal_sub;
+                            match decimal_sub(&a_dec, &b_dec) {
+                                Ok(r) => Value::decimal(r),
+                                Err(_) => Value::Null(DataType::Decimal),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Decimal),
+                        _ => Value::Null(DataType::Decimal),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DecimalMul => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_decimal(), b.as_decimal()) {
+                        (Some(a_dec), Some(b_dec)) => {
+                            use octo_determin::decimal::decimal_mul;
+                            match decimal_mul(&a_dec, &b_dec) {
+                                Ok(r) => Value::decimal(r),
+                                Err(_) => Value::Null(DataType::Decimal),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Decimal),
+                        _ => Value::Null(DataType::Decimal),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DecimalDiv => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_decimal(), b.as_decimal()) {
+                        (Some(a_dec), Some(b_dec)) => {
+                            use octo_determin::decimal::decimal_div;
+                            match decimal_div(&a_dec, &b_dec, 0) {
+                                Ok(r) => Value::decimal(r),
+                                Err(_) => Value::Null(DataType::Decimal),
+                            }
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Decimal),
+                        _ => Value::Null(DataType::Decimal),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DecimalSqrt => {
+                    let v = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match v.as_decimal() {
+                        Some(dec) => {
+                            use octo_determin::decimal::decimal_sqrt;
+                            match decimal_sqrt(&dec) {
+                                Ok(r) => Value::decimal(r),
+                                Err(_) => Value::Null(DataType::Decimal),
+                            }
+                        }
+                        None if v.is_null() => v.clone(),
+                        None => Value::Null(DataType::Decimal),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                Op::DecimalCmp => {
+                    let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
+                    let result = match (a.as_decimal(), b.as_decimal()) {
+                        (Some(a_dec), Some(b_dec)) => {
+                            use octo_determin::decimal::decimal_cmp;
+                            Value::Integer(decimal_cmp(&a_dec, &b_dec).into())
+                        }
+                        _ if a.is_null() || b.is_null() => Value::Null(DataType::Integer),
+                        _ => Value::Null(DataType::Integer),
+                    };
+                    self.stack.push(result);
+                    pc += 1;
+                }
+
+                // =============================================================
                 // BITWISE OPERATIONS (inlined for performance)
                 // =============================================================
                 Op::BitAnd => {

@@ -18,16 +18,22 @@ use crate::core::Value;
 use crate::functions::{
     AggregateFunction, FunctionDataType, FunctionInfo, FunctionSignature, FunctionType,
 };
+use octo_determin::decimal::{decimal_add, Decimal};
+use octo_determin::{bigint_add, BigInt};
 
 use super::DistinctTracker;
 
-/// Sum state - tracks whether we have integers or floats
+/// Sum state - tracks numeric accumulation type (deterministic domain)
 #[derive(Default)]
 enum SumState {
     #[default]
     Empty,
     Integer(i64),
-    Float(f64),
+    Bigint(BigInt),
+    Decimal(Decimal),
+    // Float is only for non-deterministic path (Float inputs); we keep it
+    // as the final fallback state when Float must be preserved
+    NonDetFloat(f64),
 }
 
 /// SUM aggregate function
@@ -82,20 +88,51 @@ impl AggregateFunction for SumFunction {
                 SumState::Integer(sum) => match sum.checked_add(*i) {
                     Some(new_sum) => *sum = new_sum,
                     None => {
-                        // Overflow: promote to float
-                        self.state = SumState::Float(*sum as f64 + *i as f64);
+                        // Overflow: promote to BigInt
+                        let big_sum = BigInt::from(*sum);
+                        let big_i = BigInt::from(*i);
+                        if let Ok(new_big) = bigint_add(big_sum, big_i) {
+                            self.state = SumState::Bigint(new_big);
+                        }
                     }
                 },
-                SumState::Float(sum) => *sum += *i as f64,
+                SumState::Bigint(ref acc) => {
+                    let big_i = BigInt::from(*i);
+                    if let Ok(new_big) = bigint_add(acc.clone(), big_i) {
+                        self.state = SumState::Bigint(new_big);
+                    }
+                }
+                SumState::Decimal(ref acc) => {
+                    // Promote Integer + Decimal using decimal_add
+                    if let Ok(int_dec) = Decimal::new(*i as i128, 0) {
+                        if let Ok(new_dec) = decimal_add(acc, &int_dec) {
+                            self.state = SumState::Decimal(new_dec);
+                        }
+                    }
+                }
+                SumState::NonDetFloat(sum) => {
+                    // Non-deterministic Float path: preserve precision loss
+                    *sum += *i as f64;
+                }
             },
             Value::Float(f) => match &mut self.state {
-                SumState::Empty => self.state = SumState::Float(*f),
+                SumState::Empty => self.state = SumState::NonDetFloat(*f),
                 SumState::Integer(sum) => {
-                    self.state = SumState::Float(*sum as f64 + f);
+                    self.state = SumState::NonDetFloat(*sum as f64 + f);
                 }
-                SumState::Float(sum) => *sum += f,
+                SumState::Bigint(ref big) => {
+                    if let Ok(big_i) = i128::try_from(big.clone()) {
+                        self.state = SumState::NonDetFloat(big_i as f64 + f);
+                    }
+                }
+                SumState::Decimal(ref acc) => {
+                    // Float + Decimal: promote to NonDetFloat (precision loss acknowledged)
+                    let f_acc = acc.mantissa() as f64 * 10f64.powi(-(acc.scale() as i32));
+                    self.state = SumState::NonDetFloat(f_acc + f);
+                }
+                SumState::NonDetFloat(sum) => *sum += f,
             },
-            // DFP: convert to f64 and add
+            // DFP: convert to f64 then handle (DFP binary FP can't be exactly represented as Decimal)
             Value::Extension(data)
                 if data.first().copied()
                     == Some(crate::core::DataType::DeterministicFloat as u8) =>
@@ -103,11 +140,92 @@ impl AggregateFunction for SumFunction {
                 if let Some(dfp) = value.as_dfp() {
                     let f = dfp.to_f64();
                     match &mut self.state {
-                        SumState::Empty => self.state = SumState::Float(f),
+                        SumState::Empty => self.state = SumState::NonDetFloat(f),
                         SumState::Integer(sum) => {
-                            self.state = SumState::Float(*sum as f64 + f);
+                            self.state = SumState::NonDetFloat(*sum as f64 + f);
                         }
-                        SumState::Float(sum) => *sum += f,
+                        SumState::Bigint(ref big) => {
+                            if let Ok(big_i) = i128::try_from(big.clone()) {
+                                self.state = SumState::NonDetFloat(big_i as f64 + f);
+                            }
+                        }
+                        SumState::Decimal(ref acc) => {
+                            let f_acc = acc.mantissa() as f64 * 10f64.powi(-(acc.scale() as i32));
+                            self.state = SumState::NonDetFloat(f_acc + f);
+                        }
+                        SumState::NonDetFloat(sum) => *sum += f,
+                    }
+                }
+            }
+            // BIGINT: use arbitrary-precision arithmetic
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::Bigint as u8) =>
+            {
+                if let Some(big) = value.as_bigint() {
+                    match &mut self.state {
+                        SumState::Empty => self.state = SumState::Bigint(big),
+                        SumState::Integer(sum) => {
+                            let big_sum = BigInt::from(*sum);
+                            if let Ok(new_big) = bigint_add(big_sum, big) {
+                                self.state = SumState::Bigint(new_big);
+                            }
+                        }
+                        SumState::Bigint(ref acc) => {
+                            if let Ok(new_big) = bigint_add(acc.clone(), big) {
+                                self.state = SumState::Bigint(new_big);
+                            }
+                        }
+                        SumState::Decimal(ref acc) => {
+                            // BigInt + Decimal: convert BigInt to Decimal and add
+                            if let Ok(big_i) = i128::try_from(big.clone()) {
+                                if let Ok(big_dec) = Decimal::new(big_i, 0) {
+                                    if let Ok(new_dec) = decimal_add(acc, &big_dec) {
+                                        self.state = SumState::Decimal(new_dec);
+                                    }
+                                }
+                            }
+                        }
+                        SumState::NonDetFloat(sum) => {
+                            if let Ok(i) = i128::try_from(big.clone()) {
+                                *sum += i as f64;
+                            }
+                        }
+                    }
+                }
+            }
+            // DECIMAL: use decimal arithmetic (deterministic path)
+            Value::Extension(data)
+                if data.first().copied() == Some(crate::core::DataType::Decimal as u8) =>
+            {
+                if let Some(dec) = value.as_decimal() {
+                    match &mut self.state {
+                        SumState::Empty => self.state = SumState::Decimal(dec),
+                        SumState::Integer(sum) => {
+                            if let Ok(int_dec) = Decimal::new(*sum as i128, 0) {
+                                if let Ok(new_dec) = decimal_add(&int_dec, &dec) {
+                                    self.state = SumState::Decimal(new_dec);
+                                }
+                            }
+                        }
+                        SumState::Bigint(ref big) => {
+                            // BigInt + Decimal: convert BigInt to Decimal and add
+                            if let Ok(big_i) = i128::try_from(big.clone()) {
+                                if let Ok(big_dec) = Decimal::new(big_i, 0) {
+                                    if let Ok(new_dec) = decimal_add(&big_dec, &dec) {
+                                        self.state = SumState::Decimal(new_dec);
+                                    }
+                                }
+                            }
+                        }
+                        SumState::Decimal(ref acc) => {
+                            if let Ok(new_dec) = decimal_add(acc, &dec) {
+                                self.state = SumState::Decimal(new_dec);
+                            }
+                        }
+                        SumState::NonDetFloat(sum) => {
+                            let f = dec.mantissa() as f64 * 10f64.powi(-(dec.scale() as i32));
+                            *sum += f;
+                        }
                     }
                 }
             }
@@ -119,7 +237,9 @@ impl AggregateFunction for SumFunction {
         match &self.state {
             SumState::Empty => Value::null_unknown(),
             SumState::Integer(sum) => Value::Integer(*sum),
-            SumState::Float(sum) => Value::Float(*sum),
+            SumState::Bigint(big) => Value::bigint(big.clone()),
+            SumState::Decimal(dec) => Value::decimal(*dec),
+            SumState::NonDetFloat(sum) => Value::Float(*sum),
         }
     }
 

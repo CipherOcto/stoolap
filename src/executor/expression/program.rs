@@ -263,7 +263,22 @@ impl Program {
                 | Op::Concat
                 | Op::Xor
                 | Op::NullIf
-                | Op::CaseCompare => -1,
+                | Op::CaseCompare
+                // BIGINT binary ops: pop 2, push 1 (-1)
+                | Op::BigintAdd
+                | Op::BigintSub
+                | Op::BigintMul
+                | Op::BigintDiv
+                | Op::BigintMod
+                | Op::BigintCmp
+                | Op::BigintShl
+                | Op::BigintShr
+                // DECIMAL binary ops: pop 2, push 1 (-1)
+                | Op::DecimalAdd
+                | Op::DecimalSub
+                | Op::DecimalMul
+                | Op::DecimalDiv
+                | Op::DecimalCmp => -1,
 
                 // Pop 3, push 1 (-2)
                 Op::Between | Op::NotBetween => -2,
@@ -307,6 +322,8 @@ impl Program {
                 | Op::ExecInSubquery(_)
                 | Op::ExecAll(_, _)
                 | Op::ExecAny(_, _)
+                | Op::BigintBitlen
+                | Op::DecimalSqrt
                 | Op::NativeFn1(_) => 0,
 
                 // Multi-column IN: pop N, push 1
