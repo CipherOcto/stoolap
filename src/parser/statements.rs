@@ -1749,7 +1749,10 @@ impl Parser {
             // Set quant_scale on the column via a workaround: embed in data_type string
             SmartString::from_string(format!("DQA({})", scale))
         // Handle BYTEA(n), BLOB(n), BINARY(n), VARBINARY(n) syntax — length is stored in SchemaColumn.vector_dimensions
-        } else if (data_type == "BYTEA" || data_type == "BLOB" || data_type == "BINARY" || data_type == "VARBINARY")
+        } else if (data_type == "BYTEA"
+            || data_type == "BLOB"
+            || data_type == "BINARY"
+            || data_type == "VARBINARY")
             && self.peek_token_is_punctuator("(")
         {
             self.next_token(); // consume (

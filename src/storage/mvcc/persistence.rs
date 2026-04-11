@@ -32,10 +32,10 @@ use crate::common::time_compat::{SystemTime, UNIX_EPOCH};
 
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Error, IndexType, Result, Row, Schema, Value};
-use octo_determin::DfpEncoding;
 use crate::storage::mvcc::version_store::RowVersion;
 use crate::storage::mvcc::wal_manager::{WALEntry, WALManager, WALOperationType};
 use crate::storage::PersistenceConfig;
+use octo_determin::DfpEncoding;
 
 /// Default snapshot interval (5 minutes)
 pub const DEFAULT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(300);
@@ -1336,7 +1336,10 @@ mod tests {
         // Verify value matches
         let original_f64 = dfp.to_f64();
         let deserialized_f64 = deserialized_dfp.to_f64();
-        assert_eq!(original_f64, deserialized_f64, "DFP round-trip should preserve value");
+        assert_eq!(
+            original_f64, deserialized_f64,
+            "DFP round-trip should preserve value"
+        );
     }
 
     #[test]

@@ -97,7 +97,8 @@ impl AggregateFunction for SumFunction {
             },
             // DFP: convert to f64 and add
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = value.as_dfp() {
                     let f = dfp.to_f64();

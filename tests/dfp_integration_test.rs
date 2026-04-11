@@ -103,7 +103,11 @@ fn test_dfp_update() {
     let updated: f64 = db
         .query_one("SELECT value FROM dfp_update WHERE id = 1", ())
         .expect("Failed to query");
-    assert!((updated - 2.0).abs() < 0.001, "Expected 2.0 after update, got {}", updated);
+    assert!(
+        (updated - 2.0).abs() < 0.001,
+        "Expected 2.0 after update, got {}",
+        updated
+    );
 }
 
 /// Test DFP DELETE
@@ -202,8 +206,11 @@ fn test_dfp_cast_from_text() {
     db.execute("CREATE TABLE dfp_cast (id INTEGER, value DFP)", ())
         .expect("Failed to create table");
 
-    db.execute("INSERT INTO dfp_cast VALUES (1, CAST('3.14159' AS DFP))", ())
-        .expect("Failed to insert");
+    db.execute(
+        "INSERT INTO dfp_cast VALUES (1, CAST('3.14159' AS DFP))",
+        (),
+    )
+    .expect("Failed to insert");
 
     let result: f64 = db
         .query_one("SELECT value FROM dfp_cast WHERE id = 1", ())

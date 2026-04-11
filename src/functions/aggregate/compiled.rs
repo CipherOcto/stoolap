@@ -549,7 +549,8 @@ impl CompiledAggregate {
             },
             // DFP: convert to f64 and add
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = value.as_dfp() {
                     let f = dfp.to_f64();
@@ -574,7 +575,8 @@ impl CompiledAggregate {
             Value::Float(f) => Some(*f),
             // DFP: convert to f64
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 value.as_dfp().map(|d| d.to_f64())
             }

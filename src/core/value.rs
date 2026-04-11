@@ -283,10 +283,9 @@ impl Value {
             {
                 self.as_dfp().map(|d| d.to_f64())
             }
-            Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => {
-                self.as_dqa()
-                    .map(|q| (q.value as f64) / 10f64.powi(q.scale as i32))
-            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Quant as u8)) => self
+                .as_dqa()
+                .map(|q| (q.value as f64) / 10f64.powi(q.scale as i32)),
             Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
         }
     }
@@ -582,21 +581,29 @@ impl Value {
                 let tag = a.first().copied().unwrap_or(0);
                 match tag {
                     t if t == DataType::DeterministicFloat as u8 => {
-                        let da = extract_dfp_from_extension(a)
-                            .ok_or(Error::Internal { message: "invalid dfp data".into() })?;
-                        let db = extract_dfp_from_extension(b)
-                            .ok_or(Error::Internal { message: "invalid dfp data".into() })?;
+                        let da = extract_dfp_from_extension(a).ok_or(Error::Internal {
+                            message: "invalid dfp data".into(),
+                        })?;
+                        let db = extract_dfp_from_extension(b).ok_or(Error::Internal {
+                            message: "invalid dfp data".into(),
+                        })?;
                         Ok(compare_dfp(&da, &db))
                     }
                     t if t == DataType::Quant as u8 => {
-                        let da = self.as_dqa().ok_or(Error::Internal { message: "invalid dqa data".into() })?;
-                        let db = other.as_dqa().ok_or(Error::Internal { message: "invalid dqa data".into() })?;
+                        let da = self.as_dqa().ok_or(Error::Internal {
+                            message: "invalid dqa data".into(),
+                        })?;
+                        let db = other.as_dqa().ok_or(Error::Internal {
+                            message: "invalid dqa data".into(),
+                        })?;
                         Ok(match dqa_cmp(da, db) {
                             -1 => Ordering::Less,
                             0 => Ordering::Equal,
                             1 => Ordering::Greater,
                             _ => {
-                                return Err(Error::Internal { message: "invalid dqa comparison".into() });
+                                return Err(Error::Internal {
+                                    message: "invalid dqa comparison".into(),
+                                });
                             }
                         })
                     }
@@ -937,9 +944,9 @@ impl Value {
                         // Already Quant
                         self.clone()
                     }
-                    Value::Integer(v) => {
-                        Dqa::new(*v, 0).map(Value::quant).unwrap_or(Value::Null(target_type))
-                    }
+                    Value::Integer(v) => Dqa::new(*v, 0)
+                        .map(Value::quant)
+                        .unwrap_or(Value::Null(target_type)),
                     Value::Float(v) => {
                         // Convert via string to preserve decimal precision
                         let s = format!("{}", v);
@@ -947,16 +954,12 @@ impl Value {
                             .map(Value::quant)
                             .unwrap_or(Value::Null(target_type))
                     }
-                    Value::Text(s) => {
-                        parse_string_to_dqa(s.as_ref())
-                            .map(Value::quant)
-                            .unwrap_or(Value::Null(target_type))
-                    }
-                    Value::Boolean(b) => {
-                        Dqa::new(if *b { 1 } else { 0 }, 0)
-                            .map(Value::quant)
-                            .unwrap_or(Value::Null(target_type))
-                    }
+                    Value::Text(s) => parse_string_to_dqa(s.as_ref())
+                        .map(Value::quant)
+                        .unwrap_or(Value::Null(target_type)),
+                    Value::Boolean(b) => Dqa::new(if *b { 1 } else { 0 }, 0)
+                        .map(Value::quant)
+                        .unwrap_or(Value::Null(target_type)),
                     _ => Value::Null(target_type),
                 }
             }
@@ -1124,34 +1127,35 @@ impl Value {
                 _ => Value::Null(target_type),
             },
             DataType::Quant => match &self {
-                Value::Extension(data)
-                    if data.first().copied() == Some(DataType::Quant as u8) => self,
-                Value::Integer(v) => {
-                    Dqa::new(*v, 0).map(Value::quant).unwrap_or(Value::Null(target_type))
+                Value::Extension(data) if data.first().copied() == Some(DataType::Quant as u8) => {
+                    self
                 }
+                Value::Integer(v) => Dqa::new(*v, 0)
+                    .map(Value::quant)
+                    .unwrap_or(Value::Null(target_type)),
                 Value::Float(v) => {
                     let s = format!("{}", v);
                     parse_string_to_dqa(&s)
                         .map(Value::quant)
                         .unwrap_or(Value::Null(target_type))
                 }
-                Value::Text(s) => {
-                    parse_string_to_dqa(s.as_ref())
-                        .map(Value::quant)
-                        .unwrap_or(Value::Null(target_type))
-                }
+                Value::Text(s) => parse_string_to_dqa(s.as_ref())
+                    .map(Value::quant)
+                    .unwrap_or(Value::Null(target_type)),
                 _ => Value::Null(target_type),
             },
             DataType::DeterministicFloat => match &self {
                 Value::Extension(data)
-                    if data.first().copied() == Some(DataType::DeterministicFloat as u8) => self,
+                    if data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                {
+                    self
+                }
                 Value::Integer(v) => Value::dfp(Dfp::from_i64(*v)),
                 Value::Float(v) => Value::dfp(Dfp::from_f64(*v)),
-                Value::Text(s) => {
-                    s.parse::<f64>()
-                        .map(|f| Value::dfp(Dfp::from_f64(f)))
-                        .unwrap_or(Value::Null(target_type))
-                }
+                Value::Text(s) => s
+                    .parse::<f64>()
+                    .map(|f| Value::dfp(Dfp::from_f64(f)))
+                    .unwrap_or(Value::Null(target_type)),
                 _ => Value::Null(target_type),
             },
             DataType::Blob => match self {
@@ -1777,7 +1781,10 @@ fn parse_string_to_dqa(s: &str) -> Option<Dqa> {
         }
         let frac_val: u64 = frac_str.parse().ok()?;
         let magnitude = 10i64.pow(scale as u32);
-        let combined = int_part.abs().saturating_mul(magnitude).saturating_add(frac_val as i64);
+        let combined = int_part
+            .abs()
+            .saturating_mul(magnitude)
+            .saturating_add(frac_val as i64);
         let value = if int_part < 0 { -combined } else { combined };
         Dqa::new(value, scale).ok()
     } else {
@@ -2507,7 +2514,11 @@ mod tests {
         // DQA values should convert to f64 for cross-type comparison
         let v = Value::quant(Dqa::new(315, 2).unwrap()); // 3.15
         let f = v.as_float64().unwrap();
-        assert!((f - 3.15).abs() < 1e-10, "DQA(315,2) should be ~3.15, got {}", f);
+        assert!(
+            (f - 3.15).abs() < 1e-10,
+            "DQA(315,2) should be ~3.15, got {}",
+            f
+        );
 
         let v_int = Value::quant(Dqa::new(42, 0).unwrap());
         assert_eq!(v_int.as_float64(), Some(42.0));
@@ -2520,7 +2531,11 @@ mod tests {
     fn test_as_string_dfp() {
         let v = Value::dfp(Dfp::from_f64(2.75));
         let s = v.as_string().expect("DFP as_string should work");
-        assert!(!s.contains("extension"), "should not contain <extension:...>, got: {}", s);
+        assert!(
+            !s.contains("extension"),
+            "should not contain <extension:...>, got: {}",
+            s
+        );
     }
 
     #[test]
@@ -2627,12 +2642,18 @@ mod tests {
     fn test_from_typed_dfp() {
         // String → DFP
         let boxed = "2.75".to_string();
-        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::DeterministicFloat);
+        let v = Value::from_typed(
+            Some(&boxed as &dyn std::any::Any),
+            DataType::DeterministicFloat,
+        );
         assert!(v.as_dfp().is_some());
 
         // Integer → DFP
         let boxed = 42i64;
-        let v = Value::from_typed(Some(&boxed as &dyn std::any::Any), DataType::DeterministicFloat);
+        let v = Value::from_typed(
+            Some(&boxed as &dyn std::any::Any),
+            DataType::DeterministicFloat,
+        );
         assert!(v.as_dfp().is_some());
     }
 

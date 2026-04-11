@@ -105,7 +105,10 @@ fn test_single_row_trie_retrieve() {
     assert!(retrieved.is_some());
     let retrieved_row = retrieved.unwrap();
     assert_eq!(retrieved_row.len(), 2);
-    assert_eq!(retrieved_row.values.first(), Some(&DetermValue::Integer(42)));
+    assert_eq!(
+        retrieved_row.values.first(),
+        Some(&DetermValue::Integer(42))
+    );
 }
 
 #[test]

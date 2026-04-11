@@ -111,13 +111,20 @@ fn test_blob_debug_comparison() {
         .expect("Failed to insert");
 
     // Check EXPLAIN for the blob query
-    let explain_count = db.query("EXPLAIN QUERY PLAN SELECT id FROM t WHERE v = $1", (original.clone(),))
-        .map(|r| r.count()).unwrap_or(0);
+    let explain_count = db
+        .query(
+            "EXPLAIN QUERY PLAN SELECT id FROM t WHERE v = $1",
+            (original.clone(),),
+        )
+        .map(|r| r.count())
+        .unwrap_or(0);
     println!("EXPLAIN blob query count: {}", explain_count);
 
     // Check EXPLAIN for integer query
-    let explain_int_count = db.query("EXPLAIN QUERY PLAN SELECT id FROM t WHERE id = $1", (1,))
-        .map(|r| r.count()).unwrap_or(0);
+    let explain_int_count = db
+        .query("EXPLAIN QUERY PLAN SELECT id FROM t WHERE id = $1", (1,))
+        .map(|r| r.count())
+        .unwrap_or(0);
     println!("EXPLAIN int query count: {}", explain_int_count);
 
     // Select all without WHERE
@@ -167,15 +174,18 @@ fn test_blob_basic_insert_and_select() {
 
     // SHA256 of "test_key_1" as raw bytes
     let key_hash = vec![
-        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad,
-        0x01, 0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b,
-        0x0f, 0x00, 0xa0, 0x08,
+        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad, 0x01,
+        0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b, 0x0f, 0x00,
+        0xa0, 0x08,
     ];
     assert_eq!(key_hash.len(), 32);
 
     // Insert using $1 parameter (Vec<u8> wrapped in tuple)
-    db.execute("INSERT INTO api_keys (id, key_hash) VALUES (1, $1)", (key_hash.clone(),))
-        .expect("Failed to insert blob");
+    db.execute(
+        "INSERT INTO api_keys (id, key_hash) VALUES (1, $1)",
+        (key_hash.clone(),),
+    )
+    .expect("Failed to insert blob");
 
     // Retrieve the blob back using query_one with Vec<u8>
     let result = db
@@ -197,9 +207,9 @@ fn test_blob_projection_multiple_columns() {
     .expect("Failed to create table");
 
     let key_hash = vec![
-        0x47, 0xea, 0x61, 0x59, 0xd8, 0xaf, 0x1a, 0x9e, 0x94, 0xf0, 0x61, 0x74, 0xbc, 0x6b,
-        0x27, 0xc5, 0x3d, 0x2f, 0x0c, 0xf5, 0x8d, 0x2b, 0x0a, 0x1b, 0x6f, 0x8b, 0x0e, 0x0b,
-        0x0a, 0x0b, 0x0b, 0x0b,
+        0x47, 0xea, 0x61, 0x59, 0xd8, 0xaf, 0x1a, 0x9e, 0x94, 0xf0, 0x61, 0x74, 0xbc, 0x6b, 0x27,
+        0xc5, 0x3d, 0x2f, 0x0c, 0xf5, 0x8d, 0x2b, 0x0a, 0x1b, 0x6f, 0x8b, 0x0e, 0x0b, 0x0a, 0x0b,
+        0x0b, 0x0b,
     ];
     let signature = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x11, 0x22, 0x33];
 
@@ -211,7 +221,10 @@ fn test_blob_projection_multiple_columns() {
 
     // Query both BYTEA columns
     let result = db
-        .query("SELECT key_hash, signature FROM usage_ledger WHERE event_id = 1", ())
+        .query(
+            "SELECT key_hash, signature FROM usage_ledger WHERE event_id = 1",
+            (),
+        )
         .expect("Failed to query");
 
     let mut count = 0;
@@ -238,14 +251,14 @@ fn test_blob_equality_in_where() {
     .expect("Failed to create table");
 
     let event1 = vec![
-        0x47, 0xea, 0x61, 0x59, 0xd8, 0xaf, 0x1a, 0x9e, 0x94, 0xf0, 0x61, 0x74, 0xbc, 0x6b,
-        0x27, 0xc5, 0x3d, 0x2f, 0x0c, 0xf5, 0x8d, 0x2b, 0x0a, 0x1b, 0x6f, 0x8b, 0x0e, 0x0b,
-        0x0a, 0x0b, 0x0b, 0x0b,
+        0x47, 0xea, 0x61, 0x59, 0xd8, 0xaf, 0x1a, 0x9e, 0x94, 0xf0, 0x61, 0x74, 0xbc, 0x6b, 0x27,
+        0xc5, 0x3d, 0x2f, 0x0c, 0xf5, 0x8d, 0x2b, 0x0a, 0x1b, 0x6f, 0x8b, 0x0e, 0x0b, 0x0a, 0x0b,
+        0x0b, 0x0b,
     ];
     let event2 = vec![
-        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad,
-        0x01, 0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b,
-        0x0f, 0x00, 0xa0, 0x08,
+        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad, 0x01,
+        0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b, 0x0f, 0x00,
+        0xa0, 0x08,
     ];
 
     db.execute("INSERT INTO events VALUES (1, $1)", (event1.clone(),))
@@ -280,8 +293,11 @@ fn test_blob_param_comparison() {
     let db = Database::open_in_memory().expect("Failed to create database");
 
     // First test with TEXT to verify TEXT parameter comparison works
-    db.execute("CREATE TABLE text_test (id INTEGER PRIMARY KEY, val TEXT)", ())
-        .expect("Failed to create table");
+    db.execute(
+        "CREATE TABLE text_test (id INTEGER PRIMARY KEY, val TEXT)",
+        (),
+    )
+    .expect("Failed to create table");
 
     db.execute("INSERT INTO text_test VALUES (1, 'hello')", ())
         .expect("Failed to insert text");
@@ -294,8 +310,11 @@ fn test_blob_param_comparison() {
     assert_eq!(text_result, vec![1], "TEXT param comparison should work");
 
     // Now test with BYTEA
-    db.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)", ())
-        .expect("Failed to create table");
+    db.execute(
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)",
+        (),
+    )
+    .expect("Failed to create table");
 
     let event1 = vec![0x01u8; 32];
 
@@ -335,7 +354,10 @@ fn test_blob_param_comparison() {
 
     // Step 4: Try WHERE event_id = $1 with Vec<u8> param
     let result = db
-        .query("SELECT id FROM events WHERE event_id = $1", (event1.clone(),))
+        .query(
+            "SELECT id FROM events WHERE event_id = $1",
+            (event1.clone(),),
+        )
         .expect("Step 4: Failed to query");
     let mut ids: Vec<i64> = Vec::new();
     for row_result in result {
@@ -343,7 +365,12 @@ fn test_blob_param_comparison() {
         let id: i64 = row.get(0).expect("Step 4: Failed to get id");
         ids.push(id);
     }
-    assert_eq!(ids, vec![1], "Step 4: Should find row by blob equality, got: {:?}", ids);
+    assert_eq!(
+        ids,
+        vec![1],
+        "Step 4: Should find row by blob equality, got: {:?}",
+        ids
+    );
 }
 
 /// Test BYTEA inequality in WHERE clause
@@ -351,8 +378,11 @@ fn test_blob_param_comparison() {
 fn test_blob_inequality_in_where() {
     let db = Database::open_in_memory().expect("Failed to create database");
 
-    db.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)", ())
-        .expect("Failed to create table");
+    db.execute(
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, event_id BYTEA)",
+        (),
+    )
+    .expect("Failed to create table");
 
     let event1 = vec![0x01u8; 32];
     let event2 = vec![0x02u8; 32];
@@ -367,7 +397,10 @@ fn test_blob_inequality_in_where() {
 
     // Query for event_id NOT equal to event1
     let result = db
-        .query("SELECT id FROM events WHERE event_id <> $1", (event1.clone(),))
+        .query(
+            "SELECT id FROM events WHERE event_id <> $1",
+            (event1.clone(),),
+        )
         .expect("Failed to query");
 
     let mut ids: Vec<i64> = Vec::new();
@@ -381,7 +414,10 @@ fn test_blob_inequality_in_where() {
 
     // Query for event_id greater than event1
     let result = db
-        .query("SELECT id FROM events WHERE event_id > $1", (event1.clone(),))
+        .query(
+            "SELECT id FROM events WHERE event_id > $1",
+            (event1.clone(),),
+        )
         .expect("Failed to query");
 
     let mut ids: Vec<i64> = Vec::new();
@@ -407,8 +443,11 @@ fn test_blob_fixed_length_syntax() {
 
     let data = vec![0xDEu8; 16];
 
-    db.execute("INSERT INTO fixed_blobs (id, data) VALUES (1, $1)", (data.clone(),))
-        .expect("Failed to insert");
+    db.execute(
+        "INSERT INTO fixed_blobs (id, data) VALUES (1, $1)",
+        (data.clone(),),
+    )
+    .expect("Failed to insert");
 
     let result = db
         .query_one::<Vec<u8>, _>("SELECT data FROM fixed_blobs WHERE id = 1", ())
@@ -491,9 +530,9 @@ fn test_blob_mixed_with_text() {
     .expect("Failed to create table");
 
     let key_hash = vec![
-        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad,
-        0x01, 0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b,
-        0x0f, 0x00, 0xa0, 0x08,
+        0x9f, 0x86, 0xd0, 0x81, 0x88, 0x4c, 0x7d, 0x65, 0xa2, 0xfe, 0xaa, 0x0c, 0x55, 0xad, 0x01,
+        0x5a, 0x3b, 0xf4, 0xf1, 0xb2, 0xb0, 0xb8, 0x22, 0xcd, 0x15, 0xd6, 0xc1, 0x5b, 0x0f, 0x00,
+        0xa0, 0x08,
     ];
 
     db.execute(
@@ -551,7 +590,7 @@ fn test_hash_index_on_blob_column() {
         .expect("Failed to query");
 
     assert_eq!(count, 1, "Should find exactly 1 row by blob hash");
-    
+
     // Lookup the second key
     let count2: i64 = db
         .query_one(
@@ -559,17 +598,14 @@ fn test_hash_index_on_blob_column() {
             (key2.clone(),),
         )
         .expect("Failed to query");
-        
+
     assert_eq!(count2, 1, "Should find exactly 1 row for key2");
-    
+
     // Non-existent key
     let key3 = vec![0x03u8; 32];
     let count3: i64 = db
-        .query_one(
-            "SELECT COUNT(*) FROM api_keys WHERE key_hash = $1",
-            (key3,),
-        )
+        .query_one("SELECT COUNT(*) FROM api_keys WHERE key_hash = $1", (key3,))
         .expect("Failed to query");
-        
+
     assert_eq!(count3, 0, "Should not find non-existent key");
 }

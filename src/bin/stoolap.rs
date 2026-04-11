@@ -1474,7 +1474,12 @@ fn value_to_json(value: &Value) -> serde_json::Value {
             serde_json::json!(stoolap::core::value::format_vector_bytes(&data[1..]))
         }
         Value::Extension(_) => serde_json::Value::Null,
-        Value::Blob(data) => serde_json::json!(format!("0x{}", data.iter().map(|b| format!("{:02x}", b)).collect::<String>())),
+        Value::Blob(data) => serde_json::json!(format!(
+            "0x{}",
+            data.iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        )),
     }
 }
 

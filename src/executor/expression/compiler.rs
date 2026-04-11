@@ -359,9 +359,9 @@ impl<'a> ExprCompiler<'a> {
                     self.ctx.resolve_column_type(None, &id.value_lower)
                 }
             }
-            Expression::QualifiedIdentifier(qid) => {
-                self.ctx.resolve_column_type(Some(&qid.qualifier.value_lower), &qid.name.value_lower)
-            }
+            Expression::QualifiedIdentifier(qid) => self
+                .ctx
+                .resolve_column_type(Some(&qid.qualifier.value_lower), &qid.name.value_lower),
             // For binary operations, infer from operands if both are known
             Expression::Infix(infix) => {
                 let left_type = self.infer_expr_type(&infix.left);
@@ -1701,10 +1701,16 @@ mod tests {
         // a + b should emit DfpAdd when both operands are DFP type
         let expr = Expression::Infix(InfixExpression {
             token: make_token(),
-            left: Box::new(Expression::Identifier(Identifier::new(make_token(), "a".to_string()))),
+            left: Box::new(Expression::Identifier(Identifier::new(
+                make_token(),
+                "a".to_string(),
+            ))),
             operator: "+".into(),
             op_type: InfixOperator::Add,
-            right: Box::new(Expression::Identifier(Identifier::new(make_token(), "b".to_string()))),
+            right: Box::new(Expression::Identifier(Identifier::new(
+                make_token(),
+                "b".to_string(),
+            ))),
         });
 
         let program = compiler.compile(&expr).unwrap();
@@ -1735,7 +1741,10 @@ mod tests {
             token: make_token(),
             operator: "-".into(),
             op_type: PrefixOperator::Negate,
-            right: Box::new(Expression::Identifier(Identifier::new(make_token(), "x".to_string()))),
+            right: Box::new(Expression::Identifier(Identifier::new(
+                make_token(),
+                "x".to_string(),
+            ))),
         });
 
         let program = compiler.compile(&expr).unwrap();

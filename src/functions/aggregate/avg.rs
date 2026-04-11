@@ -68,7 +68,8 @@ impl AggregateFunction for AvgFunction {
             Value::Float(f) => *f,
             // DFP: convert to f64
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = value.as_dfp() {
                     dfp.to_f64()

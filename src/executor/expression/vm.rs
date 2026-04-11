@@ -1023,11 +1023,11 @@ impl ExprVM {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (&a, &b) {
-                        (
-                            Value::Extension(ref a_data),
-                            Value::Extension(ref b_data),
-                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
-                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        (Value::Extension(ref a_data), Value::Extension(ref b_data))
+                            if a_data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8)
+                                && b_data.first().copied()
+                                    == Some(DataType::DeterministicFloat as u8) =>
                         {
                             if let (Some(dfp_a), Some(dfp_b)) = (
                                 Self::extract_dfp_from_extension(a_data),
@@ -1038,7 +1038,9 @@ impl ExprVM {
                                 Value::Null(DataType::DeterministicFloat)
                             }
                         }
-                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ if a.is_null() || b.is_null() => {
+                            Value::Null(DataType::DeterministicFloat)
+                        }
                         _ => Value::Null(DataType::DeterministicFloat),
                     };
                     self.stack.push(result);
@@ -1049,11 +1051,11 @@ impl ExprVM {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (&a, &b) {
-                        (
-                            Value::Extension(ref a_data),
-                            Value::Extension(ref b_data),
-                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
-                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        (Value::Extension(ref a_data), Value::Extension(ref b_data))
+                            if a_data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8)
+                                && b_data.first().copied()
+                                    == Some(DataType::DeterministicFloat as u8) =>
                         {
                             if let (Some(dfp_a), Some(dfp_b)) = (
                                 Self::extract_dfp_from_extension(a_data),
@@ -1064,7 +1066,9 @@ impl ExprVM {
                                 Value::Null(DataType::DeterministicFloat)
                             }
                         }
-                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ if a.is_null() || b.is_null() => {
+                            Value::Null(DataType::DeterministicFloat)
+                        }
                         _ => Value::Null(DataType::DeterministicFloat),
                     };
                     self.stack.push(result);
@@ -1075,11 +1079,11 @@ impl ExprVM {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (&a, &b) {
-                        (
-                            Value::Extension(ref a_data),
-                            Value::Extension(ref b_data),
-                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
-                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        (Value::Extension(ref a_data), Value::Extension(ref b_data))
+                            if a_data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8)
+                                && b_data.first().copied()
+                                    == Some(DataType::DeterministicFloat as u8) =>
                         {
                             if let (Some(dfp_a), Some(dfp_b)) = (
                                 Self::extract_dfp_from_extension(a_data),
@@ -1090,7 +1094,9 @@ impl ExprVM {
                                 Value::Null(DataType::DeterministicFloat)
                             }
                         }
-                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ if a.is_null() || b.is_null() => {
+                            Value::Null(DataType::DeterministicFloat)
+                        }
                         _ => Value::Null(DataType::DeterministicFloat),
                     };
                     self.stack.push(result);
@@ -1101,18 +1107,18 @@ impl ExprVM {
                     let b = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (&a, &b) {
-                        (
-                            Value::Extension(ref a_data),
-                            Value::Extension(ref b_data),
-                        ) if a_data.first().copied() == Some(DataType::DeterministicFloat as u8)
-                            && b_data.first().copied() == Some(DataType::DeterministicFloat as u8) =>
+                        (Value::Extension(ref a_data), Value::Extension(ref b_data))
+                            if a_data.first().copied()
+                                == Some(DataType::DeterministicFloat as u8)
+                                && b_data.first().copied()
+                                    == Some(DataType::DeterministicFloat as u8) =>
                         {
                             if let (Some(dfp_a), Some(dfp_b)) = (
                                 Self::extract_dfp_from_extension(a_data),
                                 Self::extract_dfp_from_extension(b_data),
                             ) {
                                 if dfp_b.to_f64() == 0.0 {
-                                    Value::Null(DataType::DeterministicFloat)
+                                    return Err(crate::core::Error::DivisionByZero);
                                 } else {
                                     Value::dfp(dfp_div(dfp_a, dfp_b))
                                 }
@@ -1120,7 +1126,9 @@ impl ExprVM {
                                 Value::Null(DataType::DeterministicFloat)
                             }
                         }
-                        _ if a.is_null() || b.is_null() => Value::Null(DataType::DeterministicFloat),
+                        _ if a.is_null() || b.is_null() => {
+                            Value::Null(DataType::DeterministicFloat)
+                        }
                         _ => Value::Null(DataType::DeterministicFloat),
                     };
                     self.stack.push(result);
@@ -3286,7 +3294,8 @@ impl ExprVM {
             Value::Integer(v) => Value::Boolean(*v > threshold),
             Value::Float(v) => Value::Boolean(*v > threshold as f64),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() > threshold as f64)
@@ -3306,7 +3315,8 @@ impl ExprVM {
             Value::Float(v) => Value::Boolean(*v > threshold),
             Value::Integer(v) => Value::Boolean((*v as f64) > threshold),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() > threshold)
@@ -3326,7 +3336,8 @@ impl ExprVM {
             Value::Integer(v) => Value::Boolean(*v < threshold),
             Value::Float(v) => Value::Boolean(*v < (threshold as f64)),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() < threshold as f64)
@@ -3346,7 +3357,8 @@ impl ExprVM {
             Value::Float(v) => Value::Boolean(*v < threshold),
             Value::Integer(v) => Value::Boolean((*v as f64) < threshold),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() < threshold)
@@ -3366,7 +3378,8 @@ impl ExprVM {
             Value::Integer(v) => Value::Boolean(*v >= threshold),
             Value::Float(v) => Value::Boolean(*v >= threshold as f64),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() >= threshold as f64)
@@ -3386,7 +3399,8 @@ impl ExprVM {
             Value::Float(v) => Value::Boolean(*v >= threshold),
             Value::Integer(v) => Value::Boolean((*v as f64) >= threshold),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() >= threshold)
@@ -3406,7 +3420,8 @@ impl ExprVM {
             Value::Integer(v) => Value::Boolean(*v <= threshold),
             Value::Float(v) => Value::Boolean(*v <= threshold as f64),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() <= threshold as f64)
@@ -3426,7 +3441,8 @@ impl ExprVM {
             Value::Float(v) => Value::Boolean(*v <= threshold),
             Value::Integer(v) => Value::Boolean((*v as f64) <= threshold),
             Value::Extension(data)
-                if data.first().copied() == Some(crate::core::DataType::DeterministicFloat as u8) =>
+                if data.first().copied()
+                    == Some(crate::core::DataType::DeterministicFloat as u8) =>
             {
                 if let Some(dfp) = col_val.as_dfp() {
                     Value::Boolean(dfp.to_f64() <= threshold)
@@ -3822,9 +3838,7 @@ impl ExprVM {
                 octo_determin::dqa::DqaError::Overflow => {
                     crate::core::Error::internal("DQA overflow")
                 }
-                octo_determin::dqa::DqaError::DivisionByZero => {
-                    crate::core::Error::internal("DQA division by zero")
-                }
+                octo_determin::dqa::DqaError::DivisionByZero => crate::core::Error::DivisionByZero,
                 octo_determin::dqa::DqaError::InvalidScale => {
                     crate::core::Error::internal("DQA invalid scale")
                 }
@@ -3860,17 +3874,33 @@ impl ExprVM {
                 }
             }
             // Integer + DQA → DQA (promote Integer to scale 0)
-            (Value::Integer(i), Value::Extension(_)) | (Value::Extension(_), Value::Integer(i)) => {
-                let dqa_a = if matches!(a, Value::Integer(_)) {
-                    int_to_dqa(*i)
+            (Value::Integer(i), Value::Extension(_)) => {
+                // a is Integer (i), b is Extension
+                let dqa_a = int_to_dqa(*i);
+                let dqa_b =
+                    extract_dqa(b).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?;
+
+                if let (Some(dqa_a), Some(dqa_b)) = (Some(dqa_a), Some(dqa_b)) {
+                    let result = match int_op {
+                        ArithmeticOp::Add => dqa_add(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Sub => dqa_sub(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mul => dqa_mul(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Div => dqa_div(dqa_a, dqa_b).map_err(map_err)?,
+                        ArithmeticOp::Mod => {
+                            let q = dqa_div(dqa_a, dqa_b).map_err(map_err)?;
+                            dqa_sub(dqa_a, dqa_mul(q, dqa_b).map_err(map_err)?).map_err(map_err)?
+                        }
+                    };
+                    Ok(Value::quant(result))
                 } else {
-                    extract_dqa(a).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?
-                };
-                let dqa_b = if matches!(b, Value::Integer(_)) {
-                    int_to_dqa(*i)
-                } else {
-                    extract_dqa(b).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?
-                };
+                    Ok(Value::Null(DataType::Quant))
+                }
+            }
+            (Value::Extension(_), Value::Integer(i)) => {
+                // a is Extension, b is Integer (i)
+                let dqa_a =
+                    extract_dqa(a).ok_or_else(|| crate::core::Error::internal("invalid DQA"))?;
+                let dqa_b = int_to_dqa(*i);
 
                 if let (Some(dqa_a), Some(dqa_b)) = (Some(dqa_a), Some(dqa_b)) {
                     let result = match int_op {
@@ -4820,7 +4850,11 @@ mod tests {
 
         // sqrt(4) = 2
         let dfp_4 = Dfp::from_f64(4.0);
-        let program = Program::new(vec![Op::LoadConst(Value::dfp(dfp_4)), Op::DfpSqrt, Op::Return]);
+        let program = Program::new(vec![
+            Op::LoadConst(Value::dfp(dfp_4)),
+            Op::DfpSqrt,
+            Op::Return,
+        ]);
         let result = vm.execute(&program, &ctx).unwrap();
         let result_dfp = match result {
             Value::Extension(ext) => {
@@ -4839,7 +4873,11 @@ mod tests {
 
         // sqrt(0) = 0
         let dfp_0 = Dfp::from_f64(0.0);
-        let program = Program::new(vec![Op::LoadConst(Value::dfp(dfp_0)), Op::DfpSqrt, Op::Return]);
+        let program = Program::new(vec![
+            Op::LoadConst(Value::dfp(dfp_0)),
+            Op::DfpSqrt,
+            Op::Return,
+        ]);
         let result = vm.execute(&program, &ctx).unwrap();
         let result_dfp = match result {
             Value::Extension(ext) => {
@@ -4856,8 +4894,11 @@ mod tests {
 
         // sqrt(negative) = NaN (negative not allowed)
         let dfp_neg = Dfp::from_f64(-4.0);
-        let program =
-            Program::new(vec![Op::LoadConst(Value::dfp(dfp_neg)), Op::DfpSqrt, Op::Return]);
+        let program = Program::new(vec![
+            Op::LoadConst(Value::dfp(dfp_neg)),
+            Op::DfpSqrt,
+            Op::Return,
+        ]);
         let result = vm.execute(&program, &ctx).unwrap();
         // Result should be a DFP Extension with NaN class
         match result {
@@ -5032,11 +5073,7 @@ mod tests {
 
         // -DFP: -(5.5) = -5.5
         let dfp_55 = Dfp::from_f64(5.5);
-        let program = Program::new(vec![
-            Op::LoadConst(Value::dfp(dfp_55)),
-            Op::Neg,
-            Op::Return,
-        ]);
+        let program = Program::new(vec![Op::LoadConst(Value::dfp(dfp_55)), Op::Neg, Op::Return]);
         let result = vm.execute(&program, &ctx).unwrap();
         let result_dfp = extract_dfp_from_result(result);
         assert!(
@@ -6255,7 +6292,8 @@ mod tests {
         let value = Value::quant(dqa_zero);
 
         let serialized = crate::storage::mvcc::persistence::serialize_value(&value).unwrap();
-        let deserialized = crate::storage::mvcc::persistence::deserialize_value(&serialized).unwrap();
+        let deserialized =
+            crate::storage::mvcc::persistence::deserialize_value(&serialized).unwrap();
         let deserialized_dqa = deserialized.as_dqa().expect("should be DQA");
 
         assert_eq!(dqa_zero.value, deserialized_dqa.value);
@@ -6270,7 +6308,8 @@ mod tests {
         let value = Value::quant(dqa_neg);
 
         let serialized = crate::storage::mvcc::persistence::serialize_value(&value).unwrap();
-        let deserialized = crate::storage::mvcc::persistence::deserialize_value(&serialized).unwrap();
+        let deserialized =
+            crate::storage::mvcc::persistence::deserialize_value(&serialized).unwrap();
         let deserialized_dqa = deserialized.as_dqa().expect("should be DQA");
 
         assert_eq!(dqa_neg.value, deserialized_dqa.value);

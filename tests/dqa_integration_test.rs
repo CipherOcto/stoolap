@@ -16,8 +16,8 @@
 //!
 //! Tests DQA type via Value API: round-trip, format, comparison, serialization
 
-use stoolap::core::Value;
 use octo_determin::dqa::Dqa;
+use stoolap::core::Value;
 
 /// Test DQA format at scale 0
 #[test]
@@ -105,7 +105,9 @@ fn test_dqa_vs_integer_comparison() {
     assert_eq!(cmp2, std::cmp::Ordering::Less);
 
     let dqa_greater = Value::quant(Dqa::new(200, 0).unwrap());
-    let cmp3 = dqa_greater.compare(&int_val).expect("comparison should work");
+    let cmp3 = dqa_greater
+        .compare(&int_val)
+        .expect("comparison should work");
     assert_eq!(cmp3, std::cmp::Ordering::Greater);
 }
 
@@ -122,7 +124,7 @@ fn test_dqa_vs_float_comparison() {
 /// Test DQA serialization round-trip
 #[test]
 fn test_dqa_serialization_roundtrip() {
-    use stoolap::storage::mvcc::persistence::{serialize_value, deserialize_value};
+    use stoolap::storage::mvcc::persistence::{deserialize_value, serialize_value};
 
     let dqa = Dqa::new(12345, 2).unwrap(); // 123.45
     let value = Value::quant(dqa);
@@ -138,7 +140,7 @@ fn test_dqa_serialization_roundtrip() {
 /// Test DQA negative value round-trip
 #[test]
 fn test_dqa_negative_roundtrip() {
-    use stoolap::storage::mvcc::persistence::{serialize_value, deserialize_value};
+    use stoolap::storage::mvcc::persistence::{deserialize_value, serialize_value};
 
     let dqa = Dqa::new(-12345, 2).unwrap(); // -123.45
     let value = Value::quant(dqa);
@@ -154,7 +156,7 @@ fn test_dqa_negative_roundtrip() {
 /// Test DQA zero round-trip
 #[test]
 fn test_dqa_zero_roundtrip() {
-    use stoolap::storage::mvcc::persistence::{serialize_value, deserialize_value};
+    use stoolap::storage::mvcc::persistence::{deserialize_value, serialize_value};
 
     let dqa = Dqa::new(0, 0).unwrap();
     let value = Value::quant(dqa);
