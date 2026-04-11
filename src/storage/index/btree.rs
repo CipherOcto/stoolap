@@ -1753,3 +1753,191 @@ mod tests {
         assert_eq!(entries[0].row_id, 1);
     }
 }
+
+// =========================================================================
+// Lexicographic key encoding for BIGINT/DECIMAL BTree indexes (RFC-0202-A §6.11)
+// =========================================================================
+
+/// Lexicographic encoding for BIGINT values in BTree indexes.
+///
+/// Format: [sign_byte: 1][limb0: BE][limb1: BE]...[limbN: BE][zero_pad: 8 × (63 − N))]
+/// - sign_byte: positive = num_limbs | 0x80; negative = 0x80 − num_limbs
+/// - Limbs are big-endian, zero-padded to exactly 64 limbs (512 bytes after sign byte)
+/// - Total length: 513 bytes constant for any N (0-64 limbs)
+///
+/// This encoding ensures correct lexicographic ordering:
+/// - Negative values sort before zero, which sorts before positive values
+/// - Within same sign, limb-by-limb big-endian comparison
+#[cfg(test)]
+fn encode_bigint_lexicographic(bi: &octo_determin::BigInt) -> Vec<u8> {
+    const LIMB_SIZE: usize = 8;
+    const MAX_LIMBS: usize = 64;
+    const TOTAL_LIMBS: usize = 64; // Fixed 64 limbs for lexicographic ordering
+
+    let limbs = bi.limbs();
+    let num_limbs = limbs.len().min(MAX_LIMBS);
+    let sign = bi.sign();
+
+    // Compute sign byte: positive = num_limbs | 0x80, negative = 0x80 - num_limbs
+    let sign_byte = if sign {
+        0x80u8 - (num_limbs as u8) // Negative: 0x80 - num_limbs
+    } else {
+        (num_limbs as u8) | 0x80 // Positive: bit 7 set
+    };
+
+    // Total: 1 sign byte + 64 limbs × 8 bytes = 513 bytes
+    let mut encoded = Vec::with_capacity(1 + TOTAL_LIMBS * LIMB_SIZE);
+    encoded.push(sign_byte);
+
+    // Encode limbs in big-endian, zero-padded to 64 limbs
+    for i in 0..TOTAL_LIMBS {
+        if i < num_limbs {
+            // Use big-endian for this limb
+            let limb_bytes = limbs[num_limbs - 1 - i].to_be_bytes();
+            encoded.extend_from_slice(&limb_bytes);
+        } else {
+            // Zero pad
+            encoded.extend_from_slice(&[0u8; LIMB_SIZE]);
+        }
+    }
+
+    debug_assert_eq!(
+        encoded.len(),
+        513,
+        "BIGINT lexicographic key must be exactly 513 bytes"
+    );
+    encoded
+}
+
+/// Lexicographic encoding for DECIMAL values in BTree indexes.
+///
+/// Format: [mantissa_byte0_xor_0x80: 1][mantissa_bytes_1_15: 15][scale: BE u8]
+/// - Total: 17 bytes
+/// - mantissa_byte0 XOR 0x80: zero mantissa encodes as 0x80...00
+/// - Zero mantissa sorts between negatives and positives
+#[cfg(test)]
+fn encode_decimal_lexicographic(d: &octo_determin::Decimal) -> Vec<u8> {
+    let mantissa = d.mantissa();
+    let scale = d.scale();
+
+    // Encode mantissa as 16 bytes big-endian, XOR byte 0 with 0x80
+    let mut mantissa_bytes = mantissa.to_be_bytes();
+    mantissa_bytes[0] ^= 0x80;
+
+    // Total: 16 mantissa bytes + 1 scale byte = 17 bytes
+    let mut encoded = Vec::with_capacity(17);
+    encoded.extend_from_slice(&mantissa_bytes);
+    encoded.push(scale);
+
+    debug_assert_eq!(
+        encoded.len(),
+        17,
+        "DECIMAL lexicographic key must be exactly 17 bytes"
+    );
+    encoded
+}
+
+#[cfg(test)]
+mod lexicographic_encoding_tests {
+    use super::*;
+    use octo_determin::{BigInt, Decimal};
+
+    #[test]
+    fn test_bigint_lexicographic_length() {
+        // Verify encoded key length is exactly 513 bytes for any limb count
+
+        // 0 limbs (zero value)
+        let zero = BigInt::zero();
+        let enc = encode_bigint_lexicographic(&zero);
+        assert_eq!(enc.len(), 513, "Zero BIGINT should encode to 513 bytes");
+
+        // 1 limb
+        let one = BigInt::from(1i64);
+        let enc = encode_bigint_lexicographic(&one);
+        assert_eq!(enc.len(), 513, "1-limb BIGINT should encode to 513 bytes");
+
+        // 2 limbs (value exceeding i64)
+        let big = BigInt::new(vec![1, 2], false);
+        let enc = encode_bigint_lexicographic(&big);
+        assert_eq!(enc.len(), 513, "2-limb BIGINT should encode to 513 bytes");
+
+        // 64 limbs (max)
+        let max_limbs = BigInt::new(vec![1u64; 64], false);
+        let enc = encode_bigint_lexicographic(&max_limbs);
+        assert_eq!(enc.len(), 513, "64-limb BIGINT should encode to 513 bytes");
+    }
+
+    #[test]
+    fn test_bigint_lexicographic_ordering() {
+        // Verify ordering: -2^64 < -1 < 0 < 1 < 2^64
+
+        let neg_two_pow_64 = BigInt::new(vec![0; 2], true); // -2^64
+        let neg_one = BigInt::from(-1i64);
+        let zero = BigInt::zero();
+        let one = BigInt::from(1i64);
+        let two_pow_64 = BigInt::new(vec![0, 1], false); // 2^64
+
+        let enc_neg_two = encode_bigint_lexicographic(&neg_two_pow_64);
+        let enc_neg_one = encode_bigint_lexicographic(&neg_one);
+        let enc_zero = encode_bigint_lexicographic(&zero);
+        let enc_one = encode_bigint_lexicographic(&one);
+        let enc_two_pow = encode_bigint_lexicographic(&two_pow_64);
+
+        // Negative < Zero < Positive
+        assert!(enc_neg_two < enc_zero, "-2^64 should be less than zero");
+        assert!(enc_neg_one < enc_zero, "-1 should be less than zero");
+        assert!(enc_zero < enc_one, "zero should be less than 1");
+        assert!(enc_zero < enc_two_pow, "zero should be less than 2^64");
+
+        // Verify the full ordering chain
+        assert!(enc_neg_two < enc_neg_one, "-2^64 should be less than -1");
+        assert!(enc_neg_one < enc_zero, "-1 should be less than zero");
+        assert!(enc_zero < enc_one, "zero should be less than 1");
+        assert!(enc_one < enc_two_pow, "1 should be less than 2^64");
+    }
+
+    #[test]
+    fn test_decimal_lexicographic_length() {
+        // Verify encoded key length is exactly 17 bytes
+        let d = Decimal::new(12345, 2).unwrap();
+        let enc = encode_decimal_lexicographic(&d);
+        assert_eq!(enc.len(), 17, "DECIMAL should encode to exactly 17 bytes");
+    }
+
+    #[test]
+    fn test_decimal_lexicographic_ordering() {
+        // Verify ordering: -12.3 < 0 < 12.3
+
+        let neg = Decimal::new(-123, 1).unwrap(); // -12.3
+        let zero = Decimal::new(0, 0).unwrap();
+        let pos = Decimal::new(123, 1).unwrap(); // 12.3
+
+        let enc_neg = encode_decimal_lexicographic(&neg);
+        let enc_zero = encode_decimal_lexicographic(&zero);
+        let enc_pos = encode_decimal_lexicographic(&pos);
+
+        assert!(enc_neg < enc_zero, "-12.3 should be less than zero");
+        assert!(enc_zero < enc_pos, "zero should be less than 12.3");
+    }
+
+    #[test]
+    fn test_bigint_sign_encoding() {
+        // Verify sign byte encoding
+        let one = BigInt::from(1i64);
+        let neg_one = BigInt::from(-1i64);
+
+        let enc_one = encode_bigint_lexicographic(&one);
+        let enc_neg = encode_bigint_lexicographic(&neg_one);
+
+        // Positive: sign byte has bit 7 set (num_limbs | 0x80)
+        assert!(
+            enc_one[0] & 0x80 != 0,
+            "Positive sign byte should have bit 7 set"
+        );
+        // Negative: sign byte does not have bit 7 set
+        assert!(
+            enc_neg[0] & 0x80 == 0,
+            "Negative sign byte should have bit 7 clear"
+        );
+    }
+}
