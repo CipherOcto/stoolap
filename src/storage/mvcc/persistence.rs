@@ -35,7 +35,7 @@ use crate::core::{DataType, Error, IndexType, Result, Row, Schema, Value};
 use crate::storage::mvcc::version_store::RowVersion;
 use crate::storage::mvcc::wal_manager::{WALEntry, WALManager, WALOperationType};
 use crate::storage::PersistenceConfig;
-use octo_determin::DfpEncoding;
+use octo_determin::{decimal_from_bytes, BigInt, DfpEncoding};
 
 /// Default snapshot interval (5 minutes)
 pub const DEFAULT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(300);
@@ -860,16 +860,29 @@ pub fn serialize_value(value: &Value) -> Result<Vec<u8>> {
                 buf.extend_from_slice(&dim.to_le_bytes());
                 buf.extend_from_slice(payload);
             } else if tag == DataType::DeterministicFloat as u8 {
-                // Tag 13: DFP (Deterministic Floating Point) — RFC-0104
+                // Tag 15: DFP (Deterministic Floating Point) — moved from 13 per RFC-0202-A
                 // 24-byte canonical DfpEncoding stored directly
-                buf.push(13);
+                buf.push(15);
                 buf.extend_from_slice(payload); // payload is exactly 24 bytes
+            } else if tag == DataType::Bigint as u8 {
+                // Tag 13: BIGINT — per RFC-0202-A
+                buf.push(13);
+                buf.extend_from_slice(payload); // BigIntEncoding bytes
+            } else if tag == DataType::Decimal as u8 {
+                // Tag 14: DECIMAL — per RFC-0202-A
+                buf.push(14);
+                buf.extend_from_slice(payload); // 24-byte decimal encoding
             } else {
                 // Tag 11: generic extension (dt_u8 + len + raw bytes)
                 buf.push(11);
                 buf.push(tag);
                 buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
                 buf.extend_from_slice(payload);
+                // Defense: if tag is 13 or 14 but we reached here, something is wrong
+                debug_assert!(
+                    tag != DataType::Bigint as u8 && tag != DataType::Decimal as u8,
+                    "BIGINT/DECIMAL should have dedicated arms before tag 11"
+                );
             }
         }
         Value::Blob(data) => {
@@ -1066,7 +1079,45 @@ pub fn deserialize_value(data: &[u8]) -> Result<Value> {
             Ok(Value::Blob(CompactArc::from(payload)))
         }
         13 => {
-            // DFP (Deterministic Floating Point) — RFC-0104, 24-byte canonical encoding
+            // BIGINT: variable-length BigIntEncoding format
+            // Read num_limbs from byte offset 4 of BigIntEncoding header
+            if rest.len() < 5 {
+                return Err(Error::internal("truncated bigint data"));
+            }
+            let num_limbs = rest[4];
+            let total_size = 8 + (num_limbs as usize) * 8;
+            if rest.len() < total_size {
+                return Err(Error::internal("truncated bigint data"));
+            }
+            // Slice only the BigIntEncoding bytes, not the entire rest
+            let encoding_bytes = &rest[..total_size];
+            let _bi = BigInt::deserialize(encoding_bytes)
+                .map_err(|e| Error::internal(format!("invalid bigint: {:?}", e)))?;
+            // Reconstruct Extension with tag 13 + encoding bytes
+            let mut bytes = Vec::with_capacity(1 + total_size);
+            bytes.push(DataType::Bigint as u8);
+            bytes.extend_from_slice(encoding_bytes);
+            Ok(Value::Extension(CompactArc::from(bytes)))
+        }
+        14 => {
+            // DECIMAL: fixed 24-byte decimal encoding
+            if rest.len() < 24 {
+                return Err(Error::internal(format!(
+                    "missing decimal data: expected 24 bytes, got {}",
+                    rest.len()
+                )));
+            }
+            let encoding_bytes: [u8; 24] = rest[..24].try_into().unwrap();
+            let _d = decimal_from_bytes(encoding_bytes)
+                .map_err(|e| Error::internal(format!("invalid decimal: {:?}", e)))?;
+            // Reconstruct Extension with tag 14 + decimal bytes
+            let mut bytes = Vec::with_capacity(1 + 24);
+            bytes.push(DataType::Decimal as u8);
+            bytes.extend_from_slice(&encoding_bytes);
+            Ok(Value::Extension(CompactArc::from(bytes)))
+        }
+        15 => {
+            // DFP (Deterministic Floating Point) — moved from tag 13 per RFC-0202-A
             if rest.len() < 24 {
                 return Err(Error::internal(format!(
                     "missing DFP data: expected 24 bytes, got {}",
@@ -1332,7 +1383,7 @@ mod tests {
 
         // Serialize
         let serialized = serialize_value(&value).unwrap();
-        assert_eq!(serialized[0], 13, "wire tag should be 13 for DFP");
+        assert_eq!(serialized[0], 15, "DFP now uses wire tag 15 per RFC-0202-A");
 
         // Deserialize
         let deserialized = deserialize_value(&serialized).unwrap();
@@ -1355,7 +1406,7 @@ mod tests {
         let value = Value::dfp(dfp_zero);
 
         let serialized = serialize_value(&value).unwrap();
-        assert_eq!(serialized[0], 13);
+        assert_eq!(serialized[0], 15, "DFP now uses wire tag 15 per RFC-0202-A");
 
         let deserialized = deserialize_value(&serialized).unwrap();
         let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
@@ -1371,7 +1422,7 @@ mod tests {
         let value = Value::dfp(dfp_neg);
 
         let serialized = serialize_value(&value).unwrap();
-        assert_eq!(serialized[0], 13);
+        assert_eq!(serialized[0], 15, "DFP now uses wire tag 15 per RFC-0202-A");
 
         let deserialized = deserialize_value(&serialized).unwrap();
         let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
