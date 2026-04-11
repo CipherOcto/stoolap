@@ -20,10 +20,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use octo_determin::{dqa_cmp, Dfp, DfpClass, DfpEncoding, Dqa};
+use octo_determin::{decimal_to_bytes, dqa_cmp, BigInt, Decimal, Dfp, DfpClass, DfpEncoding, Dqa};
 
 use super::error::{Error, Result};
 use super::types::DataType;
@@ -738,6 +739,34 @@ impl Value {
                             Value::Null(data_type)
                         }
                     }
+                    DataType::Bigint => {
+                        if let Some(s) = v.downcast_ref::<String>() {
+                            // String → BigInt parsing; returns NULL on invalid input
+                            BigInt::from_str(s)
+                                .map(|bi| Value::Extension(bi.serialize().to_bytes().into()))
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&i) = v.downcast_ref::<i64>() {
+                            Value::Extension(BigInt::from(i).serialize().to_bytes().into())
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
+                    DataType::Decimal => {
+                        if let Some(s) = v.downcast_ref::<String>() {
+                            // String → Decimal parsing; try i128 first (no fractional part)
+                            s.parse::<i128>()
+                                .ok()
+                                .and_then(|i| Decimal::new(i, 0).ok())
+                                .map(|d| Value::Extension(decimal_to_bytes(&d).to_vec().into()))
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&i) = v.downcast_ref::<i64>() {
+                            Decimal::new(i.into(), 0)
+                                .map(|d| Value::Extension(decimal_to_bytes(&d).to_vec().into()))
+                                .unwrap_or(Value::Null(data_type))
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
                     DataType::Null => Value::Null(DataType::Null),
                 }
             }
@@ -1003,6 +1032,10 @@ impl Value {
                 }
                 _ => Value::Null(target_type),
             },
+            DataType::Bigint | DataType::Decimal => {
+                // BIGINT and DECIMAL cast from other types not yet implemented
+                Value::Null(target_type)
+            }
             DataType::Null => Value::Null(DataType::Null),
         }
     }
@@ -1162,6 +1195,10 @@ impl Value {
                 Value::Extension(ref data) if data.first() == Some(&(DataType::Blob as u8)) => self,
                 _ => Value::Null(target_type),
             },
+            DataType::Bigint | DataType::Decimal => {
+                // BIGINT and DECIMAL cast from other types not yet implemented
+                Value::Null(target_type)
+            }
             DataType::Null => Value::Null(DataType::Null),
         }
     }

@@ -48,6 +48,11 @@ pub const DEFAULT_KEEP_SNAPSHOTS: usize = 3;
 /// and use this special marker to distinguish them from DML operations.
 pub const DDL_TXN_ID: i64 = -2;
 
+/// Numeric spec version for BIGINT/DECIMAL support per RFC-0202-A §4a
+/// Version 1: legacy types (BIGINT → Integer, DECIMAL → Float)
+/// Version 2: native types (BIGINT → DataType::Bigint, DECIMAL → DataType::Decimal)
+pub const NUMERIC_SPEC_VERSION: u32 = 2;
+
 /// Index metadata for persistence
 #[derive(Debug, Clone)]
 pub struct IndexMetadata {
@@ -1372,5 +1377,105 @@ mod tests {
         let deserialized_dfp = deserialized.as_dfp().expect("should be DFP");
 
         assert_eq!(dfp_neg.to_f64(), deserialized_dfp.to_f64());
+    }
+
+    // =========================================================================
+    // from_str_versioned tests (RFC-0202-A §4a)
+    // =========================================================================
+
+    #[test]
+    fn test_from_str_versioned_legacy() {
+        // Version 1: BIGINT → Integer, DECIMAL → Float
+        assert_eq!(
+            super::from_str_versioned("BIGINT", 1).unwrap(),
+            DataType::Integer
+        );
+        assert_eq!(
+            super::from_str_versioned("DECIMAL", 1).unwrap(),
+            DataType::Float
+        );
+        assert_eq!(
+            super::from_str_versioned("DECIMAL(10,2)", 1).unwrap(),
+            DataType::Float
+        );
+        assert_eq!(
+            super::from_str_versioned("NUMERIC", 1).unwrap(),
+            DataType::Float
+        );
+    }
+
+    #[test]
+    fn test_from_str_versioned_native() {
+        // Version 2: BIGINT → Bigint, DECIMAL → Decimal
+        assert_eq!(
+            super::from_str_versioned("BIGINT", 2).unwrap(),
+            DataType::Bigint
+        );
+        assert_eq!(
+            super::from_str_versioned("DECIMAL", 2).unwrap(),
+            DataType::Decimal
+        );
+        assert_eq!(
+            super::from_str_versioned("DECIMAL(10,2)", 2).unwrap(),
+            DataType::Decimal
+        );
+        assert_eq!(
+            super::from_str_versioned("NUMERIC", 2).unwrap(),
+            DataType::Decimal
+        );
+    }
+}
+
+// =========================================================================
+// from_str_versioned — version-gated DataType parsing for WAL replay
+// =========================================================================
+
+/// Parse a SQL type keyword and return the appropriate DataType based on spec version.
+///
+/// This function is used during WAL replay and schema loading to handle the
+/// NUMERIC_SPEC_VERSION migration gate defined in RFC-0202-A §4a.
+///
+/// Version 1 (legacy): BIGINT → DataType::Integer, DECIMAL/NUMERIC → DataType::Float
+/// Version 2 (native): BIGINT → DataType::Bigint, DECIMAL/NUMERIC → DataType::Decimal
+#[allow(clippy::items_after_test_module)]
+pub fn from_str_versioned(s: &str, spec_version: u32) -> Result<DataType> {
+    let upper = s.to_uppercase();
+
+    // Handle parameterized forms (DECIMAL(p,s), NUMERIC(p,s))
+    if upper.starts_with("DECIMAL") || upper.starts_with("NUMERIC") {
+        if spec_version >= NUMERIC_SPEC_VERSION {
+            Ok(DataType::Decimal)
+        } else {
+            Ok(DataType::Float) // Legacy: DECIMAL → Float
+        }
+    } else {
+        match upper.as_str() {
+            "BIGINT" => {
+                if spec_version >= NUMERIC_SPEC_VERSION {
+                    Ok(DataType::Bigint)
+                } else {
+                    Ok(DataType::Integer) // Legacy: BIGINT → Integer
+                }
+            }
+            "INTEGER" | "INT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
+            "FLOAT" | "DOUBLE" | "REAL" => Ok(DataType::Float),
+            "TEXT" | "VARCHAR" | "CHAR" | "STRING" => Ok(DataType::Text),
+            "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
+            "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => Ok(DataType::Timestamp),
+            "JSON" | "JSONB" => Ok(DataType::Json),
+            "VECTOR" => Ok(DataType::Vector),
+            "DFP" | "DETERMINISTICFLOAT" => Ok(DataType::DeterministicFloat),
+            "DQA" => Ok(DataType::Quant),
+            "DECIMAL" | "NUMERIC" => {
+                if spec_version >= NUMERIC_SPEC_VERSION {
+                    Ok(DataType::Decimal)
+                } else {
+                    Ok(DataType::Float)
+                }
+            }
+            "BYTEA" | "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Blob),
+            "NULL" => Ok(DataType::Null),
+            _ => Err(Error::InvalidColumnType),
+        }
     }
 }

@@ -82,6 +82,14 @@ impl CastExpr {
                 format!("{:?}", value),
                 "BLOB",
             )),
+            DataType::Bigint | DataType::Decimal => Err(crate::core::Error::type_conversion(
+                format!("{:?}", value),
+                if matches!(self.target_type, DataType::Bigint) {
+                    "BIGINT"
+                } else {
+                    "DECIMAL"
+                },
+            )),
             DataType::Null => Ok(Value::null(DataType::Null)),
         }
     }

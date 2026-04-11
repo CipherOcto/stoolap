@@ -65,14 +65,27 @@ pub enum DataType {
     /// Binary large object for cryptographic hashes and binary data
     /// Stored as BYTEA in PostgreSQL, supports comparison for ordering
     Blob = 10,
+
+    /// 64-bit signed integer with arbitrary precision per RFC-0202-A
+    /// Wire tag 13, variable-length limb array encoding (BigIntEncoding)
+    Bigint = 13,
+
+    /// Fixed-precision decimal with 16-byte mantissa per RFC-0202-A
+    /// Wire tag 14, fixed 24-byte encoding: [mantissa:16][reserved:7][scale:1]
+    Decimal = 14,
 }
 
 impl DataType {
-    /// Returns true if this type is numeric (INTEGER, FLOAT, DFP, or DQA)
+    /// Returns true if this type is numeric (INTEGER, FLOAT, DFP, DQA, BIGINT, or DECIMAL)
     pub fn is_numeric(&self) -> bool {
         matches!(
             self,
-            DataType::Integer | DataType::Float | DataType::DeterministicFloat | DataType::Quant
+            DataType::Integer
+                | DataType::Float
+                | DataType::DeterministicFloat
+                | DataType::Quant
+                | DataType::Bigint
+                | DataType::Decimal
         )
     }
 
@@ -101,6 +114,8 @@ impl DataType {
             8 => Some(DataType::DeterministicFloat),
             9 => Some(DataType::Quant),
             10 => Some(DataType::Blob),
+            13 => Some(DataType::Bigint),
+            14 => Some(DataType::Decimal),
             _ => None,
         }
     }
@@ -120,6 +135,8 @@ impl fmt::Display for DataType {
             DataType::DeterministicFloat => write!(f, "DFP"),
             DataType::Quant => write!(f, "DQA"),
             DataType::Blob => write!(f, "BYTEA"),
+            DataType::Bigint => write!(f, "BIGINT"),
+            DataType::Decimal => write!(f, "DECIMAL"),
         }
     }
 }
@@ -137,10 +154,16 @@ impl FromStr for DataType {
         if upper.starts_with("DQA") {
             return Ok(DataType::Quant);
         }
+        // Handle parameterized DECIMAL(p,s) or NUMERIC(p,s) — scale stored in SchemaColumn.decimal_scale
+        if upper.starts_with("DECIMAL") || upper.starts_with("NUMERIC") {
+            return Ok(DataType::Decimal);
+        }
         match upper.as_str() {
             "NULL" => Ok(DataType::Null),
-            "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
-            "FLOAT" | "DOUBLE" | "REAL" | "DECIMAL" | "NUMERIC" => Ok(DataType::Float),
+            "INTEGER" | "INT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
+            "BIGINT" => Ok(DataType::Bigint),
+            "FLOAT" | "DOUBLE" | "REAL" => Ok(DataType::Float),
+            "DECIMAL" | "NUMERIC" => Ok(DataType::Decimal),
             "TEXT" | "VARCHAR" | "CHAR" | "STRING" => Ok(DataType::Text),
             "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => Ok(DataType::Timestamp),
@@ -483,13 +506,19 @@ mod tests {
         assert_eq!(DataType::Timestamp.to_string(), "TIMESTAMP");
         assert_eq!(DataType::Json.to_string(), "JSON");
         assert_eq!(DataType::Vector.to_string(), "VECTOR");
+        assert_eq!(DataType::DeterministicFloat.to_string(), "DFP");
+        assert_eq!(DataType::Quant.to_string(), "DQA");
+        assert_eq!(DataType::Blob.to_string(), "BYTEA");
+        assert_eq!(DataType::Bigint.to_string(), "BIGINT");
+        assert_eq!(DataType::Decimal.to_string(), "DECIMAL");
     }
 
     #[test]
     fn test_datatype_from_str() {
         assert_eq!("INTEGER".parse::<DataType>().unwrap(), DataType::Integer);
         assert_eq!("INT".parse::<DataType>().unwrap(), DataType::Integer);
-        assert_eq!("BIGINT".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("BIGINT".parse::<DataType>().unwrap(), DataType::Bigint);
+        assert_eq!("bigint".parse::<DataType>().unwrap(), DataType::Bigint);
         assert_eq!("float".parse::<DataType>().unwrap(), DataType::Float);
         assert_eq!("TEXT".parse::<DataType>().unwrap(), DataType::Text);
         assert_eq!("VARCHAR".parse::<DataType>().unwrap(), DataType::Text);
@@ -503,6 +532,16 @@ mod tests {
         assert_eq!("VECTOR(768)".parse::<DataType>().unwrap(), DataType::Vector);
         assert_eq!("vector(384)".parse::<DataType>().unwrap(), DataType::Vector);
         assert_eq!("VECTOR".parse::<DataType>().unwrap(), DataType::Vector);
+        assert_eq!("DECIMAL".parse::<DataType>().unwrap(), DataType::Decimal);
+        assert_eq!("NUMERIC".parse::<DataType>().unwrap(), DataType::Decimal);
+        assert_eq!(
+            "DECIMAL(10,2)".parse::<DataType>().unwrap(),
+            DataType::Decimal
+        );
+        assert_eq!(
+            "NUMERIC(10,2)".parse::<DataType>().unwrap(),
+            DataType::Decimal
+        );
         assert!("UNKNOWN".parse::<DataType>().is_err());
     }
 
@@ -519,6 +558,8 @@ mod tests {
         assert!(DataType::DeterministicFloat.is_numeric());
         assert!(DataType::Quant.is_numeric());
         assert!(!DataType::Blob.is_numeric());
+        assert!(DataType::Bigint.is_numeric());
+        assert!(DataType::Decimal.is_numeric());
     }
 
     #[test]
@@ -530,10 +571,16 @@ mod tests {
         assert!(DataType::Timestamp.is_orderable());
         assert!(!DataType::Json.is_orderable());
         assert!(!DataType::Vector.is_orderable());
+        assert!(DataType::DeterministicFloat.is_orderable());
+        assert!(DataType::Quant.is_orderable());
+        assert!(DataType::Blob.is_orderable());
+        assert!(DataType::Bigint.is_orderable());
+        assert!(DataType::Decimal.is_orderable());
     }
 
     #[test]
     fn test_datatype_u8_conversion() {
+        // Test sequential discriminants (Null through Blob)
         for (i, dt) in [
             DataType::Null,
             DataType::Integer,
@@ -551,9 +598,17 @@ mod tests {
         .enumerate()
         {
             assert_eq!(dt.as_u8(), i as u8);
-            assert_eq!(DataType::from_u8(i as u8), Some(*dt));
         }
+        // Explicit tests for all discriminants including non-sequential
+        assert_eq!(DataType::from_u8(0), Some(DataType::Null));
+        assert_eq!(DataType::from_u8(1), Some(DataType::Integer));
+        assert_eq!(DataType::from_u8(10), Some(DataType::Blob));
+        assert_eq!(DataType::from_u8(13), Some(DataType::Bigint));
+        assert_eq!(DataType::from_u8(14), Some(DataType::Decimal));
         assert_eq!(DataType::from_u8(100), None);
+        // Bigint and Decimal as_u8
+        assert_eq!(DataType::Bigint.as_u8(), 13);
+        assert_eq!(DataType::Decimal.as_u8(), 14);
     }
 
     // =========================================================================
