@@ -371,6 +371,10 @@ impl<'a> ExprCompiler<'a> {
                     (_, Some(DataType::DeterministicFloat)) => Some(DataType::DeterministicFloat),
                     (Some(DataType::Quant), _) => Some(DataType::Quant),
                     (_, Some(DataType::Quant)) => Some(DataType::Quant),
+                    (Some(DataType::Bigint), _) => Some(DataType::Bigint),
+                    (_, Some(DataType::Bigint)) => Some(DataType::Bigint),
+                    (Some(DataType::Decimal), _) => Some(DataType::Decimal),
+                    (_, Some(DataType::Decimal)) => Some(DataType::Decimal),
                     _ => None,
                 }
             }
@@ -387,6 +391,10 @@ impl<'a> ExprCompiler<'a> {
             (_, Some(DataType::DeterministicFloat)) => Some(DataType::DeterministicFloat),
             (Some(DataType::Quant), _) => Some(DataType::Quant),
             (_, Some(DataType::Quant)) => Some(DataType::Quant),
+            (Some(DataType::Bigint), _) => Some(DataType::Bigint),
+            (_, Some(DataType::Bigint)) => Some(DataType::Bigint),
+            (Some(DataType::Decimal), _) => Some(DataType::Decimal),
+            (_, Some(DataType::Decimal)) => Some(DataType::Decimal),
             _ => None,
         }
     }
@@ -791,51 +799,54 @@ impl<'a> ExprCompiler<'a> {
             InfixOperator::Add => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                // Use DFP-specific opcode if type is known
-                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
-                    builder.emit(Op::DfpAdd);
-                } else {
-                    builder.emit(Op::Add);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::DeterministicFloat) => builder.emit(Op::DfpAdd),
+                    Some(DataType::Bigint) => builder.emit(Op::BigintAdd),
+                    Some(DataType::Decimal) => builder.emit(Op::DecimalAdd),
+                    _ => builder.emit(Op::Add),
                 }
             }
 
             InfixOperator::Subtract => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                // Use DFP-specific opcode if type is known
-                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
-                    builder.emit(Op::DfpSub);
-                } else {
-                    builder.emit(Op::Sub);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::DeterministicFloat) => builder.emit(Op::DfpSub),
+                    Some(DataType::Bigint) => builder.emit(Op::BigintSub),
+                    Some(DataType::Decimal) => builder.emit(Op::DecimalSub),
+                    _ => builder.emit(Op::Sub),
                 }
             }
 
             InfixOperator::Multiply => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                // Use DFP-specific opcode if type is known
-                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
-                    builder.emit(Op::DfpMul);
-                } else {
-                    builder.emit(Op::Mul);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::DeterministicFloat) => builder.emit(Op::DfpMul),
+                    Some(DataType::Bigint) => builder.emit(Op::BigintMul),
+                    Some(DataType::Decimal) => builder.emit(Op::DecimalMul),
+                    _ => builder.emit(Op::Mul),
                 }
             }
 
             InfixOperator::Divide => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                // Use DFP-specific opcode if type is known
-                if self.infer_infix_type(infix) == Some(DataType::DeterministicFloat) {
-                    builder.emit(Op::DfpDiv);
-                } else {
-                    builder.emit(Op::Div);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::DeterministicFloat) => builder.emit(Op::DfpDiv),
+                    Some(DataType::Bigint) => builder.emit(Op::BigintDiv),
+                    Some(DataType::Decimal) => builder.emit(Op::DecimalDiv),
+                    _ => builder.emit(Op::Div),
                 }
             }
 
             InfixOperator::Modulo => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Mod);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::Bigint) => builder.emit(Op::BigintMod),
+                    _ => builder.emit(Op::Mod),
+                }
             }
 
             // String concatenation - optimize chained || into single ConcatN
