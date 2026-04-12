@@ -450,7 +450,7 @@ impl<'a> ExprCompiler<'a> {
             }
 
             Expression::StringLiteral(lit) => {
-                // Handle type hints (DATE, TIMESTAMP, etc.)
+                // Handle type hints (DATE, TIMESTAMP, BIGINT, DECIMAL, etc.)
                 let value = if let Some(ref hint) = lit.type_hint {
                     match hint.to_uppercase().as_str() {
                         "TIMESTAMP" | "DATETIME" => crate::core::value::parse_timestamp(&lit.value)
@@ -459,6 +459,17 @@ impl<'a> ExprCompiler<'a> {
                         "DATE" => crate::core::value::parse_timestamp(&lit.value)
                             .map(Value::Timestamp)
                             .unwrap_or_else(|_| Value::Text(lit.value.clone())),
+                        "BIGINT" => crate::core::stoolap_parse_bigint(&lit.value)
+                            .map(|bi| Value::Extension(bi.serialize().to_bytes().into()))
+                            .unwrap_or_else(|_| Value::Text(lit.value.clone())),
+                        "DECIMAL" => crate::core::stoolap_parse_decimal(&lit.value)
+                            .ok()
+                            .map(|d| {
+                                Value::Extension(
+                                    ::octo_determin::decimal::decimal_to_bytes(&d).to_vec().into(),
+                                )
+                            })
+                            .unwrap_or_else(|| Value::Text(lit.value.clone())),
                         _ => Value::Text(lit.value.clone()),
                     }
                 } else {

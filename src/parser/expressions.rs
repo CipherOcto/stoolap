@@ -297,7 +297,7 @@ impl Parser {
             "DEFAULT" => Some(Expression::Default(DefaultExpression {
                 token: self.cur_token.clone(),
             })),
-            "TIMESTAMP" | "DATE" | "TIME" => {
+            "TIMESTAMP" | "DATE" | "TIME" | "BIGINT" | "DECIMAL" => {
                 // These can be either typed literals (TIMESTAMP 'value') or column names
                 if self.peek_token_is(TokenType::String) {
                     self.parse_typed_literal()

@@ -257,6 +257,14 @@ impl Executor {
                 }
             }
 
+            // Store decimal scale in SchemaColumn if this is a DECIMAL type
+            if data_type == DataType::Decimal {
+                let scale = crate::executor::utils::parse_decimal_scale(&col_def.data_type);
+                if scale > 0 {
+                    schema_builder = schema_builder.set_last_decimal_scale(scale);
+                }
+            }
+
             // Store blob length in SchemaColumn if this is a BLOB type
             if data_type == DataType::Blob {
                 let blob_len = crate::executor::utils::parse_blob_length(&col_def.data_type);

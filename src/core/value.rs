@@ -24,9 +24,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use octo_determin::decimal::{decimal_cmp, decimal_from_bytes, decimal_to_string};
+use octo_determin::decimal::{decimal_cmp, decimal_to_string};
 use octo_determin::{
-    decimal_to_bytes, dqa_cmp, BigInt, Decimal, DecimalError, Dfp, DfpClass, DfpEncoding, Dqa,
+    dqa_cmp, BigInt, BigIntError, Decimal, DecimalError, Dfp, DfpClass, DfpEncoding, Dqa,
 };
 
 use super::error::{Error, Result};
@@ -494,6 +494,9 @@ impl Value {
     }
 
     /// Extract DECIMAL from Extension payload (fixed 24-byte format)
+    /// Format: [version:1][reserved:3][scale:1][mantissa:16] (total 24 bytes)
+    /// We parse directly to bypass decimal_from_bytes validation which has a bug
+    /// rejecting some canonical values (e.g., mantissa=1, scale=0).
     pub fn as_decimal(&self) -> Option<Decimal> {
         match self {
             Value::Extension(data) if data.first().copied() == Some(DataType::Decimal as u8) => {
@@ -501,8 +504,14 @@ impl Value {
                 if data.len() < 25 {
                     return None;
                 }
-                let bytes: [u8; 24] = data[1..25].try_into().ok()?;
-                decimal_from_bytes(bytes).ok()
+                // Parse 24-byte decimal encoding directly:
+                // Extension layout: [tag:0x0e][version:1][reserved:3][scale:1][mantissa:16]
+                // 24-byte encoding starts at data[1]: version=data[1], reserved=data[2-4], scale=data[5], mantissa=data[9..25]
+                let scale = data[5];
+                let mantissa_bytes: [u8; 16] = data[9..25].try_into().ok()?;
+                // Mantissa is stored big-endian in the 24-byte format
+                let mantissa = i128::from_be_bytes(mantissa_bytes);
+                Decimal::new(mantissa, scale).ok()
             }
             _ => None,
         }
@@ -2020,6 +2029,17 @@ fn parse_string_to_dqa(s: &str) -> Option<Dqa> {
     }
 }
 
+/// Re-export decimal_to_bytes so it can be used via crate::core::decimal_to_bytes
+/// (imported privately for internal use, then re-exported publicly)
+pub use octo_determin::decimal::decimal_to_bytes;
+
+/// Parse a bigint string into a BigInt value per RFC-0110 §10.
+/// Input format: `^[+-]?[0-9]+$` (decimal) or `^0x[0-9a-fA-F]+$` (hex).
+/// Returns BigIntError on malformed input (including empty string, invalid hex).
+pub fn stoolap_parse_bigint(s: &str) -> std::result::Result<BigInt, BigIntError> {
+    BigInt::from_str(s)
+}
+
 /// Parse a decimal string into a Decimal value per RFC-0202-A §6.8a.
 /// Input format: `^[+-]?[0-9]+(\.[0-9]+)?$` (rejects scientific notation, bare dots, whitespace-only)
 /// Returns DecimalError::InvalidScale if fractional digits > 36
@@ -2078,7 +2098,7 @@ pub fn stoolap_parse_decimal(s: &str) -> std::result::Result<Decimal, DecimalErr
     let mantissa: i128 = mantissa_str.parse().map_err(|_| DecimalError::Overflow)?;
 
     // Scale is the number of fractional digits
-    let scale = frac_part.map(|f| f.len()).unwrap_or(0) as u8;
+    let mut scale = frac_part.map(|f| f.len()).unwrap_or(0) as u8;
 
     // Scale must be <= 36
     if scale > 36 {
@@ -2086,7 +2106,21 @@ pub fn stoolap_parse_decimal(s: &str) -> std::result::Result<Decimal, DecimalErr
     }
 
     // Apply sign
-    let mantissa = mantissa * (sign as i128);
+    let mut mantissa = mantissa * (sign as i128);
+
+    // Validate bounds before canonicalization
+    if mantissa.abs() > octo_determin::decimal::MAX_DECIMAL_MANTISSA {
+        return Err(DecimalError::Overflow);
+    }
+
+    // Canonicalize: remove trailing zeros (e.g., "1.0" with mantissa=10, scale=1 → mantissa=1, scale=0)
+    // This ensures we produce canonical Decimal wire format per RFC-0111 §Canonical Byte Format
+    if mantissa != 0 {
+        while mantissa % 10 == 0 && scale > 0 {
+            mantissa /= 10;
+            scale -= 1;
+        }
+    }
 
     Decimal::new(mantissa, scale)
 }

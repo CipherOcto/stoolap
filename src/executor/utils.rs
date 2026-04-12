@@ -1410,6 +1410,27 @@ pub fn parse_quant_scale(type_str: &str) -> u8 {
     }
 }
 
+/// Parse decimal scale from a type string like "DECIMAL(10,2)" or "NUMERIC(8,4)".
+/// Returns 0 if no scale is specified.
+pub fn parse_decimal_scale(type_str: &str) -> u8 {
+    let upper = type_str.to_uppercase();
+    if let Some(inner) = upper.strip_prefix("DECIMAL(").and_then(|s| s.strip_suffix(')')) {
+        if let Some((_precision, scale_str)) = inner.split_once(',') {
+            scale_str.trim().parse::<u8>().unwrap_or(0)
+        } else {
+            0
+        }
+    } else if let Some(inner) = upper.strip_prefix("NUMERIC(").and_then(|s| s.strip_suffix(')')) {
+        if let Some((_precision, scale_str)) = inner.split_once(',') {
+            scale_str.trim().parse::<u8>().unwrap_or(0)
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
 /// Parse blob length from a type string like "BYTEA(256)".
 /// Returns 0 if no length is specified.
 pub fn parse_blob_length(type_str: &str) -> u32 {
