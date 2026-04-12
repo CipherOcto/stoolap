@@ -1273,7 +1273,8 @@ impl ExprVM {
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (a.as_bigint(), &b) {
                         (Some(a_big), Value::Integer(shift)) => {
-                            if *shift < 0 || *shift >= 256 {
+                            let max_shift = (a_big.limbs().len() * 8) as isize;
+                            if *shift < 0 || *shift as isize >= max_shift {
                                 return Err(crate::core::Error::InvalidArgument(
                                     "shift out of range".to_string(),
                                 ));
@@ -1296,7 +1297,8 @@ impl ExprVM {
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (a.as_bigint(), &b) {
                         (Some(a_big), Value::Integer(shift)) => {
-                            if *shift < 0 || *shift >= 256 {
+                            let max_shift = (a_big.limbs().len() * 8) as isize;
+                            if *shift < 0 || *shift as isize >= max_shift {
                                 return Err(crate::core::Error::InvalidArgument(
                                     "shift out of range".to_string(),
                                 ));
@@ -1390,6 +1392,9 @@ impl ExprVM {
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = match (a.as_decimal(), b.as_decimal()) {
                         (Some(a_dec), Some(b_dec)) => {
+                            if b_dec.is_zero() {
+                                return Err(crate::core::Error::DivisionByZero);
+                            }
                             use octo_determin::decimal::decimal_div;
                             match decimal_div(&a_dec, &b_dec, 0) {
                                 Ok(r) => Value::decimal(r),
