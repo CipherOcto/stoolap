@@ -167,6 +167,25 @@ DROP INDEX idx_user_email;
 DROP INDEX idx_user_email ON users;
 ```
 
+### Reindexing
+
+BIGINT and DECIMAL columns use B-tree indexes with lexicographic key encoding per RFC-0202-A §6.11. If you deployed a pre-lexicographic version or have corrupted indexes, use REINDEX to rebuild:
+
+```sql
+-- Rebuild a specific index (lexicographic encoding for BIGINT/DECIMAL columns)
+REINDEX INDEX idx_bigint_col;
+
+-- Rebuild all indexes on a table
+REINDEX TABLE users;
+```
+
+**When to reindex:**
+- After upgrading from a pre-RFC-0202-A version (BIGINT/DECIMAL columns stored as Integer/Float)
+- After data corruption in B-tree index pages
+- To defragment heavily updated B-tree indexes
+
+**Note:** For version-1 databases, existing Integer/Float columns do not need reindexing — only B-tree indexes on BIGINT or DECIMAL columns require rebuild.
+
 ## Schema Information
 
 Stoolap provides system tables and commands to query schema information:
