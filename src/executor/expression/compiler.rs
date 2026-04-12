@@ -891,13 +891,19 @@ impl<'a> ExprCompiler<'a> {
             InfixOperator::LeftShift => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Shl);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::Bigint) => builder.emit(Op::BigintShl),
+                    _ => builder.emit(Op::Shl),
+                }
             }
 
             InfixOperator::RightShift => {
                 self.compile_expr(&infix.left, builder)?;
                 self.compile_expr(&infix.right, builder)?;
-                builder.emit(Op::Shr);
+                match self.infer_infix_type(infix) {
+                    Some(DataType::Bigint) => builder.emit(Op::BigintShr),
+                    _ => builder.emit(Op::Shr),
+                }
             }
 
             // XOR
