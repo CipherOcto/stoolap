@@ -293,27 +293,11 @@ impl Value {
             Value::Extension(data) if data.first().copied() == Some(DataType::Bigint as u8) => {
                 // BIGINT → i64: return None if value exceeds i64 range
                 self.as_bigint().and_then(|bi| {
-                    // Only single-limb values fit in i64
-                    if bi.limbs().len() == 1 {
-                        let limb = bi.limbs()[0];
-                        let val = limb as i64;
-                        // Check for overflow: if sign bit is set and value doesn't match
-                        if bi.sign() {
-                            if val == -(limb as i64) && val <= 0 {
-                                Some(val)
-                            } else {
-                                None
-                            }
-                        } else {
-                            if val == limb as i64 && val >= 0 {
-                                Some(val)
-                            } else {
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    }
+                    // Use i128 as intermediate to handle sign correctly
+                    i128::try_from(bi).ok().and_then(|v: i128| {
+                        // Check if fits in i64
+                        i64::try_from(v).ok()
+                    })
                 })
             }
             Value::Extension(data) if data.first().copied() == Some(DataType::Decimal as u8) => {

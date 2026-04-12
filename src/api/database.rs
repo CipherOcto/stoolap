@@ -1061,10 +1061,15 @@ impl FromValue for i64 {
         match value {
             Value::Integer(i) => Ok(*i),
             Value::Float(f) => Ok(*f as i64),
-            _ => Err(Error::TypeConversion {
-                from: format!("{:?}", value),
-                to: "Integer".to_string(),
-            }),
+            _ => {
+                // Try as_int64 for BIGINT, DECIMAL, etc.
+                value
+                    .as_int64()
+                    .ok_or_else(|| Error::TypeConversion {
+                        from: format!("{:?}", value),
+                        to: "Integer".to_string(),
+                    })
+            }
         }
     }
 }
@@ -1100,10 +1105,15 @@ impl FromValue for f64 {
                     })
                 }
             }
-            _ => Err(Error::TypeConversion {
-                from: format!("{:?}", value),
-                to: "Float".to_string(),
-            }),
+            _ => {
+                // Try as_float64 for BIGINT, DECIMAL, etc.
+                value
+                    .as_float64()
+                    .ok_or_else(|| Error::TypeConversion {
+                        from: format!("{:?}", value),
+                        to: "Float".to_string(),
+                    })
+            }
         }
     }
 }

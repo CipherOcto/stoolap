@@ -31,7 +31,11 @@ use super::program::Program;
 use crate::common::{CompactArc, SmartString};
 use crate::core::{DataType, Result, Row, Value, NULL_VALUE};
 use octo_determin::dqa::{dqa_add, dqa_div, dqa_mul, dqa_sub, Dqa};
-use octo_determin::{dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, Dfp, DfpEncoding};
+use octo_determin::{
+    bigint_add, bigint_div, bigint_mod, bigint_mul, bigint_sub, decimal_add, decimal_div,
+    decimal_mul, decimal_sub, dfp_add, dfp_div, dfp_mul, dfp_sqrt, dfp_sub, BigInt, Decimal, Dfp,
+    DfpEncoding,
+};
 
 /// Stack value that can be borrowed (from row/constants) or owned (from operations)
 type StackValue<'a> = Cow<'a, Value>;
@@ -3894,41 +3898,220 @@ impl ExprVM {
                     Ok(Value::Float(float_op(*x, *y as f64)))
                 }
             }
-            // DFP arithmetic - deterministic floating-point
+            // BIGINT + BIGINT arithmetic
             (Value::Extension(a), Value::Extension(b)) => {
-                let dfp_a = Self::extract_dfp_from_extension(a);
-                let dfp_b = Self::extract_dfp_from_extension(b);
-                if let (Some(dfp_a), Some(dfp_b)) = (dfp_a, dfp_b) {
-                    let result = match int_op {
-                        ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
-                        ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
-                        ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
-                        ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                let bigint_a = Value::as_bigint(&Value::Extension(a.clone()));
+                let bigint_b = Value::as_bigint(&Value::Extension(b.clone()));
+                let decimal_a = Value::as_decimal(&Value::Extension(a.clone()));
+                let decimal_b = Value::as_decimal(&Value::Extension(b.clone()));
+
+                if let (Some(bi_a), Some(bi_b)) = (bigint_a.clone(), bigint_b.clone()) {
+                    // Both are BIGINT
+                    let result: std::result::Result<BigInt, _> = match int_op {
+                        ArithmeticOp::Add => bigint_add(bi_a.clone(), bi_b.clone()).map_err(|_| {
+                            crate::core::Error::Type("BIGINT overflow".to_string())
+                        }),
+                        ArithmeticOp::Sub => bigint_sub(bi_a.clone(), bi_b.clone()).map_err(|_| {
+                            crate::core::Error::Type("BIGINT overflow".to_string())
+                        }),
+                        ArithmeticOp::Mul => bigint_mul(bi_a.clone(), bi_b.clone()).map_err(|_| {
+                            crate::core::Error::Type("BIGINT overflow".to_string())
+                        }),
+                        ArithmeticOp::Div => {
+                            if bi_b.is_zero() {
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
+                            }
+                            bigint_div(bi_a.clone(), bi_b.clone()).map_err(|_| {
+                                crate::core::Error::Type("BIGINT overflow".to_string())
+                            })
+                        }
                         ArithmeticOp::Mod => {
-                            // DFP modulo via division and multiplication
-                            let quotient = dfp_div(dfp_a, dfp_b);
-                            dfp_sub(dfp_a, dfp_mul(quotient, dfp_b))
+                            if bi_b.is_zero() {
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
+                            }
+                            bigint_mod(bi_a.clone(), bi_b.clone()).map_err(|_| {
+                                crate::core::Error::Type("BIGINT overflow".to_string())
+                            })
                         }
                     };
-                    Ok(Value::dfp(result))
+                    match result {
+                        Ok(r) => Ok(Value::bigint(r)),
+                        Err(e) => Err(e),
+                    }
+                } else if let (Some(d_a), Some(d_b)) = (decimal_a, decimal_b) {
+                    // Both are DECIMAL
+                    let result: std::result::Result<Decimal, _> = match int_op {
+                        ArithmeticOp::Add => decimal_add(&d_a, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Sub => decimal_sub(&d_a, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Mul => decimal_mul(&d_a, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Div => {
+                            if d_b.is_zero() {
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
+                            }
+                            decimal_div(&d_a, &d_b, d_a.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                        ArithmeticOp::Mod => {
+                            if d_b.is_zero() {
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
+                            }
+                            // DECIMAL modulo via decimal_div and decimal_mul
+                            let q = decimal_div(&d_a, &d_b, d_a.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            let q_times_b = decimal_mul(&q, &d_b).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            decimal_sub(&d_a, &q_times_b).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                    };
+                    match result {
+                        Ok(r) => Ok(Value::decimal(r)),
+                        Err(e) => Err(e),
+                    }
+                } else if let (Some(bi_a), Some(d_b)) = (bigint_a, decimal_b) {
+                    // BIGINT + DECIMAL → DECIMAL
+                    let bi_i128 = i128::try_from(bi_a).map_err(|_| {
+                        crate::core::Error::Type("BIGINT out of i128 range".to_string())
+                    })?;
+                    let bi_decimal = Decimal::new(bi_i128, 0).map_err(|_| {
+                        crate::core::Error::Type("DECIMAL error".to_string())
+                    })?;
+                    let result: std::result::Result<Decimal, _> = match int_op {
+                        ArithmeticOp::Add => decimal_add(&bi_decimal, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Sub => decimal_sub(&bi_decimal, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Mul => decimal_mul(&bi_decimal, &d_b).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Div => {
+                            if d_b.is_zero() {
+                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                            }
+                            decimal_div(&bi_decimal, &d_b, bi_decimal.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                        ArithmeticOp::Mod => {
+                            if d_b.is_zero() {
+                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                            }
+                            let q = decimal_div(&bi_decimal, &d_b, bi_decimal.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            let q_times_b = decimal_mul(&q, &d_b).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            decimal_sub(&bi_decimal, &q_times_b).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                    };
+                    match result {
+                        Ok(r) => Ok(Value::decimal(r)),
+                        Err(e) => Err(e),
+                    }
+                } else if let (Some(d_a), Some(bi_b)) = (decimal_a, bigint_b) {
+                    // DECIMAL + BIGINT → DECIMAL
+                    let bi_i128 = i128::try_from(bi_b).map_err(|_| {
+                        crate::core::Error::Type("BIGINT out of i128 range".to_string())
+                    })?;
+                    let bi_decimal = Decimal::new(bi_i128, 0).map_err(|_| {
+                        crate::core::Error::Type("DECIMAL error".to_string())
+                    })?;
+                    let result: std::result::Result<Decimal, _> = match int_op {
+                        ArithmeticOp::Add => decimal_add(&d_a, &bi_decimal).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Sub => decimal_sub(&d_a, &bi_decimal).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Mul => decimal_mul(&d_a, &bi_decimal).map_err(|_| {
+                            crate::core::Error::Type("DECIMAL error".to_string())
+                        }),
+                        ArithmeticOp::Div => {
+                            if bi_decimal.is_zero() {
+                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                            }
+                            decimal_div(&d_a, &bi_decimal, d_a.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                        ArithmeticOp::Mod => {
+                            if bi_decimal.is_zero() {
+                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                            }
+                            let q = decimal_div(&d_a, &bi_decimal, d_a.scale()).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            let q_times_bi = decimal_mul(&q, &bi_decimal).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })?;
+                            decimal_sub(&d_a, &q_times_bi).map_err(|_| {
+                                crate::core::Error::Type("DECIMAL error".to_string())
+                            })
+                        }
+                    };
+                    match result {
+                        Ok(r) => Ok(Value::decimal(r)),
+                        Err(e) => Err(e),
+                    }
                 } else {
-                    // Check if mixing with non-DFP Extension (like Vector or Json)
-                    let type_a = a.first().copied();
-                    let type_b = b.first().copied();
-                    if type_a == Some(DataType::Vector as u8)
-                        || type_b == Some(DataType::Vector as u8)
-                    {
-                        return Err(crate::core::Error::Type(
-                            "cannot perform arithmetic on Vector type".to_string(),
-                        ));
+                    // Neither BIGINT nor DECIMAL - fall through to DFP handling
+                    let dfp_a = Self::extract_dfp_from_extension(a);
+                    let dfp_b = Self::extract_dfp_from_extension(b);
+                    if let (Some(dfp_a), Some(dfp_b)) = (dfp_a, dfp_b) {
+                        let result = match int_op {
+                            ArithmeticOp::Add => dfp_add(dfp_a, dfp_b),
+                            ArithmeticOp::Sub => dfp_sub(dfp_a, dfp_b),
+                            ArithmeticOp::Mul => dfp_mul(dfp_a, dfp_b),
+                            ArithmeticOp::Div => dfp_div(dfp_a, dfp_b),
+                            ArithmeticOp::Mod => {
+                                let quotient = dfp_div(dfp_a, dfp_b);
+                                dfp_sub(dfp_a, dfp_mul(quotient, dfp_b))
+                            }
+                        };
+                        Ok(Value::dfp(result))
+                    } else {
+                        // Check if mixing with non-DFP Extension (like Vector or Json)
+                        let type_a = a.first().copied();
+                        let type_b = b.first().copied();
+                        if type_a == Some(DataType::Vector as u8)
+                            || type_b == Some(DataType::Vector as u8)
+                        {
+                            return Err(crate::core::Error::Type(
+                                "cannot perform arithmetic on Vector type".to_string(),
+                            ));
+                        }
+                        if type_a == Some(DataType::Json as u8)
+                            || type_b == Some(DataType::Json as u8)
+                        {
+                            return Err(crate::core::Error::Type(
+                                "cannot perform arithmetic on JSON type".to_string(),
+                            ));
+                        }
+                        Ok(Value::Null(DataType::DeterministicFloat))
                     }
-                    if type_a == Some(DataType::Json as u8) || type_b == Some(DataType::Json as u8)
-                    {
-                        return Err(crate::core::Error::Type(
-                            "cannot perform arithmetic on JSON type".to_string(),
-                        ));
-                    }
-                    Ok(Value::Null(DataType::DeterministicFloat))
                 }
             }
             // FLOAT + DFP: convert Float to DFP for deterministic arithmetic

@@ -460,16 +460,11 @@ impl<'a> ExprCompiler<'a> {
                             .map(Value::Timestamp)
                             .unwrap_or_else(|_| Value::Text(lit.value.clone())),
                         "BIGINT" => crate::core::stoolap_parse_bigint(&lit.value)
-                            .map(|bi| Value::Extension(bi.serialize().to_bytes().into()))
+                            .map(Value::bigint)
                             .unwrap_or_else(|_| Value::Text(lit.value.clone())),
                         "DECIMAL" => crate::core::stoolap_parse_decimal(&lit.value)
-                            .ok()
-                            .map(|d| {
-                                Value::Extension(
-                                    ::octo_determin::decimal::decimal_to_bytes(&d).to_vec().into(),
-                                )
-                            })
-                            .unwrap_or_else(|| Value::Text(lit.value.clone())),
+                            .map(Value::decimal)
+                            .unwrap_or_else(|_| Value::Text(lit.value.clone())),
                         _ => Value::Text(lit.value.clone()),
                     }
                 } else {
