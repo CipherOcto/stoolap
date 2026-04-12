@@ -1001,6 +1001,48 @@ impl ScalarFunction for TanFunction {
     }
 }
 
+// ============================================================================
+// BITLEN
+// ============================================================================
+
+/// BITLEN function - returns the number of bits needed to represent a BIGINT value
+#[derive(Default)]
+pub struct BitlenFunction;
+
+impl ScalarFunction for BitlenFunction {
+    fn name(&self) -> &str {
+        "BITLEN"
+    }
+
+    fn info(&self) -> FunctionInfo {
+        FunctionInfo::new(
+            "BITLEN",
+            FunctionType::Scalar,
+            "Returns the number of bits needed to represent a BIGINT value",
+            FunctionSignature::new(FunctionDataType::Integer, vec![FunctionDataType::Any], 1, 1),
+        )
+    }
+
+    fn evaluate(&self, args: &[Value]) -> Result<Value> {
+        validate_arg_count!(args, "BITLEN", 1);
+
+        if args[0].is_null() {
+            return Ok(Value::null_unknown());
+        }
+
+        if let Some(big) = args[0].as_bigint() {
+            let bits = if big.is_zero() { 0 } else { big.bit_length() };
+            Ok(Value::Integer(bits as i64))
+        } else {
+            Err(Error::invalid_argument("BITLEN argument must be a BIGINT"))
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn ScalarFunction> {
+        Box::new(BitlenFunction)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1288,5 +1330,51 @@ mod tests {
         assert!(tan_f
             .evaluate(&[Value::Integer(1), Value::Integer(2)])
             .is_err());
+    }
+
+    #[test]
+    fn test_bitlen_basic() {
+        use octo_determin::BigInt;
+        let f = BitlenFunction;
+        // BITLEN(0) = 0
+        let zero = Value::bigint(BigInt::from(0i64));
+        assert_eq!(f.evaluate(&[zero]).unwrap(), Value::Integer(0));
+        // BITLEN(1) = 1
+        let one = Value::bigint(BigInt::from(1i64));
+        assert_eq!(f.evaluate(&[one]).unwrap(), Value::Integer(1));
+        // BITLEN(2) = 2 (binary: 10)
+        let two = Value::bigint(BigInt::from(2i64));
+        assert_eq!(f.evaluate(&[two]).unwrap(), Value::Integer(2));
+        // BITLEN(7) = 3 (binary: 111)
+        let seven = Value::bigint(BigInt::from(7i64));
+        assert_eq!(f.evaluate(&[seven]).unwrap(), Value::Integer(3));
+        // BITLEN(255) = 8 (binary: 11111111)
+        let two55 = Value::bigint(BigInt::from(255i64));
+        assert_eq!(f.evaluate(&[two55]).unwrap(), Value::Integer(8));
+    }
+
+    #[test]
+    fn test_bitlen_negative() {
+        use octo_determin::BigInt;
+        let f = BitlenFunction;
+        // BITLEN(-1) = 1
+        let neg_one = Value::bigint(BigInt::from(-1i64));
+        assert_eq!(f.evaluate(&[neg_one]).unwrap(), Value::Integer(1));
+        // BITLEN(-128) = 8
+        let neg_128 = Value::bigint(BigInt::from(-128i64));
+        assert_eq!(f.evaluate(&[neg_128]).unwrap(), Value::Integer(8));
+    }
+
+    #[test]
+    fn test_bitlen_null() {
+        let f = BitlenFunction;
+        assert!(f.evaluate(&[Value::null_unknown()]).unwrap().is_null());
+    }
+
+    #[test]
+    fn test_bitlen_not_bigint() {
+        let f = BitlenFunction;
+        assert!(f.evaluate(&[Value::Integer(42)]).is_err());
+        assert!(f.evaluate(&[Value::Float(3.14)]).is_err());
     }
 }

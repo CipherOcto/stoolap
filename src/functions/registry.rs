@@ -43,21 +43,22 @@ use super::scalar::vector::{
     VecNormFunction, VecToTextFunction,
 };
 use super::scalar::{
-    AbsFunction, CastFunction, CeilFunction, CeilingFunction, CharFunction, CharLengthFunction,
-    CoalesceFunction, CollateFunction, ConcatFunction, ConcatWsFunction, CosFunction,
-    CurrentDateFunction, CurrentTimeFunction, CurrentTimestampFunction, DateAddFunction,
-    DateDiffAliasFunction, DateDiffFunction, DateSubFunction, DateTruncFunction, DayFunction,
-    ExpFunction, ExtractFunction, FloorFunction, GreatestFunction, HourFunction, IfNullFunction,
-    IifFunction, InstrFunction, JsonArrayFunction, JsonArrayLengthFunction, JsonExtractFunction,
-    JsonKeysFunction, JsonObjectFunction, JsonTypeFunction, JsonTypeOfFunction, JsonValidFunction,
-    LeastFunction, LeftFunction, LengthFunction, LnFunction, LocateFunction, Log10Function,
-    Log2Function, LogFunction, LowerFunction, LpadFunction, LtrimFunction, MinuteFunction,
-    ModFunction, MonthFunction, NowFunction, NullIfFunction, PiFunction, PositionFunction,
-    PowFunction, PowerFunction, RandomFunction, RepeatFunction, ReplaceFunction, ReverseFunction,
-    RightFunction, RoundFunction, RpadFunction, RtrimFunction, SecondFunction, SignFunction,
-    SinFunction, SleepFunction, SplitPartFunction, SqrtFunction, StrposFunction, SubstrFunction,
-    SubstringFunction, TanFunction, TimeTruncFunction, ToCharFunction, TrimFunction, TruncFunction,
-    TruncateFunction, TypeOfFunction, UpperFunction, VersionFunction, YearFunction,
+    AbsFunction, BitlenFunction, CastFunction, CeilFunction, CeilingFunction, CharFunction,
+    CharLengthFunction, CoalesceFunction, CollateFunction, ConcatFunction, ConcatWsFunction,
+    CosFunction, CurrentDateFunction, CurrentTimeFunction, CurrentTimestampFunction,
+    DateAddFunction, DateDiffAliasFunction, DateDiffFunction, DateSubFunction, DateTruncFunction,
+    DayFunction, ExpFunction, ExtractFunction, FloorFunction, GreatestFunction, HourFunction,
+    IfNullFunction, IifFunction, InstrFunction, JsonArrayFunction, JsonArrayLengthFunction,
+    JsonExtractFunction, JsonKeysFunction, JsonObjectFunction, JsonTypeFunction,
+    JsonTypeOfFunction, JsonValidFunction, LeastFunction, LeftFunction, LengthFunction, LnFunction,
+    LocateFunction, Log10Function, Log2Function, LogFunction, LowerFunction, LpadFunction,
+    LtrimFunction, MinuteFunction, ModFunction, MonthFunction, NowFunction, NullIfFunction,
+    PiFunction, PositionFunction, PowFunction, PowerFunction, RandomFunction, RepeatFunction,
+    ReplaceFunction, ReverseFunction, RightFunction, RoundFunction, RpadFunction, RtrimFunction,
+    SecondFunction, SignFunction, SinFunction, SleepFunction, SplitPartFunction, SqrtFunction,
+    StrposFunction, SubstrFunction, SubstringFunction, TanFunction, TimeTruncFunction,
+    ToCharFunction, TrimFunction, TruncFunction, TruncateFunction, TypeOfFunction, UpperFunction,
+    VersionFunction, YearFunction,
 };
 use super::window::{
     CumeDistFunction, DenseRankFunction, FirstValueFunction, LagFunction, LastValueFunction,
@@ -170,6 +171,7 @@ impl FunctionRegistry {
         registry.register_scalar::<SinFunction>();
         registry.register_scalar::<CosFunction>();
         registry.register_scalar::<TanFunction>();
+        registry.register_scalar::<BitlenFunction>();
 
         // Date/Time functions
         registry.register_scalar::<NowFunction>();

@@ -59,10 +59,10 @@ pub use datetime::{
     TimeTruncFunction, ToCharFunction, VersionFunction, YearFunction,
 };
 pub use math::{
-    AbsFunction, CeilFunction, CeilingFunction, CosFunction, ExpFunction, FloorFunction,
-    LnFunction, Log10Function, Log2Function, LogFunction, ModFunction, PiFunction, PowFunction,
-    PowerFunction, RandomFunction, RoundFunction, SignFunction, SinFunction, SqrtFunction,
-    TanFunction, TruncFunction, TruncateFunction,
+    AbsFunction, BitlenFunction, CeilFunction, CeilingFunction, CosFunction, ExpFunction,
+    FloorFunction, LnFunction, Log10Function, Log2Function, LogFunction, ModFunction, PiFunction,
+    PowFunction, PowerFunction, RandomFunction, RoundFunction, SignFunction, SinFunction,
+    SqrtFunction, TanFunction, TruncFunction, TruncateFunction,
 };
 pub use string::{
     CharFunction, CharLengthFunction, ConcatFunction, ConcatWsFunction, InstrFunction,
