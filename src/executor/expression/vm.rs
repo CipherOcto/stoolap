@@ -384,6 +384,16 @@ impl ExprVM {
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = if a.is_null() || b.is_null() {
                         Value::Null(DataType::Boolean)
+                    } else if a.data_type() == b.data_type() {
+                        // Same type: direct equality is correct
+                        Value::Boolean(a == b)
+                    } else if a.data_type().is_numeric() && b.data_type().is_numeric() {
+                        // Cross-type numeric comparison
+                        match a.compare(&b) {
+                            Ok(std::cmp::Ordering::Equal) => Value::Boolean(true),
+                            Ok(_) => Value::Boolean(false),
+                            Err(_) => Value::Boolean(false),
+                        }
                     } else {
                         Value::Boolean(a == b)
                     };
@@ -396,6 +406,16 @@ impl ExprVM {
                     let a = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let result = if a.is_null() || b.is_null() {
                         Value::Null(DataType::Boolean)
+                    } else if a.data_type() == b.data_type() {
+                        // Same type: direct inequality is correct
+                        Value::Boolean(a != b)
+                    } else if a.data_type().is_numeric() && b.data_type().is_numeric() {
+                        // Cross-type numeric comparison
+                        match a.compare(&b) {
+                            Ok(std::cmp::Ordering::Equal) => Value::Boolean(false),
+                            Ok(_) => Value::Boolean(true),
+                            Err(_) => Value::Boolean(true),
+                        }
                     } else {
                         Value::Boolean(a != b)
                     };

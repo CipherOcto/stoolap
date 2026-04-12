@@ -229,7 +229,7 @@ impl Value {
     }
 
     /// Create a DECIMAL value from Decimal struct
-    /// Uses 24-byte fixed format: [version:1][reserved:3][scale:1][mantissa:16]
+    /// Uses 24-byte fixed format: [version:1][reserved:3][scale:1][mantissa:16] per decimal_to_bytes
     pub fn decimal(d: Decimal) -> Self {
         let bytes = decimal_to_bytes(&d);
         let mut buf = Vec::with_capacity(1 + 24);
@@ -290,8 +290,39 @@ impl Value {
                 .or_else(|| s.parse::<f64>().ok().map(|f| f as i64)),
             Value::Boolean(b) => Some(if *b { 1 } else { 0 }),
             Value::Timestamp(t) => Some(t.timestamp_nanos_opt().unwrap_or(0)),
-            Value::Extension(data) if data.first() == Some(&(DataType::Bigint as u8)) => {
-                self.as_bigint().and_then(|bi| i64::try_from(bi).ok())
+            Value::Extension(data) if data.first().copied() == Some(DataType::Bigint as u8) => {
+                // BIGINT → i64: return None if value exceeds i64 range
+                self.as_bigint().and_then(|bi| {
+                    // Only single-limb values fit in i64
+                    if bi.limbs().len() == 1 {
+                        let limb = bi.limbs()[0];
+                        let val = limb as i64;
+                        // Check for overflow: if sign bit is set and value doesn't match
+                        if bi.sign() {
+                            if val == -(limb as i64) && val <= 0 {
+                                Some(val)
+                            } else {
+                                None
+                            }
+                        } else {
+                            if val == limb as i64 && val >= 0 {
+                                Some(val)
+                            } else {
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                })
+            }
+            Value::Extension(data) if data.first().copied() == Some(DataType::Decimal as u8) => {
+                // DECIMAL → i64: truncate fractional part
+                self.as_decimal().and_then(|d| {
+                    let scale = d.scale() as u32;
+                    let truncated = d.mantissa() / 10i128.pow(scale);
+                    i64::try_from(truncated).ok()
+                })
             }
             Value::Extension(_) | Value::Blob(_) => None,
         }
@@ -316,7 +347,19 @@ impl Value {
             Value::Extension(data) if data.first() == Some(&(DataType::Decimal as u8)) => self
                 .as_decimal()
                 .map(|d| (d.mantissa() as f64) / 10f64.powi(d.scale() as i32)),
-            Value::Timestamp(_) | Value::Extension(_) | Value::Blob(_) => None,
+            Value::Extension(data) if data.first().copied() == Some(DataType::Bigint as u8) => {
+                // BIGINT → f64: single-limb values only
+                self.as_bigint().and_then(|bi| {
+                    if bi.limbs().len() == 1 {
+                        let limb = bi.limbs()[0];
+                        Some(if bi.sign() { -(limb as f64) } else { limb as f64 })
+                    } else {
+                        None
+                    }
+                })
+            }
+            Value::Timestamp(_) | Value::Blob(_) => None,
+            Value::Extension(_) => None,
         }
     }
 
@@ -494,7 +537,7 @@ impl Value {
     }
 
     /// Extract DECIMAL from Extension payload (fixed 24-byte format)
-    /// Format: [version:1][reserved:3][scale:1][mantissa:16] (total 24 bytes)
+    /// Format: [mantissa:16][reserved:7][scale:1] (24 bytes total) per decimal_to_bytes
     /// We parse directly to bypass decimal_from_bytes validation which has a bug
     /// rejecting some canonical values (e.g., mantissa=1, scale=0).
     pub fn as_decimal(&self) -> Option<Decimal> {
@@ -506,10 +549,10 @@ impl Value {
                 }
                 // Parse 24-byte decimal encoding directly:
                 // Extension layout: [tag:0x0e][version:1][reserved:3][scale:1][mantissa:16]
-                // 24-byte encoding starts at data[1]: version=data[1], reserved=data[2-4], scale=data[5], mantissa=data[9..25]
+                // 24-byte encoding starts at data[1]:
+                //   version = data[1], reserved = data[2-4], scale = data[5], mantissa = data[9..25]
                 let scale = data[5];
                 let mantissa_bytes: [u8; 16] = data[9..25].try_into().ok()?;
-                // Mantissa is stored big-endian in the 24-byte format
                 let mantissa = i128::from_be_bytes(mantissa_bytes);
                 Decimal::new(mantissa, scale).ok()
             }
@@ -928,7 +971,12 @@ impl Value {
                             Value::Null(target_type)
                         }
                     }
-                    _ => Value::Null(target_type),
+                    _ => {
+                        // Try as_int64 for BIGINT, DECIMAL, etc.
+                        self.as_int64()
+                            .map(Value::Integer)
+                            .unwrap_or(Value::Null(target_type))
+                    }
                 }
             }
             DataType::Float => {
@@ -951,7 +999,12 @@ impl Value {
                             Value::Null(target_type)
                         }
                     }
-                    _ => Value::Null(target_type),
+                    _ => {
+                        // Try as_float64 for BIGINT, DECIMAL, etc.
+                        self.as_float64()
+                            .map(Value::Float)
+                            .unwrap_or(Value::Null(target_type))
+                    }
                 }
             }
             DataType::DeterministicFloat => {

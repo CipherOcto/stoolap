@@ -1145,6 +1145,7 @@ mod tests {
     use crate::core::stoolap_parse_decimal;
     use crate::storage::SyncMode;
     use chrono::Utc;
+    use std::str::FromStr;
     use tempfile::tempdir;
 
     #[test]
@@ -1541,6 +1542,124 @@ mod tests {
         let d_neg123_reconstructed = deserialized_neg123.as_decimal().unwrap();
         let re_serialized_neg123 = serialize_value(&Value::decimal(d_neg123_reconstructed)).unwrap();
         assert_eq!(serialized_neg123, re_serialized_neg123);
+    }
+
+    // =========================================================================
+    // AC-5: Canonical zero verification per RFC-0202-A
+    // =========================================================================
+
+    #[test]
+    fn test_ac5_decimal_canonical_zero() {
+        // Verify DECIMAL '0' serializes to canonical zero encoding (mantissa=0, scale=0)
+        let d0 = stoolap_parse_decimal("0").unwrap();
+        let value = Value::decimal(d0);
+        let serialized = serialize_value(&value).unwrap();
+
+        // Canonical decimal zero: scale=0, mantissa=0
+        // In the 24-byte encoding: scale is at byte 5, mantissa is bytes 9-25 (big-endian i128)
+        // For zero: mantissa bytes should all be 0
+        let encoding = &serialized[1..25]; // skip tag byte
+        assert_eq!(encoding[4], 0, "canonical zero must have scale=0");
+        // Mantissa at bytes 9-25 should be all zeros for zero value
+        for (i, &b) in encoding[8..].iter().enumerate() {
+            assert_eq!(b, 0, "canonical zero mantissa byte[{}] must be 0", i);
+        }
+
+        // Verify round-trip
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let d_reconstructed = deserialized.as_decimal().unwrap();
+        assert_eq!(d0.mantissa(), d_reconstructed.mantissa());
+        assert_eq!(d0.scale(), d_reconstructed.scale());
+    }
+
+    #[test]
+    fn test_ac5_dqa_canonical_zero() {
+        // AC-5: DQA zero should serialize/deserialize to canonical zero
+        use octo_determin::Dqa;
+        let dqa_zero = Dqa::new(0, 0).unwrap();
+        let value = Value::quant(dqa_zero);
+        let serialized = serialize_value(&value).unwrap();
+
+        // Verify round-trip
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let dqa_reconstructed = deserialized.as_dqa().unwrap();
+        assert_eq!(dqa_zero.value, dqa_reconstructed.value);
+        assert_eq!(dqa_zero.scale, dqa_reconstructed.scale);
+    }
+
+    #[test]
+    fn test_ac5_dfp_canonical_zero() {
+        // AC-5: DFP zero should serialize/deserialize correctly
+        use octo_determin::Dfp;
+        let dfp_zero = Dfp::from_f64(0.0);
+        let value = Value::dfp(dfp_zero);
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 15, "DFP uses wire tag 15 per RFC-0202-A");
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let dfp_reconstructed = deserialized.as_dfp().unwrap();
+        assert_eq!(dfp_zero.to_f64(), dfp_reconstructed.to_f64());
+    }
+
+    // =========================================================================
+    // AC-8: BIGINT 2^64 boundary serialization round-trips
+    // =========================================================================
+
+    #[test]
+    fn test_ac8_bigint_2pow63_max() {
+        // AC-8: BIGINT at 2^63 - 1 (max signed 64-bit)
+        let bi_max = BigInt::from(i64::MAX);
+        let value = Value::bigint(bi_max.clone());
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let bi_reconstructed = deserialized.as_bigint().unwrap();
+        assert_eq!(bi_max.compare(&bi_reconstructed), 0);
+    }
+
+    #[test]
+    fn test_ac8_bigint_2pow63_min() {
+        // AC-8: BIGINT at -2^63 (min signed 64-bit)
+        let bi_min = BigInt::from(i64::MIN);
+        let value = Value::bigint(bi_min.clone());
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let bi_reconstructed = deserialized.as_bigint().unwrap();
+        assert_eq!(bi_min.compare(&bi_reconstructed), 0);
+    }
+
+    #[test]
+    fn test_ac8_bigint_2pow64() {
+        // AC-8: BIGINT at 2^64 (requires multi-limb, beyond i64)
+        // 2^64 = 18446744073709551616
+        let bi_2pow64 = BigInt::from_str("18446744073709551616").unwrap();
+        let value = Value::bigint(bi_2pow64.clone());
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let bi_reconstructed = deserialized.as_bigint().unwrap();
+        assert_eq!(bi_2pow64.compare(&bi_reconstructed), 0);
+
+        // Verify round-trip: re-serialize and compare bytes
+        let re_serialized = serialize_value(&Value::bigint(bi_reconstructed)).unwrap();
+        assert_eq!(serialized, re_serialized, "BIGINT 2^64 round-trip bytes must match");
+    }
+
+    #[test]
+    fn test_ac8_bigint_large_negative() {
+        // AC-8: BIGINT at -2^64 (negative beyond i64 range)
+        let bi_neg_2pow64 = BigInt::from_str("-18446744073709551616").unwrap();
+        let value = Value::bigint(bi_neg_2pow64.clone());
+        let serialized = serialize_value(&value).unwrap();
+        assert_eq!(serialized[0], 13);
+
+        let deserialized = deserialize_value(&serialized).unwrap();
+        let bi_reconstructed = deserialized.as_bigint().unwrap();
+        assert_eq!(bi_neg_2pow64.compare(&bi_reconstructed), 0);
     }
 
     // =========================================================================

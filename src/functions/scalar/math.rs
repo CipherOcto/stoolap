@@ -1375,6 +1375,6 @@ mod tests {
     fn test_bitlen_not_bigint() {
         let f = BitlenFunction;
         assert!(f.evaluate(&[Value::Integer(42)]).is_err());
-        assert!(f.evaluate(&[Value::Float(3.14)]).is_err());
+        assert!(f.evaluate(&[Value::Float(std::f64::consts::PI)]).is_err());
     }
 }

@@ -25,7 +25,7 @@ use super::compiler::{CompileContext, ExprCompiler};
 use super::ops::{CompiledPattern, Op};
 use super::program::Program;
 use super::vm::{ExecuteContext, ExprVM};
-use crate::core::{Value, ValueSet};
+use crate::core::{DataType, Value, ValueSet};
 use crate::Row;
 
 #[test]
@@ -472,4 +472,499 @@ fn test_compiled_pattern_case_insensitive() {
     assert!(pattern.matches("testing", true));
     assert!(pattern.matches("TESTING", true));
     assert!(pattern.matches("TeStInG", true));
+}
+
+// =========================================================================
+// AC-6: Cross-type comparison (INTEGER vs BIGINT vs DECIMAL) per RFC-0202-A
+// =========================================================================
+
+#[test]
+fn test_ac6_integer_bigint_cross_compare() {
+    // AC-6: INTEGER vs BIGINT cross-type comparison via as_float64
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // INTEGER(10) > BIGINT(5)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("5").unwrap())),
+        Op::Gt,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Boolean(true));
+
+    // INTEGER(5) < BIGINT(10)
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::Integer(5)),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::Lt,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Boolean(true));
+
+    // INTEGER(10) = BIGINT(10)
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::Eq,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert_eq!(result3, Value::Boolean(true));
+}
+
+#[test]
+fn test_ac6_integer_decimal_cross_compare() {
+    // AC-6: INTEGER vs DECIMAL cross-type comparison
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // INTEGER(10) > DECIMAL(5.5)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("5.5").unwrap())),
+        Op::Gt,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Boolean(true));
+
+    // INTEGER(5) < DECIMAL(10.1)
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::Integer(5)),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.1").unwrap())),
+        Op::Lt,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Boolean(true));
+
+    // INTEGER(10) = DECIMAL(10.0)
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.0").unwrap())),
+        Op::Eq,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert_eq!(result3, Value::Boolean(true));
+}
+
+#[test]
+fn test_ac6_bigint_decimal_cross_compare() {
+    // AC-6: BIGINT vs DECIMAL cross-type comparison
+    use crate::core::{stoolap_parse_bigint, stoolap_parse_decimal};
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT(100) > DECIMAL(50.5)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("100").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("50.5").unwrap())),
+        Op::Gt,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Boolean(true));
+
+    // BIGINT(50) < DECIMAL(50.5)
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("50").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("50.5").unwrap())),
+        Op::Lt,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Boolean(true));
+
+    // BIGINT(100) = DECIMAL(100.0)
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("100").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("100.0").unwrap())),
+        Op::Eq,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert_eq!(result3, Value::Boolean(true));
+}
+
+// =========================================================================
+// AC-16: NULL handling for BIGINT and DECIMAL
+// =========================================================================
+
+#[test]
+fn test_ac16_bigint_null_handling() {
+    // AC-16: NULL handling for BIGINT arithmetic
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT + NULL = NULL
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadNull(DataType::Bigint),
+        Op::BigintAdd,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert!(result.is_null());
+
+    // NULL + BIGINT = NULL
+    let program2 = Program::new(vec![
+        Op::LoadNull(DataType::Bigint),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::BigintAdd,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert!(result2.is_null());
+
+    // BIGINT cmp NULL = NULL
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadNull(DataType::Bigint),
+        Op::BigintCmp,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert!(result3.is_null());
+}
+
+#[test]
+fn test_ac16_decimal_null_handling() {
+    // AC-16: NULL handling for DECIMAL arithmetic
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // DECIMAL + NULL = NULL
+    let program = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::LoadNull(DataType::Decimal),
+        Op::DecimalAdd,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert!(result.is_null());
+
+    // NULL + DECIMAL = NULL
+    let program2 = Program::new(vec![
+        Op::LoadNull(DataType::Decimal),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::DecimalAdd,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert!(result2.is_null());
+
+    // DECIMAL cmp NULL = NULL
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::LoadNull(DataType::Decimal),
+        Op::DecimalCmp,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert!(result3.is_null());
+}
+
+// =========================================================================
+// AC-17: Division by zero checks for BIGINT and DECIMAL
+// =========================================================================
+
+#[test]
+fn test_ac17_bigint_division_by_zero() {
+    // AC-17: BIGINT division by zero returns DivisionByZero error
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT(10) / 0 -> Error::DivisionByZero
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("0").unwrap())),
+        Op::BigintDiv,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx);
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), crate::core::Error::DivisionByZero));
+
+    // BIGINT(10) % 0 -> Error::DivisionByZero
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("0").unwrap())),
+        Op::BigintMod,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2);
+    assert!(result2.is_err());
+    assert!(matches!(result2.unwrap_err(), crate::core::Error::DivisionByZero));
+}
+
+#[test]
+fn test_ac17_decimal_division_by_zero() {
+    // AC-17: DECIMAL division by zero returns DivisionByZero error
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // DECIMAL(10.5) / DECIMAL(0) -> Error::DivisionByZero
+    let program = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("0").unwrap())),
+        Op::DecimalDiv,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx);
+    assert!(result.is_err());
+    assert!(matches!(result.unwrap_err(), crate::core::Error::DivisionByZero));
+}
+
+#[test]
+fn test_ac17_integer_division_by_zero_returns_null() {
+    // AC-17: Integer division by zero returns NULL (not error)
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // INTEGER(10) / 0 -> NULL
+    let program = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::Integer(0)),
+        Op::Div,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert!(result.is_null());
+
+    // INTEGER(10) % 0 -> NULL
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::Integer(10)),
+        Op::LoadConst(Value::Integer(0)),
+        Op::Mod,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert!(result2.is_null());
+}
+
+// =========================================================================
+// AC-18: as_int64/as_float64 coercion for BIGINT and DECIMAL
+// =========================================================================
+
+#[test]
+fn test_ac18_bigint_as_int64_coercion() {
+    // AC-18: BIGINT -> i64 coercion (single limb only)
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT(42) -> as_int64 -> 42
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("42").unwrap())),
+        Op::Cast(DataType::Integer),
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Integer(42));
+}
+
+#[test]
+fn test_ac18_bigint_as_float64_coercion() {
+    // AC-18: BIGINT -> f64 coercion via as_float64
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT(42) -> as_float64 -> 42.0
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("42").unwrap())),
+        Op::Cast(DataType::Float),
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Float(42.0));
+}
+
+#[test]
+fn test_ac18_decimal_as_int64_coercion() {
+    // AC-18: DECIMAL -> i64 coercion (truncates fractional part)
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // DECIMAL(10.9) -> as_int64 -> 10 (truncated)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.9").unwrap())),
+        Op::Cast(DataType::Integer),
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Integer(10));
+
+    // DECIMAL(10.9) - DECIMAL(1.0) = DECIMAL(9.9), then cast to Integer -> 9
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.9").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("1.0").unwrap())),
+        Op::DecimalSub,
+        Op::Cast(DataType::Integer),
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Integer(9));
+}
+
+#[test]
+fn test_ac18_decimal_as_float64_coercion() {
+    // AC-18: DECIMAL -> f64 coercion via as_float64
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // DECIMAL(10.5) -> as_float64 -> 10.5
+    let program = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::Cast(DataType::Float),
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Float(10.5));
+}
+
+// =========================================================================
+// AC-12: BTree index ordering for BIGINT and DECIMAL
+// Tests that BigintCmp and DecimalCmp produce correct ordering results
+// =========================================================================
+
+#[test]
+fn test_ac12_bigint_btree_ordering() {
+    // AC-12: BIGINT comparison for BTree index ordering
+    use crate::core::stoolap_parse_bigint;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // BIGINT(10) cmp BIGINT(5) -> 1 (greater)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("5").unwrap())),
+        Op::BigintCmp,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Integer(1));
+
+    // BIGINT(5) cmp BIGINT(10) -> -1 (less)
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("5").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::BigintCmp,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Integer(-1));
+
+    // BIGINT(10) cmp BIGINT(10) -> 0 (equal)
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("10").unwrap())),
+        Op::BigintCmp,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert_eq!(result3, Value::Integer(0));
+
+    // BIGINT(-10) cmp BIGINT(5) -> -1 (negative is less)
+    let program4 = Program::new(vec![
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("-10").unwrap())),
+        Op::LoadConst(Value::bigint(stoolap_parse_bigint("5").unwrap())),
+        Op::BigintCmp,
+        Op::Return,
+    ]);
+    let ctx4 = ExecuteContext::new(&row);
+    let result4 = vm.execute(&program4, &ctx4).unwrap();
+    assert_eq!(result4, Value::Integer(-1));
+}
+
+#[test]
+fn test_ac12_decimal_btree_ordering() {
+    // AC-12: DECIMAL comparison for BTree index ordering
+    use crate::core::stoolap_parse_decimal;
+    let row = Row::new();
+    let mut vm = ExprVM::new();
+
+    // DECIMAL(10.5) cmp DECIMAL(5.5) -> 1 (greater)
+    let program = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("5.5").unwrap())),
+        Op::DecimalCmp,
+        Op::Return,
+    ]);
+    let ctx = ExecuteContext::new(&row);
+    let result = vm.execute(&program, &ctx).unwrap();
+    assert_eq!(result, Value::Integer(1));
+
+    // DECIMAL(5.5) cmp DECIMAL(10.5) -> -1 (less)
+    let program2 = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("5.5").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::DecimalCmp,
+        Op::Return,
+    ]);
+    let ctx2 = ExecuteContext::new(&row);
+    let result2 = vm.execute(&program2, &ctx2).unwrap();
+    assert_eq!(result2, Value::Integer(-1));
+
+    // DECIMAL(10.5) cmp DECIMAL(10.5) -> 0 (equal)
+    let program3 = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("10.5").unwrap())),
+        Op::DecimalCmp,
+        Op::Return,
+    ]);
+    let ctx3 = ExecuteContext::new(&row);
+    let result3 = vm.execute(&program3, &ctx3).unwrap();
+    assert_eq!(result3, Value::Integer(0));
+
+    // DECIMAL(-5.5) cmp DECIMAL(5.5) -> -1 (negative is less)
+    let program4 = Program::new(vec![
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("-5.5").unwrap())),
+        Op::LoadConst(Value::decimal(stoolap_parse_decimal("5.5").unwrap())),
+        Op::DecimalCmp,
+        Op::Return,
+    ]);
+    let ctx4 = ExecuteContext::new(&row);
+    let result4 = vm.execute(&program4, &ctx4).unwrap();
+    assert_eq!(result4, Value::Integer(-1));
 }

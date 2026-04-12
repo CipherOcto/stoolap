@@ -153,4 +153,64 @@ mod tests {
         let count = CountFunction::default();
         assert_eq!(count.result(), Value::Integer(0));
     }
+
+    // =========================================================================
+    // AC-15: COUNT aggregate with BIGINT and DECIMAL
+    // =========================================================================
+
+    #[test]
+    fn test_ac15_count_bigint() {
+        // COUNT of BIGINT values
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut count = CountFunction::default();
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), false);
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("30").unwrap()), false);
+        assert_eq!(count.result(), Value::Integer(3));
+    }
+
+    #[test]
+    fn test_ac15_count_decimal() {
+        // COUNT of DECIMAL values
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut count = CountFunction::default();
+        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
+        count.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
+        assert_eq!(count.result(), Value::Integer(2));
+    }
+
+    #[test]
+    fn test_ac15_count_bigint_ignores_null() {
+        // COUNT ignores NULL values for BIGINT
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut count = CountFunction::default();
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), false);
+        count.accumulate(&Value::null_unknown(), false);
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        assert_eq!(count.result(), Value::Integer(2));
+    }
+
+    #[test]
+    fn test_ac15_count_distinct_bigint() {
+        // COUNT DISTINCT for BIGINT
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut count = CountFunction::default();
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), true);
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), true); // duplicate
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), true);
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), true); // duplicate
+        count.accumulate(&Value::bigint(stoolap_parse_bigint("30").unwrap()), true);
+        assert_eq!(count.result(), Value::Integer(3));
+    }
+
+    #[test]
+    fn test_ac15_count_distinct_decimal() {
+        // COUNT DISTINCT for DECIMAL
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut count = CountFunction::default();
+        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), true);
+        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), true); // duplicate
+        count.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), true);
+        assert_eq!(count.result(), Value::Integer(2));
+    }
 }

@@ -326,4 +326,82 @@ mod tests {
         sum.accumulate(&Value::Integer(-3), false);
         assert_eq!(sum.result(), Value::Integer(2));
     }
+
+    // =========================================================================
+    // AC-13: SUM aggregate with BIGINT and DECIMAL
+    // =========================================================================
+
+    #[test]
+    fn test_ac13_sum_bigint() {
+        // SUM of BIGINT values returns BIGINT
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut sum = SumFunction::default();
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), false);
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("30").unwrap()), false);
+        let result = sum.result();
+        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint));
+        assert_eq!(result.as_bigint().map(|b| b.to_string()), Some("60".to_string()));
+    }
+
+    #[test]
+    fn test_ac13_sum_bigint_negative() {
+        // SUM of negative BIGINT values
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut sum = SumFunction::default();
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("-10").unwrap()), false);
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        sum.accumulate(&Value::bigint(stoolap_parse_bigint("-5").unwrap()), false);
+        let result = sum.result();
+        assert_eq!(result.as_bigint().map(|b| b.to_string()), Some("5".to_string()));
+    }
+
+    #[test]
+    fn test_ac13_sum_decimal() {
+        // SUM of DECIMAL values returns DECIMAL
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut sum = SumFunction::default();
+        sum.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
+        sum.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
+        sum.accumulate(&Value::decimal(stoolap_parse_decimal("5.2").unwrap()), false);
+        let result = sum.result();
+        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Decimal));
+        // 10.5 + 20.3 + 5.2 = 36.0
+        // Check that the value is correct (scale may be canonicalized)
+        let dec = result.as_decimal().unwrap();
+        let as_f64 = dec.mantissa() as f64 / 10f64.powi(dec.scale() as i32);
+        assert!((as_f64 - 36.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ac13_sum_integer_promotes_to_bigint() {
+        // SUM of integers that overflow i64 should promote to BIGINT
+        use crate::core::Value;
+        let mut sum = SumFunction::default();
+        // Add values that would overflow i64 when summed
+        let max_i64 = i64::MAX;
+        let half1 = max_i64 / 2 + 1;
+        let half2 = max_i64 / 2 + 1;
+        sum.accumulate(&Value::Integer(half1), false);
+        sum.accumulate(&Value::Integer(half2), false);
+        sum.accumulate(&Value::Integer(1), false);
+        let result = sum.result();
+        // After promotion to BigInt, result should be bigint
+        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint));
+    }
+
+    #[test]
+    fn test_ac13_sum_decimal_ignores_null() {
+        // SUM ignores NULL values
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut sum = SumFunction::default();
+        sum.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
+        sum.accumulate(&Value::null_unknown(), false);
+        sum.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
+        let result = sum.result();
+        let dec = result.as_decimal().unwrap();
+        // 10.5 + 20.3 = 30.8
+        assert_eq!(dec.mantissa(), 308);
+        assert_eq!(dec.scale(), 1);
+    }
 }

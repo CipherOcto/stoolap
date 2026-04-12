@@ -71,7 +71,7 @@ pub enum DataType {
     Bigint = 13,
 
     /// Fixed-precision decimal with 16-byte mantissa per RFC-0202-A
-    /// Wire tag 14, fixed 24-byte encoding: [mantissa:16][reserved:7][scale:1]
+    /// Wire tag 14, fixed 24-byte encoding: [version:1][reserved:3][scale:1][mantissa:16]
     Decimal = 14,
 }
 

@@ -198,4 +198,52 @@ mod tests {
         avg.accumulate(&Value::Integer(42), false);
         assert_eq!(avg.result(), Value::Float(42.0));
     }
+
+    // =========================================================================
+    // AC-14: AVG aggregate with BIGINT and DECIMAL
+    // =========================================================================
+
+    #[test]
+    fn test_ac14_avg_bigint() {
+        // AVG of BIGINT values (converted to f64 for result)
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut avg = AvgFunction::default();
+        avg.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), false);
+        avg.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        avg.accumulate(&Value::bigint(stoolap_parse_bigint("30").unwrap()), false);
+        assert_eq!(avg.result(), Value::Float(20.0));
+    }
+
+    #[test]
+    fn test_ac14_avg_decimal() {
+        // AVG of DECIMAL values (converted to f64 for result)
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut avg = AvgFunction::default();
+        avg.accumulate(&Value::decimal(stoolap_parse_decimal("10.0").unwrap()), false);
+        avg.accumulate(&Value::decimal(stoolap_parse_decimal("20.0").unwrap()), false);
+        avg.accumulate(&Value::decimal(stoolap_parse_decimal("30.0").unwrap()), false);
+        assert_eq!(avg.result(), Value::Float(20.0));
+    }
+
+    #[test]
+    fn test_ac14_avg_bigint_ignores_null() {
+        // AVG ignores NULL values
+        use crate::core::{stoolap_parse_bigint, Value};
+        let mut avg = AvgFunction::default();
+        avg.accumulate(&Value::bigint(stoolap_parse_bigint("10").unwrap()), false);
+        avg.accumulate(&Value::null_unknown(), false);
+        avg.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
+        assert_eq!(avg.result(), Value::Float(15.0)); // (10 + 20) / 2
+    }
+
+    #[test]
+    fn test_ac14_avg_decimal_with_scale() {
+        // AVG of DECIMAL with different scales
+        use crate::core::{stoolap_parse_decimal, Value};
+        let mut avg = AvgFunction::default();
+        avg.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
+        avg.accumulate(&Value::decimal(stoolap_parse_decimal("20.5").unwrap()), false);
+        // (10.5 + 20.5) / 2 = 15.5
+        assert_eq!(avg.result(), Value::Float(15.5));
+    }
 }
