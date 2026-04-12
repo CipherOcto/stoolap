@@ -1768,8 +1768,7 @@ mod tests {
 /// This encoding ensures correct lexicographic ordering:
 /// - Negative values sort before zero, which sorts before positive values
 /// - Within same sign, limb-by-limb big-endian comparison
-#[cfg(test)]
-fn encode_bigint_lexicographic(bi: &octo_determin::BigInt) -> Vec<u8> {
+pub fn encode_bigint_lexicographic(bi: &octo_determin::BigInt) -> Vec<u8> {
     const LIMB_SIZE: usize = 8;
     const MAX_LIMBS: usize = 64;
     const TOTAL_LIMBS: usize = 64; // Fixed 64 limbs for lexicographic ordering
@@ -1815,8 +1814,7 @@ fn encode_bigint_lexicographic(bi: &octo_determin::BigInt) -> Vec<u8> {
 /// - Total: 17 bytes
 /// - mantissa_byte0 XOR 0x80: zero mantissa encodes as 0x80...00
 /// - Zero mantissa sorts between negatives and positives
-#[cfg(test)]
-fn encode_decimal_lexicographic(d: &octo_determin::Decimal) -> Vec<u8> {
+pub fn encode_decimal_lexicographic(d: &octo_determin::Decimal) -> Vec<u8> {
     let mantissa = d.mantissa();
     let scale = d.scale();
 
