@@ -336,7 +336,11 @@ impl Value {
                 self.as_bigint().and_then(|bi| {
                     if bi.limbs().len() == 1 {
                         let limb = bi.limbs()[0];
-                        Some(if bi.sign() { -(limb as f64) } else { limb as f64 })
+                        Some(if bi.sign() {
+                            -(limb as f64)
+                        } else {
+                            limb as f64
+                        })
                     } else {
                         None
                     }

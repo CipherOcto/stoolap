@@ -37,7 +37,10 @@ pub use row::Row;
 pub use row_vec::{RowIdVec, RowVec};
 pub use schema::{ForeignKeyConstraint, Schema, SchemaBuilder, SchemaColumn};
 pub use types::{DataType, ForeignKeyAction, IndexEntry, IndexType, IsolationLevel, Operator};
-pub use value::{decimal_to_bytes, parse_timestamp, stoolap_parse_bigint, stoolap_parse_decimal, Value, NULL_VALUE};
+pub use value::{
+    decimal_to_bytes, parse_timestamp, stoolap_parse_bigint, stoolap_parse_decimal, Value,
+    NULL_VALUE,
+};
 
 use ahash::{AHashMap, AHashSet};
 

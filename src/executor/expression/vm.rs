@@ -3908,15 +3908,12 @@ impl ExprVM {
                 if let (Some(bi_a), Some(bi_b)) = (bigint_a.clone(), bigint_b.clone()) {
                     // Both are BIGINT
                     let result: std::result::Result<BigInt, _> = match int_op {
-                        ArithmeticOp::Add => bigint_add(bi_a.clone(), bi_b.clone()).map_err(|_| {
-                            crate::core::Error::Type("BIGINT overflow".to_string())
-                        }),
-                        ArithmeticOp::Sub => bigint_sub(bi_a.clone(), bi_b.clone()).map_err(|_| {
-                            crate::core::Error::Type("BIGINT overflow".to_string())
-                        }),
-                        ArithmeticOp::Mul => bigint_mul(bi_a.clone(), bi_b.clone()).map_err(|_| {
-                            crate::core::Error::Type("BIGINT overflow".to_string())
-                        }),
+                        ArithmeticOp::Add => bigint_add(bi_a.clone(), bi_b.clone())
+                            .map_err(|_| crate::core::Error::Type("BIGINT overflow".to_string())),
+                        ArithmeticOp::Sub => bigint_sub(bi_a.clone(), bi_b.clone())
+                            .map_err(|_| crate::core::Error::Type("BIGINT overflow".to_string())),
+                        ArithmeticOp::Mul => bigint_mul(bi_a.clone(), bi_b.clone())
+                            .map_err(|_| crate::core::Error::Type("BIGINT overflow".to_string())),
                         ArithmeticOp::Div => {
                             if bi_b.is_zero() {
                                 return Err(crate::core::Error::Type(
@@ -3945,24 +3942,20 @@ impl ExprVM {
                 } else if let (Some(d_a), Some(d_b)) = (decimal_a, decimal_b) {
                     // Both are DECIMAL
                     let result: std::result::Result<Decimal, _> = match int_op {
-                        ArithmeticOp::Add => decimal_add(&d_a, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Sub => decimal_sub(&d_a, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Mul => decimal_mul(&d_a, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
+                        ArithmeticOp::Add => decimal_add(&d_a, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Sub => decimal_sub(&d_a, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Mul => decimal_mul(&d_a, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
                         ArithmeticOp::Div => {
                             if d_b.is_zero() {
                                 return Err(crate::core::Error::Type(
                                     "division by zero".to_string(),
                                 ));
                             }
-                            decimal_div(&d_a, &d_b, d_a.scale()).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_div(&d_a, &d_b, d_a.scale())
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                         ArithmeticOp::Mod => {
                             if d_b.is_zero() {
@@ -3977,9 +3970,8 @@ impl ExprVM {
                             let q_times_b = decimal_mul(&q, &d_b).map_err(|_| {
                                 crate::core::Error::Type("DECIMAL error".to_string())
                             })?;
-                            decimal_sub(&d_a, &q_times_b).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_sub(&d_a, &q_times_b)
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                     };
                     match result {
@@ -3991,40 +3983,38 @@ impl ExprVM {
                     let bi_i128 = i128::try_from(bi_a).map_err(|_| {
                         crate::core::Error::Type("BIGINT out of i128 range".to_string())
                     })?;
-                    let bi_decimal = Decimal::new(bi_i128, 0).map_err(|_| {
-                        crate::core::Error::Type("DECIMAL error".to_string())
-                    })?;
+                    let bi_decimal = Decimal::new(bi_i128, 0)
+                        .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))?;
                     let result: std::result::Result<Decimal, _> = match int_op {
-                        ArithmeticOp::Add => decimal_add(&bi_decimal, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Sub => decimal_sub(&bi_decimal, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Mul => decimal_mul(&bi_decimal, &d_b).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
+                        ArithmeticOp::Add => decimal_add(&bi_decimal, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Sub => decimal_sub(&bi_decimal, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Mul => decimal_mul(&bi_decimal, &d_b)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
                         ArithmeticOp::Div => {
                             if d_b.is_zero() {
-                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
                             }
-                            decimal_div(&bi_decimal, &d_b, bi_decimal.scale()).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_div(&bi_decimal, &d_b, bi_decimal.scale())
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                         ArithmeticOp::Mod => {
                             if d_b.is_zero() {
-                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
                             }
-                            let q = decimal_div(&bi_decimal, &d_b, bi_decimal.scale()).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })?;
+                            let q = decimal_div(&bi_decimal, &d_b, bi_decimal.scale()).map_err(
+                                |_| crate::core::Error::Type("DECIMAL error".to_string()),
+                            )?;
                             let q_times_b = decimal_mul(&q, &d_b).map_err(|_| {
                                 crate::core::Error::Type("DECIMAL error".to_string())
                             })?;
-                            decimal_sub(&bi_decimal, &q_times_b).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_sub(&bi_decimal, &q_times_b)
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                     };
                     match result {
@@ -4036,30 +4026,29 @@ impl ExprVM {
                     let bi_i128 = i128::try_from(bi_b).map_err(|_| {
                         crate::core::Error::Type("BIGINT out of i128 range".to_string())
                     })?;
-                    let bi_decimal = Decimal::new(bi_i128, 0).map_err(|_| {
-                        crate::core::Error::Type("DECIMAL error".to_string())
-                    })?;
+                    let bi_decimal = Decimal::new(bi_i128, 0)
+                        .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))?;
                     let result: std::result::Result<Decimal, _> = match int_op {
-                        ArithmeticOp::Add => decimal_add(&d_a, &bi_decimal).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Sub => decimal_sub(&d_a, &bi_decimal).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
-                        ArithmeticOp::Mul => decimal_mul(&d_a, &bi_decimal).map_err(|_| {
-                            crate::core::Error::Type("DECIMAL error".to_string())
-                        }),
+                        ArithmeticOp::Add => decimal_add(&d_a, &bi_decimal)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Sub => decimal_sub(&d_a, &bi_decimal)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
+                        ArithmeticOp::Mul => decimal_mul(&d_a, &bi_decimal)
+                            .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string())),
                         ArithmeticOp::Div => {
                             if bi_decimal.is_zero() {
-                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
                             }
-                            decimal_div(&d_a, &bi_decimal, d_a.scale()).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_div(&d_a, &bi_decimal, d_a.scale())
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                         ArithmeticOp::Mod => {
                             if bi_decimal.is_zero() {
-                                return Err(crate::core::Error::Type("division by zero".to_string()));
+                                return Err(crate::core::Error::Type(
+                                    "division by zero".to_string(),
+                                ));
                             }
                             let q = decimal_div(&d_a, &bi_decimal, d_a.scale()).map_err(|_| {
                                 crate::core::Error::Type("DECIMAL error".to_string())
@@ -4067,9 +4056,8 @@ impl ExprVM {
                             let q_times_bi = decimal_mul(&q, &bi_decimal).map_err(|_| {
                                 crate::core::Error::Type("DECIMAL error".to_string())
                             })?;
-                            decimal_sub(&d_a, &q_times_bi).map_err(|_| {
-                                crate::core::Error::Type("DECIMAL error".to_string())
-                            })
+                            decimal_sub(&d_a, &q_times_bi)
+                                .map_err(|_| crate::core::Error::Type("DECIMAL error".to_string()))
                         }
                     };
                     match result {

@@ -340,8 +340,13 @@ mod tests {
         sum.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
         sum.accumulate(&Value::bigint(stoolap_parse_bigint("30").unwrap()), false);
         let result = sum.result();
-        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint));
-        assert_eq!(result.as_bigint().map(|b| b.to_string()), Some("60".to_string()));
+        assert!(
+            matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint)
+        );
+        assert_eq!(
+            result.as_bigint().map(|b| b.to_string()),
+            Some("60".to_string())
+        );
     }
 
     #[test]
@@ -353,7 +358,10 @@ mod tests {
         sum.accumulate(&Value::bigint(stoolap_parse_bigint("20").unwrap()), false);
         sum.accumulate(&Value::bigint(stoolap_parse_bigint("-5").unwrap()), false);
         let result = sum.result();
-        assert_eq!(result.as_bigint().map(|b| b.to_string()), Some("5".to_string()));
+        assert_eq!(
+            result.as_bigint().map(|b| b.to_string()),
+            Some("5".to_string())
+        );
     }
 
     #[test]
@@ -361,11 +369,22 @@ mod tests {
         // SUM of DECIMAL values returns DECIMAL
         use crate::core::{stoolap_parse_decimal, Value};
         let mut sum = SumFunction::default();
-        sum.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
-        sum.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
-        sum.accumulate(&Value::decimal(stoolap_parse_decimal("5.2").unwrap()), false);
+        sum.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            false,
+        );
+        sum.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.3").unwrap()),
+            false,
+        );
+        sum.accumulate(
+            &Value::decimal(stoolap_parse_decimal("5.2").unwrap()),
+            false,
+        );
         let result = sum.result();
-        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Decimal));
+        assert!(
+            matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Decimal)
+        );
         // 10.5 + 20.3 + 5.2 = 36.0
         // Check that the value is correct (scale may be canonicalized)
         let dec = result.as_decimal().unwrap();
@@ -387,7 +406,9 @@ mod tests {
         sum.accumulate(&Value::Integer(1), false);
         let result = sum.result();
         // After promotion to BigInt, result should be bigint
-        assert!(matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint));
+        assert!(
+            matches!(result, Value::Extension(_) if result.data_type() == crate::core::DataType::Bigint)
+        );
     }
 
     #[test]
@@ -395,9 +416,15 @@ mod tests {
         // SUM ignores NULL values
         use crate::core::{stoolap_parse_decimal, Value};
         let mut sum = SumFunction::default();
-        sum.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
+        sum.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            false,
+        );
         sum.accumulate(&Value::null_unknown(), false);
-        sum.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
+        sum.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.3").unwrap()),
+            false,
+        );
         let result = sum.result();
         let dec = result.as_decimal().unwrap();
         // 10.5 + 20.3 = 30.8

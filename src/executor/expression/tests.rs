@@ -708,7 +708,10 @@ fn test_ac17_bigint_division_by_zero() {
     let ctx = ExecuteContext::new(&row);
     let result = vm.execute(&program, &ctx);
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), crate::core::Error::DivisionByZero));
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::core::Error::DivisionByZero
+    ));
 
     // BIGINT(10) % 0 -> Error::DivisionByZero
     let program2 = Program::new(vec![
@@ -720,7 +723,10 @@ fn test_ac17_bigint_division_by_zero() {
     let ctx2 = ExecuteContext::new(&row);
     let result2 = vm.execute(&program2, &ctx2);
     assert!(result2.is_err());
-    assert!(matches!(result2.unwrap_err(), crate::core::Error::DivisionByZero));
+    assert!(matches!(
+        result2.unwrap_err(),
+        crate::core::Error::DivisionByZero
+    ));
 }
 
 #[test]
@@ -740,7 +746,10 @@ fn test_ac17_decimal_division_by_zero() {
     let ctx = ExecuteContext::new(&row);
     let result = vm.execute(&program, &ctx);
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), crate::core::Error::DivisionByZero));
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::core::Error::DivisionByZero
+    ));
 }
 
 #[test]

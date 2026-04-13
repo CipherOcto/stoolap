@@ -74,7 +74,8 @@ fn test_cast_to_decimal() {
     let db = Database::open("memory://test_cast_to_decimal").unwrap();
 
     db.execute("CREATE TABLE nums (value TEXT)", ()).unwrap();
-    db.execute("INSERT INTO nums VALUES ('123.45')", ()).unwrap();
+    db.execute("INSERT INTO nums VALUES ('123.45')", ())
+        .unwrap();
 
     // CAST TEXT to DECIMAL
     let result: f64 = db
@@ -117,8 +118,10 @@ fn test_decimal_column_creation() {
     )
     .unwrap();
 
-    db.execute("INSERT INTO products VALUES (1, 19.99)", ()).unwrap();
-    db.execute("INSERT INTO products VALUES (2, 99.99)", ()).unwrap();
+    db.execute("INSERT INTO products VALUES (1, 19.99)", ())
+        .unwrap();
+    db.execute("INSERT INTO products VALUES (2, 99.99)", ())
+        .unwrap();
 
     let result = db
         .query("SELECT price FROM products ORDER BY id", ())
@@ -134,10 +137,7 @@ fn test_bigint_arithmetic() {
 
     // BIGINT arithmetic
     let result: i64 = db
-        .query_one(
-            "SELECT BIGINT '1000000000000' + BIGINT '2000000000000'",
-            (),
-        )
+        .query_one("SELECT BIGINT '1000000000000' + BIGINT '2000000000000'", ())
         .unwrap();
     assert_eq!(result, 3000000000000i64);
 }
@@ -159,10 +159,7 @@ fn test_bigint_comparison() {
 
     // BIGINT comparison
     let result: bool = db
-        .query_one(
-            "SELECT BIGINT '100' > BIGINT '50'",
-            (),
-        )
+        .query_one("SELECT BIGINT '100' > BIGINT '50'", ())
         .unwrap();
     assert!(result);
 }
@@ -181,9 +178,7 @@ fn test_cross_type_comparison_integer_decimal() {
     let db = Database::open("memory://test_cross_type_cmp_id").unwrap();
 
     // INTEGER vs DECIMAL comparison
-    let result: bool = db
-        .query_one("SELECT 10 > DECIMAL '5.5'", ())
-        .unwrap();
+    let result: bool = db.query_one("SELECT 10 > DECIMAL '5.5'", ()).unwrap();
     assert!(result);
 }
 
@@ -193,10 +188,7 @@ fn test_cross_type_comparison_bigint_decimal() {
 
     // BIGINT vs DECIMAL comparison
     let result: bool = db
-        .query_one(
-            "SELECT BIGINT '100' > DECIMAL '50.5'",
-            (),
-        )
+        .query_one("SELECT BIGINT '100' > DECIMAL '50.5'", ())
         .unwrap();
     assert!(result);
 }
@@ -210,9 +202,12 @@ fn test_bigint_sum_aggregate() {
         (),
     )
     .unwrap();
-    db.execute("INSERT INTO orders VALUES (1, 1000)", ()).unwrap();
-    db.execute("INSERT INTO orders VALUES (2, 2000)", ()).unwrap();
-    db.execute("INSERT INTO orders VALUES (3, 3000)", ()).unwrap();
+    db.execute("INSERT INTO orders VALUES (1, 1000)", ())
+        .unwrap();
+    db.execute("INSERT INTO orders VALUES (2, 2000)", ())
+        .unwrap();
+    db.execute("INSERT INTO orders VALUES (3, 3000)", ())
+        .unwrap();
 
     let result: i64 = db.query_one("SELECT SUM(amount) FROM orders", ()).unwrap();
     assert_eq!(result, 6000);
@@ -227,9 +222,12 @@ fn test_decimal_avg_aggregate() {
         (),
     )
     .unwrap();
-    db.execute("INSERT INTO products VALUES (1, 10.0)", ()).unwrap();
-    db.execute("INSERT INTO products VALUES (2, 20.0)", ()).unwrap();
-    db.execute("INSERT INTO products VALUES (3, 30.0)", ()).unwrap();
+    db.execute("INSERT INTO products VALUES (1, 10.0)", ())
+        .unwrap();
+    db.execute("INSERT INTO products VALUES (2, 20.0)", ())
+        .unwrap();
+    db.execute("INSERT INTO products VALUES (3, 30.0)", ())
+        .unwrap();
 
     let result: f64 = db.query_one("SELECT AVG(price) FROM products", ()).unwrap();
     assert!((result - 20.0).abs() < 0.001);
@@ -244,9 +242,12 @@ fn test_bigint_count_aggregate() {
         (),
     )
     .unwrap();
-    db.execute("INSERT INTO orders VALUES (1, 1000)", ()).unwrap();
-    db.execute("INSERT INTO orders VALUES (2, 2000)", ()).unwrap();
-    db.execute("INSERT INTO orders VALUES (3, 3000)", ()).unwrap();
+    db.execute("INSERT INTO orders VALUES (1, 1000)", ())
+        .unwrap();
+    db.execute("INSERT INTO orders VALUES (2, 2000)", ())
+        .unwrap();
+    db.execute("INSERT INTO orders VALUES (3, 3000)", ())
+        .unwrap();
 
     let result: i64 = db.query_one("SELECT COUNT(*) FROM orders", ()).unwrap();
     assert_eq!(result, 3);
@@ -266,8 +267,7 @@ fn test_decimal_division_by_zero() {
     let db = Database::open("memory://test_decimal_div_zero").unwrap();
 
     // DECIMAL division by zero should return error
-    let result = db
-        .query("SELECT DECIMAL '10.5' / DECIMAL '0'", ());
+    let result = db.query("SELECT DECIMAL '10.5' / DECIMAL '0'", ());
     assert!(result.is_err());
 }
 
@@ -303,7 +303,8 @@ fn test_decimal_null_handling() {
 fn test_bigint_btree_index_ordering() {
     let db = Database::open("memory://test_bigint_btree_order").unwrap();
 
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val BIGINT)", ()).unwrap();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val BIGINT)", ())
+        .unwrap();
     db.execute("INSERT INTO t VALUES (1, 100)", ()).unwrap();
     db.execute("INSERT INTO t VALUES (2, -50)", ()).unwrap();
     db.execute("INSERT INTO t VALUES (3, 0)", ()).unwrap();
@@ -324,7 +325,9 @@ fn test_bigint_btree_index_ordering() {
     assert_eq!(ids, vec![1, 5, 3, 2, 4]); // 100, 50, 0, -50, -100
 
     // Test range query using index
-    let count: i64 = db.query_one("SELECT COUNT(*) FROM t WHERE val >= 0 AND val <= 100", ()).unwrap();
+    let count: i64 = db
+        .query_one("SELECT COUNT(*) FROM t WHERE val >= 0 AND val <= 100", ())
+        .unwrap();
     assert_eq!(count, 3); // 0, 50, 100
 }
 
@@ -332,7 +335,8 @@ fn test_bigint_btree_index_ordering() {
 fn test_decimal_btree_index_ordering() {
     let db = Database::open("memory://test_decimal_btree_order").unwrap();
 
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val DECIMAL)", ()).unwrap();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val DECIMAL)", ())
+        .unwrap();
     db.execute("INSERT INTO t VALUES (1, 100.5)", ()).unwrap();
     db.execute("INSERT INTO t VALUES (2, -50.5)", ()).unwrap();
     db.execute("INSERT INTO t VALUES (3, 0.0)", ()).unwrap();

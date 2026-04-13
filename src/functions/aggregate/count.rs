@@ -174,8 +174,14 @@ mod tests {
         // COUNT of DECIMAL values
         use crate::core::{stoolap_parse_decimal, Value};
         let mut count = CountFunction::default();
-        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
-        count.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), false);
+        count.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            false,
+        );
+        count.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.3").unwrap()),
+            false,
+        );
         assert_eq!(count.result(), Value::Integer(2));
     }
 
@@ -208,9 +214,18 @@ mod tests {
         // COUNT DISTINCT for DECIMAL
         use crate::core::{stoolap_parse_decimal, Value};
         let mut count = CountFunction::default();
-        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), true);
-        count.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), true); // duplicate
-        count.accumulate(&Value::decimal(stoolap_parse_decimal("20.3").unwrap()), true);
+        count.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            true,
+        );
+        count.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            true,
+        ); // duplicate
+        count.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.3").unwrap()),
+            true,
+        );
         assert_eq!(count.result(), Value::Integer(2));
     }
 }

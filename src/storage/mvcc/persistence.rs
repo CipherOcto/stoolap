@@ -1495,13 +1495,20 @@ mod tests {
         let value = Value::decimal(d12345);
         let serialized = serialize_value(&value).unwrap();
         assert_eq!(serialized[0], 14, "DECIMAL uses wire tag 14 per RFC-0202-A");
-        assert_eq!(serialized.len(), 25, "DECIMAL wire format is [tag 14][24-byte encoding]");
+        assert_eq!(
+            serialized.len(),
+            25,
+            "DECIMAL wire format is [tag 14][24-byte encoding]"
+        );
 
         let deserialized = deserialize_value(&serialized).unwrap();
         // Verify round-trip by re-serializing and comparing bytes
         let d_reconstructed = deserialized.as_decimal().unwrap();
         let re_serialized = serialize_value(&Value::decimal(d_reconstructed)).unwrap();
-        assert_eq!(serialized, re_serialized, "DECIMAL round-trip bytes must match");
+        assert_eq!(
+            serialized, re_serialized,
+            "DECIMAL round-trip bytes must match"
+        );
 
         // DECIMAL '1'
         let d1 = stoolap_parse_decimal("1").unwrap();
@@ -1540,7 +1547,8 @@ mod tests {
         assert_eq!(serialized_neg123[0], 14);
         let deserialized_neg123 = deserialize_value(&serialized_neg123).unwrap();
         let d_neg123_reconstructed = deserialized_neg123.as_decimal().unwrap();
-        let re_serialized_neg123 = serialize_value(&Value::decimal(d_neg123_reconstructed)).unwrap();
+        let re_serialized_neg123 =
+            serialize_value(&Value::decimal(d_neg123_reconstructed)).unwrap();
         assert_eq!(serialized_neg123, re_serialized_neg123);
     }
 
@@ -1646,7 +1654,10 @@ mod tests {
 
         // Verify round-trip: re-serialize and compare bytes
         let re_serialized = serialize_value(&Value::bigint(bi_reconstructed)).unwrap();
-        assert_eq!(serialized, re_serialized, "BIGINT 2^64 round-trip bytes must match");
+        assert_eq!(
+            serialized, re_serialized,
+            "BIGINT 2^64 round-trip bytes must match"
+        );
     }
 
     #[test]

@@ -219,9 +219,18 @@ mod tests {
         // AVG of DECIMAL values (converted to f64 for result)
         use crate::core::{stoolap_parse_decimal, Value};
         let mut avg = AvgFunction::default();
-        avg.accumulate(&Value::decimal(stoolap_parse_decimal("10.0").unwrap()), false);
-        avg.accumulate(&Value::decimal(stoolap_parse_decimal("20.0").unwrap()), false);
-        avg.accumulate(&Value::decimal(stoolap_parse_decimal("30.0").unwrap()), false);
+        avg.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.0").unwrap()),
+            false,
+        );
+        avg.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.0").unwrap()),
+            false,
+        );
+        avg.accumulate(
+            &Value::decimal(stoolap_parse_decimal("30.0").unwrap()),
+            false,
+        );
         assert_eq!(avg.result(), Value::Float(20.0));
     }
 
@@ -241,8 +250,14 @@ mod tests {
         // AVG of DECIMAL with different scales
         use crate::core::{stoolap_parse_decimal, Value};
         let mut avg = AvgFunction::default();
-        avg.accumulate(&Value::decimal(stoolap_parse_decimal("10.5").unwrap()), false);
-        avg.accumulate(&Value::decimal(stoolap_parse_decimal("20.5").unwrap()), false);
+        avg.accumulate(
+            &Value::decimal(stoolap_parse_decimal("10.5").unwrap()),
+            false,
+        );
+        avg.accumulate(
+            &Value::decimal(stoolap_parse_decimal("20.5").unwrap()),
+            false,
+        );
         // (10.5 + 20.5) / 2 = 15.5
         assert_eq!(avg.result(), Value::Float(15.5));
     }
