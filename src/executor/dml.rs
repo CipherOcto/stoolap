@@ -2403,8 +2403,23 @@ impl Executor {
         Ok(Value::null_unknown())
     }
 
-    /// Validate a CHECK constraint against row values
-    /// Returns Ok(()) if the constraint passes, Err if it fails
+    /// Validate a CHECK constraint against row values.
+    ///
+    /// Returns Ok(()) if the constraint passes, Err if it fails.
+    ///
+    /// # Security Note
+    ///
+    /// CRITICAL: If the CHECK expression cannot be parsed, this MUST return an error rather
+    /// than silently skipping validation. A prior implementation returned Ok(()) on parse
+    /// failure, which allowed invalid data to be inserted without any constraint enforcement.
+    /// This is a security vulnerability because malformed CHECK constraints provide a false
+    /// sense of validation while actually enforcing nothing.
+    ///
+    /// Example attack: A schema with `CHECK (role IN ('admin', 'user'))` on a role column
+    /// would silently accept ANY role value if the expression parser failed on the IN clause,
+    /// allowing privilege escalation via values like 'admin; --'.
+    ///
+    /// The correct behavior is: if we cannot verify the constraint, reject the row.
     pub(crate) fn validate_check_constraint(
         &self,
         check_expr: &str,
@@ -2419,12 +2434,15 @@ impl Executor {
             return Ok(());
         }
 
-        // Parse the check expression
+        // Parse the check expression.
+        // If parsing fails, we MUST fail rather than silently skip — see security note above.
         let sql = format!("SELECT {}", check_expr);
-        let stmts = match parse_sql(&sql) {
-            Ok(s) => s,
-            Err(_) => return Ok(()), // If we can't parse, skip validation
-        };
+        let stmts = parse_sql(&sql).map_err(|e| {
+            crate::core::Error::Parse(format!(
+                "CHECK constraint parse error for column '{}': {}",
+                col_name, e
+            ))
+        })?;
         if stmts.is_empty() {
             return Ok(());
         }
