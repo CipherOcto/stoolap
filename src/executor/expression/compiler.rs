@@ -1593,9 +1593,13 @@ impl<'a> ExprCompiler<'a> {
                 arg_count: func.arguments.len() as u8,
             });
             Ok(())
+        } else if self.ctx.functions.get_aggregate(&func_name).is_some() {
+            // Aggregate function found but not supported in scalar expression context
+            Err(CompileError::UnsupportedExpression(format!(
+                "aggregate function '{}' is not supported in this context (use SQL aggregation path)",
+                func_name
+            )))
         } else {
-            // Check if it's an aggregate being referenced post-aggregation
-            // This would be handled via LoadAggregateResult in a real implementation
             Err(CompileError::FunctionNotFound(func_name.to_string()))
         }
     }
