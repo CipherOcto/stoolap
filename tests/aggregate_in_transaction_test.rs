@@ -79,7 +79,11 @@ fn test_sum_inside_transaction() {
     match sum_result {
         Ok(sum) => {
             // user_id=1 has accounts with amounts: 100.0 + 200.0 + 150.0 = 450.0
-            assert!((sum - 450.0).abs() < 0.001, "Expected sum of 450.0, got {}", sum);
+            assert!(
+                (sum - 450.0).abs() < 0.001,
+                "Expected sum of 450.0, got {}",
+                sum
+            );
         }
         Err(e) => {
             // Currently fails with: "Compile error: Function not found: SUM"
@@ -133,7 +137,11 @@ fn test_avg_inside_transaction() {
     match avg_result {
         Ok(avg) => {
             // (100.0 + 200.0 + 150.0) / 3 = 150.0
-            assert!((avg - 150.0).abs() < 0.001, "Expected avg of 150.0, got {}", avg);
+            assert!(
+                (avg - 150.0).abs() < 0.001,
+                "Expected avg of 150.0, got {}",
+                avg
+            );
         }
         Err(e) => {
             panic!("AVG inside transaction failed (BUG): {:?}", e);
@@ -163,8 +171,16 @@ fn test_min_max_inside_transaction() {
 
     match (min_result, max_result) {
         (Ok(min), Ok(max)) => {
-            assert!((min - 100.0).abs() < 0.001, "Expected min of 100.0, got {}", min);
-            assert!((max - 200.0).abs() < 0.001, "Expected max of 200.0, got {}", max);
+            assert!(
+                (min - 100.0).abs() < 0.001,
+                "Expected min of 100.0, got {}",
+                min
+            );
+            assert!(
+                (max - 200.0).abs() < 0.001,
+                "Expected max of 200.0, got {}",
+                max
+            );
         }
         (Err(e), _) | (_, Err(e)) => {
             panic!("MIN/MAX inside transaction failed (BUG): {:?}", e);
@@ -185,18 +201,20 @@ fn test_aggregates_no_for_update() {
 
     // Without FOR UPDATE, this should use aggregation pushdown and work
     // SUM on FLOAT returns f64
-    let sum_result: Result<f64, _> = tx.query_one(
-        "SELECT SUM(amount) FROM accounts WHERE user_id = 1",
-        (),
+    let sum_result: Result<f64, _> =
+        tx.query_one("SELECT SUM(amount) FROM accounts WHERE user_id = 1", ());
+    assert!(
+        sum_result.is_ok(),
+        "SUM without FOR UPDATE should work (pushdown)"
     );
-    assert!(sum_result.is_ok(), "SUM without FOR UPDATE should work (pushdown)");
 
     // COUNT(*) returns i64
-    let count_result: Result<i64, _> = tx.query_one(
-        "SELECT COUNT(*) FROM accounts WHERE user_id = 1",
-        (),
+    let count_result: Result<i64, _> =
+        tx.query_one("SELECT COUNT(*) FROM accounts WHERE user_id = 1", ());
+    assert!(
+        count_result.is_ok(),
+        "COUNT without FOR UPDATE should work (pushdown)"
     );
-    assert!(count_result.is_ok(), "COUNT without FOR UPDATE should work (pushdown)");
 
     tx.commit().expect("Failed to commit transaction");
 }
@@ -228,7 +246,10 @@ fn test_group_by_with_aggregate_in_transaction() {
             assert!(results.contains(&(2, 750.0)), "Expected user_id=2 sum=750");
         }
         Err(e) => {
-            panic!("GROUP BY with aggregate in transaction failed (BUG): {:?}", e);
+            panic!(
+                "GROUP BY with aggregate in transaction failed (BUG): {:?}",
+                e
+            );
         }
     }
 

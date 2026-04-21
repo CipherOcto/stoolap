@@ -58,7 +58,7 @@ pub mod result;
 pub mod semantic_cache;
 pub mod statistics;
 
-mod aggregation;
+pub mod aggregation;
 mod cte;
 mod ddl;
 mod dml;
@@ -70,7 +70,7 @@ mod index_optimizer;
 mod pk_fast_path;
 pub mod pushdown;
 mod query;
-mod query_classification;
+pub mod query_classification;
 mod set_ops;
 mod show;
 mod subquery;
@@ -97,6 +97,7 @@ fn default_function_registry() -> Arc<FunctionRegistry> {
 }
 use crate::parser::ast::{Program, Statement};
 use crate::parser::Parser;
+use crate::storage::expression::Expression as StorageExprTrait;
 use crate::storage::mvcc::engine::MVCCEngine;
 use crate::storage::traits::{Engine, QueryResult, Table, Transaction};
 
@@ -792,6 +793,165 @@ impl Executor {
         }
 
         self.execute_statement(&plan.statement, ctx)
+    }
+
+    /// Execute a SELECT with aggregation inside a transaction.
+    ///
+    /// This method is called from Transaction when handling aggregate queries,
+    /// routing them through the proper aggregation pipeline instead of scalar
+    /// expression compilation.
+    pub(crate) fn execute_in_transaction(
+        &self,
+        stmt: &crate::parser::SelectStatement,
+        ctx: &ExecutionContext,
+        tx: &mut Box<dyn Transaction>,
+        table_name: &str,
+        columns: &[String],
+    ) -> Result<Box<dyn QueryResult>> {
+        // Get the table from the storage transaction
+        let table = tx.get_table(table_name)?;
+        let schema = table.schema();
+
+        // Get all column indices for scan
+        let column_indices: Vec<usize> = (0..columns.len()).collect();
+
+        // Determine if we can convert WHERE clause to storage expression
+        let use_storage_filter = stmt.where_clause.as_ref().is_none_or(|expr| {
+            // Simple check: can we convert this to a storage expression?
+            // For now, only support simple column = value comparisons
+            matches!(&**expr, crate::parser::ast::Expression::Infix(infix)
+                if infix.operator.as_str() == "=" || infix.operator.as_str() == "==")
+        });
+
+        let where_expr: Option<Box<dyn crate::storage::expression::Expression>> =
+            if use_storage_filter {
+                stmt.where_clause
+                    .as_ref()
+                    .and_then(|expr| self.convert_where_to_storage_expr(expr, schema).ok())
+            } else {
+                None
+            };
+
+        // Scan the table to get rows
+        let mut scanner = table.scan(&column_indices, where_expr.as_deref())?;
+        let mut rows = crate::core::RowVec::new();
+        let mut idx = 0i64;
+        while scanner.next() {
+            rows.push((idx, scanner.take_row()));
+            idx += 1;
+        }
+
+        // Check for scanner error
+        if let Some(err) = scanner.err() {
+            return Err(err.clone());
+        }
+
+        // If storage filter wasn't used, apply WHERE clause in-memory
+        if !use_storage_filter && stmt.where_clause.is_some() {
+            rows = self.filter_rows_for_aggregation(rows, stmt, columns, ctx)?;
+        }
+
+        // Route through aggregation pipeline
+        self.execute_select_with_aggregation(stmt, ctx, rows, columns)
+    }
+
+    /// Convert WHERE clause to storage expression for efficient filtering
+    fn convert_where_to_storage_expr(
+        &self,
+        expr: &crate::parser::ast::Expression,
+        schema: &crate::core::Schema,
+    ) -> Result<Box<dyn crate::storage::expression::Expression>> {
+        use crate::core::Operator;
+        use crate::storage::expression::{AndExpr, ComparisonExpr, OrExpr};
+
+        match expr {
+            crate::parser::ast::Expression::Infix(infix) => {
+                let op_str = infix.operator.as_str();
+                match op_str {
+                    "AND" => {
+                        let left = self.convert_where_to_storage_expr(&infix.left, schema)?;
+                        let right = self.convert_where_to_storage_expr(&infix.right, schema)?;
+                        return Ok(Box::new(AndExpr::and(left, right)));
+                    }
+                    "OR" => {
+                        let left = self.convert_where_to_storage_expr(&infix.left, schema)?;
+                        let right = self.convert_where_to_storage_expr(&infix.right, schema)?;
+                        return Ok(Box::new(OrExpr::or(left, right)));
+                    }
+                    "=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=" => {}
+                    _ => {
+                        return Err(crate::core::Error::NotSupported(format!(
+                            "Operator {} not supported in WHERE clause",
+                            infix.operator
+                        )));
+                    }
+                }
+
+                let op = match op_str {
+                    "=" | "==" => Operator::Eq,
+                    "!=" | "<>" => Operator::Ne,
+                    "<" => Operator::Lt,
+                    "<=" => Operator::Lte,
+                    ">" => Operator::Gt,
+                    ">=" => Operator::Gte,
+                    _ => unreachable!(),
+                };
+
+                // Get column name from left side
+                let column = match infix.left.as_ref() {
+                    crate::parser::ast::Expression::Identifier(id) => id.value.clone(),
+                    _ => {
+                        return Err(crate::core::Error::NotSupported(
+                            "Only column references supported on left side of comparison"
+                                .to_string(),
+                        ));
+                    }
+                };
+
+                // Get value from right side (constant expression)
+                let value =
+                    crate::executor::expression::ExpressionEval::compile(&infix.right, &[])?
+                        .with_context(&crate::executor::context::ExecutionContext::new())
+                        .eval_slice(&crate::core::Row::new())?;
+
+                // Create expression and prepare it for the schema
+                let mut storage_expr = ComparisonExpr::new(column, op, value);
+                storage_expr.prepare_for_schema(schema);
+                Ok(Box::new(storage_expr))
+            }
+            _ => Err(crate::core::Error::NotSupported(
+                "Expression type not supported in WHERE clause".to_string(),
+            )),
+        }
+    }
+
+    /// Filter rows in-memory for WHERE clause when storage expression conversion fails
+    fn filter_rows_for_aggregation(
+        &self,
+        rows: crate::core::RowVec,
+        stmt: &crate::parser::SelectStatement,
+        columns: &[String],
+        ctx: &crate::executor::context::ExecutionContext,
+    ) -> Result<crate::core::RowVec> {
+        use crate::core::Value;
+        use crate::executor::expression::ExpressionEval;
+
+        let where_clause = stmt.where_clause.as_ref().unwrap();
+
+        let mut filtered = crate::core::RowVec::new();
+        for (idx, row) in rows {
+            let mut eval = ExpressionEval::compile(where_clause, columns)?.with_context(ctx);
+            let result = eval.eval_slice(&row)?;
+            let passes = match result {
+                Value::Boolean(b) => b,
+                Value::Null(_) => false,
+                _ => true,
+            };
+            if passes {
+                filtered.push((idx, row));
+            }
+        }
+        Ok(filtered)
     }
 }
 

@@ -69,7 +69,7 @@ static DATABASE_REGISTRY: std::sync::LazyLock<RwLock<FxHashMap<String, Arc<Datab
 /// Inner database state (shared between Database instances with same DSN)
 pub(crate) struct DatabaseInner {
     engine: Arc<MVCCEngine>,
-    executor: Mutex<Executor>,
+    executor: Arc<Mutex<Executor>>,
     dsn: String,
     /// Whether this DatabaseInner owns the engine (created it via open()).
     /// Cloned DatabaseInners share the engine but don't own it.
@@ -141,7 +141,7 @@ impl Clone for Database {
 
         let inner = Arc::new(DatabaseInner {
             engine,
-            executor: Mutex::new(executor),
+            executor: Arc::new(Mutex::new(executor)),
             dsn: self.inner.dsn.clone(),
             owns_engine: false, // Cloned handles don't own the engine
         });
@@ -251,7 +251,7 @@ impl Database {
 
         let inner = Arc::new(DatabaseInner {
             engine,
-            executor: Mutex::new(executor),
+            executor: Arc::new(Mutex::new(executor)),
             dsn: dsn.to_string(),
             owns_engine: true, // This DatabaseInner owns the engine
         });
@@ -280,7 +280,7 @@ impl Database {
 
         let inner = Arc::new(DatabaseInner {
             engine,
-            executor: Mutex::new(executor),
+            executor: Arc::new(Mutex::new(executor)),
             dsn: "memory://".to_string(),
             owns_engine: true, // This DatabaseInner owns the engine
         });
@@ -862,14 +862,18 @@ impl Database {
     /// tx.commit()?;
     /// ```
     pub fn begin_with_isolation(&self, isolation: IsolationLevel) -> Result<Transaction> {
-        let executor = self
-            .inner
-            .executor
+        let executor_arc = Arc::clone(&self.inner.executor);
+        let executor_lock = executor_arc
             .lock()
             .map_err(|_| Error::LockAcquisitionFailed("executor".to_string()))?;
 
-        let tx = executor.begin_transaction_with_isolation(isolation)?;
-        Ok(Transaction::new(tx))
+        let tx = executor_lock.begin_transaction_with_isolation(isolation)?;
+        // Clone the Arc<Executor> so Transaction has its own reference for routing aggregate queries
+        // We need to create a new Executor with the same engine but separate transaction state
+        // The Transaction needs Arc<Executor> to call aggregation methods
+        let tx_executor = crate::executor::Executor::new(Arc::clone(executor_lock.engine()));
+        drop(executor_lock);
+        Ok(Transaction::new(tx, Arc::new(tx_executor)))
     }
 
     /// Get the underlying storage engine

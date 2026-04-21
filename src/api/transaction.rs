@@ -36,11 +36,14 @@ use crate::api::params::{NamedParams, ParamVec};
 use crate::core::{Error, Result, Row, RowVec, Schema, Value};
 use crate::executor::context::ExecutionContext;
 use crate::executor::expression::ExpressionEval;
+use crate::executor::query_classification::QueryClassification;
 use crate::executor::result::ExecutorResult;
+use crate::executor::Executor;
 use crate::parser::ast::{Expression, Statement};
 use crate::parser::Parser;
 use crate::storage::expression::Expression as StorageExprTrait;
 use crate::storage::traits::{QueryResult, Transaction as StorageTransaction};
+use std::sync::Arc;
 
 use super::database::FromValue;
 use super::params::Params;
@@ -52,15 +55,17 @@ use super::rows::Rows;
 /// Must be explicitly committed or rolled back.
 pub struct Transaction {
     tx: Option<Box<dyn StorageTransaction>>,
+    executor: Arc<Executor>,
     committed: bool,
     rolled_back: bool,
 }
 
 impl Transaction {
     /// Create a new transaction wrapper
-    pub(crate) fn new(tx: Box<dyn StorageTransaction>) -> Self {
+    pub(crate) fn new(tx: Box<dyn StorageTransaction>, executor: Arc<Executor>) -> Self {
         Self {
             tx: Some(tx),
+            executor,
             committed: false,
             rolled_back: false,
         }
@@ -426,6 +431,14 @@ impl Transaction {
                 let table = tx.get_table(table_name)?;
                 let schema = table.schema();
                 let columns: Vec<String> = schema.column_names_owned().to_vec();
+
+                // Route aggregate queries through Executor for proper aggregation support
+                let classification = QueryClassification::classify(stmt);
+                if classification.has_aggregation {
+                    return self
+                        .executor
+                        .execute_in_transaction(stmt, ctx, tx, table_name, &columns);
+                }
 
                 // Get all column indices for scan
                 let column_indices: Vec<usize> = (0..columns.len()).collect();
