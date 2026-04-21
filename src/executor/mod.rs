@@ -827,7 +827,7 @@ impl Executor {
             if use_storage_filter {
                 stmt.where_clause
                     .as_ref()
-                    .and_then(|expr| self.convert_where_to_storage_expr(expr, schema).ok())
+                    .and_then(|expr| self.convert_where_to_storage_expr(expr, schema, columns, ctx).ok())
             } else {
                 None
             };
@@ -860,6 +860,8 @@ impl Executor {
         &self,
         expr: &crate::parser::ast::Expression,
         schema: &crate::core::Schema,
+        columns: &[String],
+        ctx: &crate::executor::context::ExecutionContext,
     ) -> Result<Box<dyn crate::storage::expression::Expression>> {
         use crate::core::Operator;
         use crate::storage::expression::{AndExpr, ComparisonExpr, OrExpr};
@@ -869,13 +871,13 @@ impl Executor {
                 let op_str = infix.operator.as_str();
                 match op_str {
                     "AND" => {
-                        let left = self.convert_where_to_storage_expr(&infix.left, schema)?;
-                        let right = self.convert_where_to_storage_expr(&infix.right, schema)?;
+                        let left = self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
+                        let right = self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
                         return Ok(Box::new(AndExpr::and(left, right)));
                     }
                     "OR" => {
-                        let left = self.convert_where_to_storage_expr(&infix.left, schema)?;
-                        let right = self.convert_where_to_storage_expr(&infix.right, schema)?;
+                        let left = self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
+                        let right = self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
                         return Ok(Box::new(OrExpr::or(left, right)));
                     }
                     "=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=" => {}
@@ -908,10 +910,10 @@ impl Executor {
                     }
                 };
 
-                // Get value from right side (constant expression)
+                // Get value from right side (constant expression, including parameters)
                 let value =
-                    crate::executor::expression::ExpressionEval::compile(&infix.right, &[])?
-                        .with_context(&crate::executor::context::ExecutionContext::new())
+                    crate::executor::expression::ExpressionEval::compile(&infix.right, columns)?
+                        .with_context(ctx)
                         .eval_slice(&crate::core::Row::new())?;
 
                 // Create expression and prepare it for the schema
