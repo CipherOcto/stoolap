@@ -24,7 +24,7 @@ use crate::common::I64Set;
 use crate::common::SmartString;
 use crate::core::{DataType, Error, Result, Row, RowVec, Schema, Value, ValueMap};
 use crate::parser::ast::*;
-use crate::storage::expression::{ComparisonExpr, Expression as StorageExpr};
+use crate::storage::expression::{AndExpr, ComparisonExpr, Expression as StorageExpr};
 use crate::storage::traits::{Engine, QueryResult, Table};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -541,10 +541,34 @@ impl Executor {
                         rows_affected += 1;
                     }
                     Err(Error::PrimaryKeyConstraint { row_id }) => {
+                        // Build the WHERE expression for the
+                        // conflicting row by primary key. For
+                        // tables WITHOUT a primary key, this path
+                        // is never taken (PK constraints can't be
+                        // violated if there's no PK).
+                        let pk_col = schema
+                            .pk_column_index()
+                            .map(|idx| schema.columns[idx].name.clone());
+                        let where_expr: Option<Box<dyn StorageExpr>> =
+                            if let Some(pk_name) = pk_col {
+                                let mut expr = ComparisonExpr::new(
+                                    pk_name,
+                                    crate::core::Operator::Eq,
+                                    Value::Integer(row_id),
+                                );
+                                expr.prepare_for_schema(&schema);
+                                Some(Box::new(expr))
+                            } else {
+                                // PK violation reported but no PK
+                                // exists — defensive fallback to
+                                // updating all rows (matches the
+                                // previous behavior).
+                                None
+                            };
                         self.apply_on_duplicate_update(
                             &mut table,
                             &schema,
-                            row_id,
+                            where_expr.as_deref(),
                             &row_values,
                             stmt,
                             ctx,
@@ -556,17 +580,57 @@ impl Executor {
                         column,
                         value: _,
                     }) => {
-                        if let Some(row_id) = self.find_row_by_unique_index(
-                            &*table,
-                            &schema,
-                            &index,
-                            &column,
-                            &row_values,
-                        )? {
+                        // Build the WHERE expression for the
+                        // conflicting row from the unique-index
+                        // columns and the insert values. The
+                        // insert values are the right values to use
+                        // because the conflict is by definition on
+                        // those values (the existing row has the
+                        // same values for the unique columns).
+                        // This works for both single-column and
+                        // composite unique indexes, and works for
+                        // tables WITHOUT a primary key (the
+                        // previous implementation relied on a PK
+                        // to identify the row, which broke for
+                        // tables with only a `UNIQUE` constraint
+                        // — see Mission 0850 R14-H1 for the full
+                        // history).
+                        let unique_col_names: Vec<&str> = column.split(", ").collect();
+                        let mut cmp_exprs: Vec<Box<dyn StorageExpr>> =
+                            Vec::with_capacity(unique_col_names.len());
+                        let mut all_found = true;
+                        for col_name in &unique_col_names {
+                            let col_lower = col_name.to_lowercase();
+                            match schema.column_index_map().get(&col_lower) {
+                                Some(&col_idx) => {
+                                    let v = row_values
+                                        .get(col_idx)
+                                        .cloned()
+                                        .unwrap_or(Value::null_unknown());
+                                    let mut cmp = ComparisonExpr::new(
+                                        col_name.to_string(),
+                                        crate::core::Operator::Eq,
+                                        v,
+                                    );
+                                    cmp.prepare_for_schema(&schema);
+                                    cmp_exprs.push(Box::new(cmp));
+                                }
+                                None => {
+                                    all_found = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if all_found {
+                            let where_expr: Box<dyn StorageExpr> = if cmp_exprs.len() == 1 {
+                                cmp_exprs.into_iter().next().unwrap()
+                            } else {
+                                Box::new(AndExpr::new(cmp_exprs))
+                            };
                             self.apply_on_duplicate_update(
                                 &mut table,
                                 &schema,
-                                row_id,
+                                Some(&*where_expr),
                                 &row_values,
                                 stmt,
                                 ctx,
@@ -2208,29 +2272,24 @@ impl Executor {
     }
 
     /// Apply ON DUPLICATE KEY UPDATE to an existing row
+    /// Apply the `ON DUPLICATE KEY UPDATE` clause to a conflicting row.
+    ///
+    /// `where_expr` is the WHERE expression that identifies the
+    /// conflicting row (built from the unique-index columns and the
+    /// insert values). For tables WITH a primary key, this is
+    /// `pk = row_id`; for tables WITHOUT a primary key (e.g. tables
+    /// with only a `UNIQUE` constraint), this is an AND of
+    /// `unique_col_i = insert_values[i]`. Both forms are computed by
+    /// the caller and passed in here.
     fn apply_on_duplicate_update(
         &self,
         table: &mut Box<dyn Table>,
         schema: &crate::core::Schema,
-        row_id: i64,
+        where_expr: Option<&dyn StorageExpr>,
         _insert_values: &[Value],
         stmt: &InsertStatement,
         ctx: &ExecutionContext,
     ) -> Result<()> {
-        // Build a WHERE clause to find the specific row by primary key
-        // Use schema's cached pk_column_index for O(1) lookup
-        let pk_col = schema
-            .pk_column_index()
-            .map(|idx| schema.columns[idx].name.clone());
-
-        let where_expr: Option<Box<dyn StorageExpr>> = if let Some(pk_name) = pk_col {
-            let mut expr =
-                ComparisonExpr::new(pk_name, crate::core::Operator::Eq, Value::Integer(row_id));
-            expr.prepare_for_schema(schema);
-            Some(Box::new(expr))
-        } else {
-            None
-        };
 
         // OPTIMIZATION: Pre-compute column indices and types to avoid per-row linear search
         // Use cached column_index_map for O(1) lookups
@@ -2325,33 +2384,76 @@ impl Executor {
     }
 
     /// Find a row by unique index value
+    ///
+    /// `column` may be either a single column name (e.g. `"username"`,
+    /// for a single-column UNIQUE index) or a comma-space-separated list
+    /// of column names (e.g. `"name, index_mac, device_id"`, for a
+    /// COMPOSITE UNIQUE index). The function handles both cases by
+    /// splitting the string and building an AND of equality comparisons
+    /// across all columns. This is the fix for Mission 0850 R14-H1: the
+    /// previous implementation only handled the single-column case
+    /// (`column` passed verbatim to `schema.column_index_map().get()`,
+    /// which is keyed by individual column names) and silently returned
+    /// `None` for composite indexes, which caused the executor to fall
+    /// through to `Error::UniqueConstraint { value: "unknown" }`
+    /// instead of running the UPDATE branch of `INSERT ... ON DUPLICATE
+    /// KEY UPDATE`.
     fn find_row_by_unique_index(
         &self,
         table: &dyn Table,
         schema: &crate::core::Schema,
         _index_name: &str,
-        column_name: &str,
+        column: &str,
         row_values: &[Value],
     ) -> Result<Option<i64>> {
-        // Find the column index using cached map for O(1) lookup
-        let col_lower = column_name.to_lowercase();
-        let col_idx = match schema.column_index_map().get(&col_lower) {
-            Some(&idx) => idx,
-            None => return Ok(None),
+        // Split the column specifier into individual column names. A
+        // single-column unique index produces a 1-element list, a
+        // composite unique index produces an N-element list.
+        let column_names: Vec<&str> = column.split(", ").collect();
+
+        // Build a `ComparisonExpr` for each column and combine them in
+        // an `AndExpr`. Skip columns that don't exist in the schema
+        // (defensive — should not happen in practice because the
+        // unique index is defined against real columns).
+        let mut exprs: Vec<Box<dyn StorageExpr>> = Vec::with_capacity(column_names.len());
+        for col_name in &column_names {
+            let col_lower = col_name.to_lowercase();
+            let col_idx = match schema.column_index_map().get(&col_lower) {
+                Some(&idx) => idx,
+                None => {
+                    // Column not in schema — cannot build a valid
+                    // lookup. Bail out and let the executor surface
+                    // the `UniqueConstraint` error rather than
+                    // returning a false negative.
+                    return Ok(None);
+                }
+            };
+            let value = row_values
+                .get(col_idx)
+                .cloned()
+                .unwrap_or(Value::null_unknown());
+            let mut cmp = ComparisonExpr::new(
+                col_name.to_string(),
+                crate::core::Operator::Eq,
+                value,
+            );
+            cmp.prepare_for_schema(schema);
+            exprs.push(Box::new(cmp));
+        }
+
+        // Reduce: collapse a single ComparisonExpr (the common case)
+        // into a bare expression, otherwise wrap in AndExpr. Both
+        // forms satisfy `dyn StorageExpr` for `table.scan(...)`.
+        let boxed: Box<dyn StorageExpr> = if exprs.len() == 1 {
+            // Safe: we just checked `exprs.len() == 1` above.
+            exprs.into_iter().next().unwrap()
+        } else {
+            Box::new(AndExpr::new(exprs))
         };
-        let value = row_values
-            .get(col_idx)
-            .cloned()
-            .unwrap_or(Value::null_unknown());
 
-        // Create a search expression for this value
-        let mut expr =
-            ComparisonExpr::new(column_name.to_string(), crate::core::Operator::Eq, value);
-        expr.prepare_for_schema(schema);
-
-        // Scan for the row
+        // Scan for the row using the (possibly compound) expression.
         let column_indices: Vec<usize> = (0..schema.columns.len()).collect();
-        let mut scanner = table.scan(&column_indices, Some(&expr))?;
+        let mut scanner = table.scan(&column_indices, Some(&*boxed))?;
 
         // Get the first matching row's ID
         let result = if scanner.next() {

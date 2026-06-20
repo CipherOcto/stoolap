@@ -1020,7 +1020,17 @@ impl MVCCTable {
         let schema = &self.cached_schema;
 
         // OPTIMIZATION: Iterate indexes directly without collecting names
-        // Use iter_unique_indexes to only iterate unique indexes
+        // Use iter_unique_indexes to only iterate unique indexes.
+        //
+        // MISSION 0850 R14-H1 fix: when a row is locally deleted in
+        // this transaction (via `DELETE ...` followed by `INSERT ...`
+        // with the same unique-index value), the unique-index check
+        // must NOT raise `UniqueConstraint` for the locally-deleted
+        // row. The committed-state unique index still contains the
+        // row (it hasn't been GC'd yet), so `index.find(&values)`
+        // returns the row_id; we then check `self.txn_versions` to
+        // see if that row_id has been locally deleted, and if so,
+        // treat the unique constraint as satisfied.
         self.version_store
             .for_each_unique_index(|index_name, index| {
                 // Get ALL columns this index is on
@@ -1048,25 +1058,59 @@ impl MVCCTable {
 
                 // Check if this value combination already exists in the index
                 let entries = index.find(&values)?;
-                if !entries.is_empty() {
-                    // Value already exists - constraint violation
-                    let col_names: Vec<&str> = column_ids
-                        .iter()
-                        .map(|&col_id| {
-                            schema
-                                .columns
-                                .get(col_id as usize)
-                                .map(|c| c.name.as_str())
-                                .unwrap_or("unknown")
-                        })
-                        .collect();
-                    return Err(Error::unique_constraint(
-                        index_name,
-                        col_names.join(", "),
-                        format!("{:?}", values),
-                    ));
+                if entries.is_empty() {
+                    return Ok(());
                 }
-                Ok(())
+
+                // MISSION 0850 R14-H1: filter out locally-deleted
+                // rows. If every entry returned by the index is
+                // locally deleted in this transaction, the unique
+                // constraint is satisfied (the conflicting rows are
+                // being deleted by this transaction, so the INSERT
+                // does not actually conflict with a live row).
+                let mut live_entries = Vec::with_capacity(entries.len());
+                {
+                    let txn_versions = self.txn_versions.read().unwrap();
+                    for entry in &entries {
+                        let local = txn_versions.get_local_version(entry.row_id);
+                        match local {
+                            Some(v) if v.is_deleted() => {
+                                // Locally deleted in this transaction —
+                                // skip this entry.
+                            }
+                            _ => {
+                                // Either no local version, or local
+                                // version is not a delete (e.g. an
+                                // update). Either way, this is a live
+                                // row that conflicts with the INSERT.
+                                live_entries.push(*entry);
+                            }
+                        }
+                    }
+                }
+
+                if live_entries.is_empty() {
+                    // All conflicting rows are locally deleted —
+                    // the unique constraint is satisfied.
+                    return Ok(());
+                }
+
+                // Value already exists - constraint violation
+                let col_names: Vec<&str> = column_ids
+                    .iter()
+                    .map(|&col_id| {
+                        schema
+                            .columns
+                            .get(col_id as usize)
+                            .map(|c| c.name.as_str())
+                            .unwrap_or("unknown")
+                    })
+                    .collect();
+                return Err(Error::unique_constraint(
+                    index_name,
+                    col_names.join(", "),
+                    format!("{:?}", values),
+                ));
             })
     }
 
