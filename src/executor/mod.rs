@@ -706,6 +706,42 @@ impl Executor {
         self.engine.begin_transaction()
     }
 
+    /// MISSION 0850 R15: Set the active transaction so that the
+    /// executor's DML paths (which check `self.active_transaction` for
+    /// the active tx) use the given transaction instead of beginning
+    /// their own. This is used by the API-level `Transaction::execute`
+    /// to delegate `INSERT ... ON DUPLICATE KEY UPDATE` to the
+    /// executor (which has the full UPSERT logic), without
+    /// duplicating that logic in the API. The caller MUST call
+    /// `take_active_transaction` or `clear_active_transaction` after
+    /// the DML completes to avoid leaking the tx into the next
+    /// statement. If a previous active transaction was set, it is
+    /// dropped (implicit rollback if uncommitted).
+    pub fn set_active_transaction(&self, tx: Box<dyn Transaction>) {
+        let mut active_tx = self.active_transaction.lock().unwrap();
+        *active_tx = Some(ActiveTransaction {
+            transaction: tx,
+            tables: FxHashMap::default(),
+        });
+    }
+
+    /// MISSION 0850 R15: Clear the active transaction set by
+    /// `set_active_transaction`. The caller retains ownership of the
+    /// underlying `Box<dyn Transaction>` (via `take_active_transaction`).
+    pub fn clear_active_transaction(&self) {
+        let mut active_tx = self.active_transaction.lock().unwrap();
+        *active_tx = None;
+    }
+
+    /// MISSION 0850 R15: Take ownership of the active transaction
+    /// back from the executor (after `set_active_transaction`).
+    /// Returns `None` if no active transaction is set. The executor's
+    /// active_transaction slot is cleared.
+    pub fn take_active_transaction(&self) -> Option<Box<dyn Transaction>> {
+        let mut active_tx = self.active_transaction.lock().unwrap();
+        active_tx.take().map(|state| state.transaction)
+    }
+
     /// Begin a new transaction with a specific isolation level
     pub fn begin_transaction_with_isolation(
         &self,

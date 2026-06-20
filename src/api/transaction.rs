@@ -85,6 +85,22 @@ impl Transaction {
         Ok(())
     }
 
+    /// MISSION 0850 R15: take the underlying storage transaction
+    /// out of the API wrapper (used by the UPSERT delegation path).
+    /// The caller is responsible for putting it back via
+    /// `restore_tx` or committing/rolling it back directly.
+    fn take_tx(&mut self) -> Result<Box<dyn StorageTransaction>> {
+        self.check_active()?;
+        // SAFETY: check_active ensures self.tx is Some.
+        Ok(self.tx.take().unwrap())
+    }
+
+    /// MISSION 0850 R15: put the underlying storage transaction back
+    /// into the API wrapper (used by the UPSERT delegation path).
+    fn restore_tx(&mut self, tx: Box<dyn StorageTransaction>) {
+        self.tx = Some(tx);
+    }
+
     /// Get the transaction ID
     pub fn id(&self) -> i64 {
         self.tx.as_ref().map(|tx| tx.id()).unwrap_or(-1)
@@ -264,6 +280,37 @@ impl Transaction {
                 let mut table = tx.get_table(table_name)?;
 
                 let mut total_inserted = 0i64;
+
+                // MISSION 0850 R15: `INSERT ... ON DUPLICATE KEY UPDATE`
+                // requires the executor's full UPSERT logic
+                // (`apply_on_duplicate_update`, FK validation, default
+                // expression evaluation, etc.). The shortcut path below
+                // only handles plain INSERT. For UPSERT, delegate to
+                // the executor by setting it as the active transaction
+                // and calling `execute_insert` — the executor's
+                // `execute_insert` checks `self.active_transaction` and
+                // reuses it (avoids the executor's auto-commit/begin
+                // branch). Then restore the original tx so subsequent
+                // statements on this API transaction keep using it.
+                if stmt.on_duplicate {
+                    // Take the tx out of the API transaction wrapper
+                    // (we have `tx` borrowed here, so use the wrapper's
+                    // method to extract it). The executor takes
+                    // ownership; we take it back after.
+                    let tx_box = self.take_tx()?;
+                    self.executor.set_active_transaction(tx_box);
+                    let result = self.executor.execute_insert(stmt, ctx);
+                    let tx_box = self.executor.take_active_transaction();
+                    // Always restore the active transaction slot to
+                    // None, even on error.
+                    self.executor.clear_active_transaction();
+                    if let Some(tx_box) = tx_box {
+                        self.restore_tx(tx_box);
+                    }
+                    let result = result?;
+                    total_inserted = result.rows_affected();
+                    return Ok(Box::new(ExecResult::with_rows_affected(total_inserted)));
+                }
 
                 for row_values in &stmt.values {
                     let mut values = Vec::with_capacity(row_values.len());
