@@ -243,3 +243,99 @@ fn test_tx_delete_insert_sees_prior_tx_committed_row() {
         .expect("Failed to count");
     assert_eq!(count, 1, "Expected exactly 1 row after tx2");
 }
+
+// ─── R15 regression test ────────────────────────────────────────────
+//
+// Surface: octo-adapter-whatsapp's `put_mutation_macs` (R15 fix):
+// replaced the per-iteration DELETE+INSERT with a single
+// `INSERT ... ON DUPLICATE KEY UPDATE` statement wrapped in a
+// single transaction. Stoolap's `Database::execute` (the path used
+// for top-level statements) had the UPSERT logic working, but the
+// `Transaction::execute` API had a fast-path INSERT handler that
+// called `table.insert()` directly and bypassed the executor's
+// UPSERT code. So the cipherocto test
+// `put_mutation_macs_is_idempotent_on_overwrite` would fail on the
+// second call (within a transaction) because the conflict raised
+// `UniqueConstraint` instead of triggering the UPDATE branch.
+//
+// This regression test pins the fix at the stoolap API level:
+// UPSERT must work inside `Transaction::execute` against a
+// COMPOSITE unique index (the same schema as the cipherocto
+// adapter).
+#[test]
+fn test_upsert_in_api_transaction_works_on_composite_unique() {
+    let db = Database::open("memory://r15_upsert_in_api_tx").expect("open db");
+    db.execute(
+        "CREATE TABLE app_state_mutation_macs (
+            name TEXT NOT NULL,
+            version BIGINT NOT NULL,
+            index_mac BLOB NOT NULL,
+            value_mac BLOB NOT NULL,
+            device_id BIGINT NOT NULL,
+            UNIQUE (name, index_mac, device_id)
+        )",
+        (),
+    )
+    .expect("create table");
+
+    // First transaction: plain INSERT, commit.
+    {
+        let mut tx = db.begin().expect("begin tx1");
+        tx.execute(
+            "INSERT INTO app_state_mutation_macs
+                (name, version, index_mac, value_mac, device_id)
+             VALUES ($1, $2, $3, $4, $5)",
+            (
+                "critical_block",
+                1i64,
+                stoolap::core::Value::blob(vec![0u8; 32]),
+                stoolap::core::Value::blob(vec![0x11u8; 32]),
+                42i64,
+            ),
+        )
+        .expect("first insert in tx1");
+        tx.commit().expect("commit tx1");
+    }
+
+    // Second transaction: UPSERT (the cipherocto R15 fix path).
+    // Must succeed and UPDATE the existing row.
+    {
+        let mut tx = db.begin().expect("begin tx2");
+        tx.execute(
+            "INSERT INTO app_state_mutation_macs
+                (name, version, index_mac, value_mac, device_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON DUPLICATE KEY UPDATE
+                 version = $2,
+                 value_mac = $4",
+            (
+                "critical_block",
+                2i64,
+                stoolap::core::Value::blob(vec![0u8; 32]),
+                stoolap::core::Value::blob(vec![0x22u8; 32]),
+                42i64,
+            ),
+        )
+        .expect("UPSERT in tx2 (R15 fix must apply ON DUPLICATE KEY UPDATE branch)");
+        tx.commit().expect("commit tx2");
+    }
+
+    // Verify: exactly one row, value_mac updated to 0x22.
+    let count: i64 = db
+        .query_one("SELECT COUNT(*) FROM app_state_mutation_macs", ())
+        .expect("count");
+    assert_eq!(count, 1, "UPSERT in tx must UPDATE, not INSERT a duplicate");
+
+    let value_mac: Vec<u8> = db
+        .query_one(
+            "SELECT value_mac FROM app_state_mutation_macs
+             WHERE name = $1 AND device_id = $2",
+            ("critical_block", 42i64),
+        )
+        .expect("query");
+    assert_eq!(
+        value_mac,
+        vec![0x22u8; 32],
+        "value_mac must be the new one (0x22) after UPSERT in tx"
+    );
+}
