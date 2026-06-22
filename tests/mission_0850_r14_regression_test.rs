@@ -76,7 +76,13 @@ fn test_upsert_on_composite_unique_index() {
         "INSERT INTO app_state_mutation_macs
          (name, version, index_mac, value_mac, device_id)
          VALUES ($1, $2, $3, $4, $5)",
-        ("critical_block", 1i64, vec![0u8; 32], vec![0xAAu8; 32], 1i64),
+        (
+            "critical_block",
+            1i64,
+            vec![0u8; 32],
+            vec![0xAAu8; 32],
+            1i64,
+        ),
     )
     .expect("Failed to insert initial row");
 
@@ -89,7 +95,13 @@ fn test_upsert_on_composite_unique_index() {
          ON DUPLICATE KEY UPDATE
            version = $2,
            value_mac = $4",
-        ("critical_block", 2i64, vec![0u8; 32], vec![0x55u8; 32], 1i64),
+        (
+            "critical_block",
+            2i64,
+            vec![0u8; 32],
+            vec![0x55u8; 32],
+            1i64,
+        ),
     )
     .expect("Failed to upsert row with same composite unique triple");
 
@@ -196,7 +208,13 @@ fn test_tx_delete_insert_sees_prior_tx_committed_row() {
         "INSERT INTO app_state_mutation_macs
          (name, version, index_mac, value_mac, device_id)
          VALUES ($1, $2, $3, $4, $5)",
-        ("critical_block", 1i64, vec![0u8; 32], vec![0xAAu8; 32], 1i64),
+        (
+            "critical_block",
+            1i64,
+            vec![0u8; 32],
+            vec![0xAAu8; 32],
+            1i64,
+        ),
     )
     .expect("Failed to insert in tx1");
     tx1.commit().expect("Failed to commit tx1");
@@ -218,7 +236,13 @@ fn test_tx_delete_insert_sees_prior_tx_committed_row() {
         "INSERT INTO app_state_mutation_macs
          (name, version, index_mac, value_mac, device_id)
          VALUES ($1, $2, $3, $4, $5)",
-        ("critical_block", 2i64, vec![0u8; 32], vec![0x55u8; 32], 1i64),
+        (
+            "critical_block",
+            2i64,
+            vec![0u8; 32],
+            vec![0x55u8; 32],
+            1i64,
+        ),
     )
     .expect("Failed to insert in tx2 (after delete, should not violate unique constraint)");
 

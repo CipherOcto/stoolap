@@ -861,9 +861,10 @@ impl Executor {
 
         let where_expr: Option<Box<dyn crate::storage::expression::Expression>> =
             if use_storage_filter {
-                stmt.where_clause
-                    .as_ref()
-                    .and_then(|expr| self.convert_where_to_storage_expr(expr, schema, columns, ctx).ok())
+                stmt.where_clause.as_ref().and_then(|expr| {
+                    self.convert_where_to_storage_expr(expr, schema, columns, ctx)
+                        .ok()
+                })
             } else {
                 None
             };
@@ -907,13 +908,17 @@ impl Executor {
                 let op_str = infix.operator.as_str();
                 match op_str {
                     "AND" => {
-                        let left = self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
-                        let right = self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
+                        let left =
+                            self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
+                        let right =
+                            self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
                         return Ok(Box::new(AndExpr::and(left, right)));
                     }
                     "OR" => {
-                        let left = self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
-                        let right = self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
+                        let left =
+                            self.convert_where_to_storage_expr(&infix.left, schema, columns, ctx)?;
+                        let right =
+                            self.convert_where_to_storage_expr(&infix.right, schema, columns, ctx)?;
                         return Ok(Box::new(OrExpr::or(left, right)));
                     }
                     "=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=" => {}

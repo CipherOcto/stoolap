@@ -549,22 +549,22 @@ impl Executor {
                         let pk_col = schema
                             .pk_column_index()
                             .map(|idx| schema.columns[idx].name.clone());
-                        let where_expr: Option<Box<dyn StorageExpr>> =
-                            if let Some(pk_name) = pk_col {
-                                let mut expr = ComparisonExpr::new(
-                                    pk_name,
-                                    crate::core::Operator::Eq,
-                                    Value::Integer(row_id),
-                                );
-                                expr.prepare_for_schema(&schema);
-                                Some(Box::new(expr))
-                            } else {
-                                // PK violation reported but no PK
-                                // exists — defensive fallback to
-                                // updating all rows (matches the
-                                // previous behavior).
-                                None
-                            };
+                        let where_expr: Option<Box<dyn StorageExpr>> = if let Some(pk_name) = pk_col
+                        {
+                            let mut expr = ComparisonExpr::new(
+                                pk_name,
+                                crate::core::Operator::Eq,
+                                Value::Integer(row_id),
+                            );
+                            expr.prepare_for_schema(&schema);
+                            Some(Box::new(expr))
+                        } else {
+                            // PK violation reported but no PK
+                            // exists — defensive fallback to
+                            // updating all rows (matches the
+                            // previous behavior).
+                            None
+                        };
                         self.apply_on_duplicate_update(
                             &mut table,
                             &schema,
@@ -2290,7 +2290,6 @@ impl Executor {
         stmt: &InsertStatement,
         ctx: &ExecutionContext,
     ) -> Result<()> {
-
         // OPTIMIZATION: Pre-compute column indices and types to avoid per-row linear search
         // Use cached column_index_map for O(1) lookups
         let col_map = schema.column_index_map();
@@ -2432,11 +2431,8 @@ impl Executor {
                 .get(col_idx)
                 .cloned()
                 .unwrap_or(Value::null_unknown());
-            let mut cmp = ComparisonExpr::new(
-                col_name.to_string(),
-                crate::core::Operator::Eq,
-                value,
-            );
+            let mut cmp =
+                ComparisonExpr::new(col_name.to_string(), crate::core::Operator::Eq, value);
             cmp.prepare_for_schema(schema);
             exprs.push(Box::new(cmp));
         }
