@@ -12,9 +12,16 @@
 //! cipherocto sync engine
 //!   └── Arc<dyn DatabaseSyncAdapter>
 //!        └── StoolapAdapter (this module)
-//!             └── Arc<parking_lot::Mutex<MVCCEngine>>
-//!                  └── stoolap::storage::mvcc::engine::MVCCEngine
+//!             └── parking_lot::Mutex<Arc<MVCCEngine>>
+//!                  └── Arc<MVCCEngine> (cheap to clone)
+//!                       └── stoolap::storage::mvcc::engine::MVCCEngine
 //! ```
+//!
+//! The `Mutex<Arc<MVCCEngine>>` design (Arc inside Mutex) means the Mutex
+//! protects the `Arc` itself (so we can lock to get a cheap clone of the
+//! Arc); the actual engine operations don't need a Mutex because
+//! `MVCCEngine` is `Send + Sync` (its internal state is behind
+//! `parking_lot::RwLock`).
 //!
 //! # TableId mapping
 //!
