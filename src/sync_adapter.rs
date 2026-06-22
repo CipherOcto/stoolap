@@ -69,7 +69,10 @@ pub struct StoolapAdapter {
 impl std::fmt::Debug for StoolapAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StoolapAdapter")
-            .field("mission_id", &format_args!("{:02x?}", &self.mission_id_value[..]))
+            .field(
+                "mission_id",
+                &format_args!("{:02x?}", &self.mission_id_value[..]),
+            )
             .field("node_id", &format_args!("{:02x?}", &self.node_id_value[..]))
             .finish()
     }
@@ -133,10 +136,7 @@ fn compute_table_id(table_name: &str) -> TableId {
 /// `None` if no table matches (which is a configuration error — the
 /// cipherocto sync engine is sending a `TableId` for a table the local
 /// DB doesn't have).
-fn find_table_name_by_id(
-    engine: &MVCCEngine,
-    table_id: TableId,
-) -> Option<String> {
+fn find_table_name_by_id(engine: &MVCCEngine, table_id: TableId) -> Option<String> {
     let tables = engine.list_table_names().ok()?;
     tables
         .into_iter()
@@ -144,17 +144,17 @@ fn find_table_name_by_id(
 }
 
 impl DatabaseSyncAdapter for StoolapAdapter {
-    fn read_wal_range(
-        &self,
-        from_lsn: Lsn,
-        to_lsn: Lsn,
-    ) -> Result<Vec<Vec<u8>>, SyncError> {
+    fn read_wal_range(&self, from_lsn: Lsn, to_lsn: Lsn) -> Result<Vec<Vec<u8>>, SyncError> {
         if from_lsn > to_lsn {
-            return Err(SyncError::InvalidLsnRange { from: from_lsn, to: to_lsn });
+            return Err(SyncError::InvalidLsnRange {
+                from: from_lsn,
+                to: to_lsn,
+            });
         }
-        self.engine.lock().read_wal_range(from_lsn, to_lsn).map_err(|e| {
-            SyncError::BackendNotReady(format!("read_wal_range failed: {}", e))
-        })
+        self.engine
+            .lock()
+            .read_wal_range(from_lsn, to_lsn)
+            .map_err(|e| SyncError::BackendNotReady(format!("read_wal_range failed: {}", e)))
     }
 
     fn current_lsn(&self) -> Result<Lsn, SyncError> {
@@ -259,10 +259,7 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             .write_snapshot_segment_to_file(&table_name, segment_index, payload)
             .map(|_| ())
             .map_err(|e| {
-                SyncError::BackendNotReady(format!(
-                    "write_snapshot_segment_to_file failed: {}",
-                    e
-                ))
+                SyncError::BackendNotReady(format!("write_snapshot_segment_to_file failed: {}", e))
             })
     }
 
@@ -279,23 +276,13 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             }
         };
         // Create a fresh snapshot for this table.
-        engine
-            .create_snapshot_for_table(&table_name)
-            .map_err(|e| {
-                SyncError::BackendNotReady(format!(
-                    "create_snapshot_for_table failed: {}",
-                    e
-                ))
-            })?;
+        engine.create_snapshot_for_table(&table_name).map_err(|e| {
+            SyncError::BackendNotReady(format!("create_snapshot_for_table failed: {}", e))
+        })?;
         // Return the new segment count.
-        engine
-            .snapshot_segment_count(&table_name)
-            .map_err(|e| {
-                SyncError::BackendNotReady(format!(
-                    "snapshot_segment_count failed: {}",
-                    e
-                ))
-            })
+        engine.snapshot_segment_count(&table_name).map_err(|e| {
+            SyncError::BackendNotReady(format!("snapshot_segment_count failed: {}", e))
+        })
     }
 
     fn mission_id(&self) -> Result<MissionId, SyncError> {
@@ -503,15 +490,25 @@ mod tests {
         let engine = Arc::new(MVCCEngine::in_memory());
         let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
         let err = adapter.read_snapshot_segment(0xDEADBEEF, 0).unwrap_err();
-        assert!(matches!(err, SyncError::SegmentNotFound { .. }), "got: {:?}", err);
+        assert!(
+            matches!(err, SyncError::SegmentNotFound { .. }),
+            "got: {:?}",
+            err
+        );
     }
 
     #[test]
     fn write_snapshot_segment_unknown_table_returns_segment_not_found() {
         let engine = Arc::new(MVCCEngine::in_memory());
         let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
-        let err = adapter.write_snapshot_segment(0xDEADBEEF, 0, b"x").unwrap_err();
-        assert!(matches!(err, SyncError::SegmentNotFound { .. }), "got: {:?}", err);
+        let err = adapter
+            .write_snapshot_segment(0xDEADBEEF, 0, b"x")
+            .unwrap_err();
+        assert!(
+            matches!(err, SyncError::SegmentNotFound { .. }),
+            "got: {:?}",
+            err
+        );
     }
 
     #[test]

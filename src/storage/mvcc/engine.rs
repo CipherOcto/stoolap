@@ -3259,7 +3259,10 @@ impl std::fmt::Debug for MVCCEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MVCCEngine")
             .field("path", &self.path)
-            .field("is_open", &self.open.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "is_open",
+                &self.open.load(std::sync::atomic::Ordering::Relaxed),
+            )
             .field("current_lsn", &self.current_wal_lsn())
             .finish()
     }
@@ -3368,8 +3371,12 @@ impl MVCCEngine {
             )));
         }
 
-        let wal_entry =
-            crate::storage::mvcc::wal_manager::WALEntry::decode(lsn, previous_lsn, flags, data_portion)?;
+        let wal_entry = crate::storage::mvcc::wal_manager::WALEntry::decode(
+            lsn,
+            previous_lsn,
+            flags,
+            data_portion,
+        )?;
         self.apply_wal_entry(wal_entry)
     }
 
@@ -3403,20 +3410,20 @@ impl MVCCEngine {
             _ => return Ok(Vec::new()), // No persistence, no WAL
         };
         let mut entries: Vec<Vec<u8>> = Vec::new();
-        pm.replay_two_phase(from_lsn, |entry: crate::storage::mvcc::wal_manager::WALEntry| {
-            if entry.lsn <= to_lsn {
-                entries.push(entry.encode());
-            }
-            Ok(())
-        })?;
+        pm.replay_two_phase(
+            from_lsn,
+            |entry: crate::storage::mvcc::wal_manager::WALEntry| {
+                if entry.lsn <= to_lsn {
+                    entries.push(entry.encode());
+                }
+                Ok(())
+            },
+        )?;
         Ok(entries)
     }
 
     /// Create a per-table snapshot. Mirrors `create_snapshot` for one table.
-    pub fn create_snapshot_for_table(
-        &self,
-        table_name: &str,
-    ) -> Result<std::path::PathBuf> {
+    pub fn create_snapshot_for_table(&self, table_name: &str) -> Result<std::path::PathBuf> {
         if !self.is_open() {
             return Err(Error::EngineNotOpen);
         }
@@ -3460,11 +3467,8 @@ impl MVCCEngine {
             .clone();
         drop(stores);
 
-        let mut writer = super::snapshot::SnapshotWriter::with_source_lsn(
-            &temp_path,
-            snapshot_lsn,
-        )
-        .map_err(|e| Error::internal(format!("failed to create snapshot writer: {}", e)))?;
+        let mut writer = super::snapshot::SnapshotWriter::with_source_lsn(&temp_path, snapshot_lsn)
+            .map_err(|e| Error::internal(format!("failed to create snapshot writer: {}", e)))?;
 
         writer
             .write_schema(&schema)
@@ -3512,10 +3516,7 @@ impl MVCCEngine {
     }
 
     /// Return the list of snapshot file paths for a table, sorted by name.
-    pub fn snapshot_segment_paths(
-        &self,
-        table_name: &str,
-    ) -> Result<Vec<std::path::PathBuf>> {
+    pub fn snapshot_segment_paths(&self, table_name: &str) -> Result<Vec<std::path::PathBuf>> {
         if !self.is_open() {
             return Err(Error::EngineNotOpen);
         }
@@ -3594,8 +3595,7 @@ impl MVCCEngine {
 
     /// Read a raw snapshot segment file.
     pub fn read_snapshot_segment_file(&self, path: &std::path::Path) -> Result<Vec<u8>> {
-        std::fs::read(path)
-            .map_err(|e| Error::internal(format!("failed to read snapshot: {}", e)))
+        std::fs::read(path).map_err(|e| Error::internal(format!("failed to read snapshot: {}", e)))
     }
 
     /// List all table names in the engine. Case-preserved (uses the
