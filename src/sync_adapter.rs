@@ -64,13 +64,13 @@ pub struct StoolapAdapter {
     /// Accessed via the `DatabaseSyncAdapter::node_id` trait method.
     node_id_value: NodeId,
     /// Cached reverse-lookup table: `TableId → table_name`. Populated lazily
-    /// on first use and invalidated when the table list changes (the cipherocto
-    /// sync engine calls `read_snapshot_segment` etc. many times per sync
-    /// session, so caching avoids O(n²) total work).
+    /// on first use and invalidated when the engine's schema_epoch changes
+    /// (which happens on CREATE/ALTER/DROP TABLE).
     ///
     /// `None` means the cache hasn't been populated yet (first call).
-    /// `Some(HashMap)` means the cache is populated.
-    table_id_cache: Mutex<Option<std::collections::HashMap<TableId, String>>>,
+    /// `Some((epoch, HashMap))` means the cache is populated for that epoch.
+    /// If the current epoch != cached epoch, the cache is rebuilt.
+    table_id_cache: Mutex<Option<(u64, std::collections::HashMap<TableId, String>)>>,
 }
 
 impl std::fmt::Debug for StoolapAdapter {
@@ -146,29 +146,37 @@ fn compute_table_id(table_name: &str) -> TableId {
 /// Reverse-lookup: find the table name for a given `TableId`.
 ///
 /// Uses a lazy-initialized cache (`table_id_cache`) to avoid O(n) scans
-/// on every call. The cache is populated on first use and reused for
-/// subsequent calls. The cipherocto sync engine typically calls this
-/// O(log n) times per table per sync session (Merkle tree descent),
-/// so caching turns O(n²) total work into O(n) + O(log n) per session.
+/// on every call. The cache is tagged with the engine's `schema_epoch` —
+/// if the epoch changes (CREATE/ALTER/DROP TABLE), the cache is rebuilt.
+/// This ensures the cache stays correct across schema changes mid-session.
+///
+/// The cipherocto sync engine typically calls this O(log n) times per
+/// table per sync session (Merkle tree descent), so caching turns O(n²)
+/// total work into O(n) + O(log n) per session.
 fn find_table_name_by_id(
     engine_arc: &Arc<MVCCEngine>,
-    cache: &Mutex<Option<std::collections::HashMap<TableId, String>>>,
+    cache: &Mutex<Option<(u64, std::collections::HashMap<TableId, String>)>>,
     table_id: TableId,
 ) -> Option<String> {
     // Fast path: check the cache.
     {
         let guard = cache.lock();
-        if let Some(map) = guard.as_ref() {
-            if let Some(name) = map.get(&table_id) {
-                return Some(name.clone());
+        if let Some((epoch, map)) = guard.as_ref() {
+            let current_epoch = engine_arc.schema_epoch();
+            if *epoch == current_epoch {
+                if let Some(name) = map.get(&table_id) {
+                    return Some(name.clone());
+                }
+                // Cache is populated and current, but table_id not found
+                // → return None (the table genuinely doesn't exist; no
+                // point re-scanning).
+                return None;
             }
-            // Cache is populated but table_id not found → return None
-            // (the table genuinely doesn't exist; no point re-scanning).
-            return None;
+            // Epoch mismatch — fall through to rebuild.
         }
     }
 
-    // Slow path: cache is empty, build it.
+    // Slow path: cache is empty or stale, rebuild it.
     let engine = engine_arc.as_ref();
     let tables = engine.list_table_names().ok()?;
     let mut map = std::collections::HashMap::with_capacity(tables.len());
@@ -179,7 +187,8 @@ fn find_table_name_by_id(
         map.entry(id).or_insert_with(|| name.clone());
     }
     let result = map.get(&table_id).cloned();
-    *cache.lock() = Some(map);
+    let epoch = engine.schema_epoch();
+    *cache.lock() = Some((epoch, map));
     result
 }
 
@@ -219,8 +228,8 @@ impl DatabaseSyncAdapter for StoolapAdapter {
                 crate::storage::mvcc::engine::ApplyWalEntryError::Decode(_) => {
                     SyncError::DecryptionFailed
                 }
-                crate::storage::mvcc::engine::ApplyWalEntryError::Apply(err) => {
-                    SyncError::BackendNotReady(format!("WAL apply failed: {err}"))
+                crate::storage::mvcc::engine::ApplyWalEntryError::Apply(msg) => {
+                    SyncError::BackendNotReady(format!("WAL apply failed: {msg}"))
                 }
             })
     }
@@ -258,16 +267,12 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             return Ok(None);
         }
         let path = &paths[segment_index as usize];
-        // Read the source_lsn from the snapshot file's header (per the
-        // snapshot file format at src/storage/mvcc/snapshot.rs:37-168).
-        // Fall back to the current LSN if the header is unreadable or
-        // has a bad magic (the cipherocto sync engine treats this as
-        // "unknown watermark" and may fetch WAL entries to be safe).
-        let lsn_watermark = engine_arc
-            .read_snapshot_source_lsn(path)
-            .unwrap_or_else(|_| engine_arc.current_wal_lsn());
-        let payload = match engine_arc.read_snapshot_segment_file(path) {
-            Ok(p) => p,
+        // Read the source_lsn AND the payload from a single file open.
+        // The source_lsn is at offset 28 in the 64-byte header; the
+        // payload is the entire file (the cipherocto sync engine's
+        // SegmentIndexer BLAKE3-hashes the full file).
+        let (lsn_watermark, payload) = match engine_arc.read_snapshot_segment_with_watermark(path) {
+            Ok(r) => r,
             Err(e) => {
                 return Err(SyncError::BackendNotReady(format!(
                     "read_snapshot_segment_file failed: {}",
@@ -512,6 +517,31 @@ mod tests {
         // Second call: uses the cache.
         let r2 = find_table_name_by_id(&engine, &cache, 0xDEADBEEF);
         assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn cache_invalidates_on_schema_epoch_change() {
+        // The cache is tagged with the engine's schema_epoch. If the
+        // epoch changes (e.g., a new table is created), the cache is
+        // rebuilt on the next call.
+        let engine = Arc::new(MVCCEngine::in_memory());
+        let cache = Mutex::new(None);
+
+        // First call: populates the cache.
+        let _ = find_table_name_by_id(&engine, &cache, 0xDEADBEEF);
+        let initial_epoch = cache.lock().as_ref().map(|(e, _)| *e).unwrap();
+
+        // Simulate a schema change by directly incrementing the epoch
+        // (we can't create a table without an open engine in the test).
+        engine.schema_epoch_inc_for_test();
+
+        // The cache epoch should be stale now.
+        assert!(initial_epoch < engine.schema_epoch());
+
+        // Next call: cache should be rebuilt with the new epoch.
+        let _ = find_table_name_by_id(&engine, &cache, 0xDEADBEEF);
+        let new_epoch = cache.lock().as_ref().map(|(e, _)| *e).unwrap();
+        assert_eq!(new_epoch, engine.schema_epoch());
     }
 
     #[test]

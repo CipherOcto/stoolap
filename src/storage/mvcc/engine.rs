@@ -3266,6 +3266,10 @@ impl Engine for MVCCEngine {
 /// (per RFC-0862 §Error Handling: the bytes failed to validate, analogous
 /// to an AEAD decryption failure) and `Apply` to `SyncError::BackendNotReady`
 /// (a transient error that the engine retries with backoff).
+///
+/// The `Apply` variant carries a `String` (not the internal `Error` type)
+/// to decouple the sync adapter from the internal error model — the
+/// adapter only needs to know that the apply failed, not why.
 #[derive(Debug, thiserror::Error)]
 pub enum ApplyWalEntryError {
     /// The bytes failed to decode (bad magic, bad version, bad CRC,
@@ -3274,7 +3278,7 @@ pub enum ApplyWalEntryError {
     Decode(String),
     /// The bytes decoded successfully but the underlying apply failed.
     #[error("WAL entry apply failed: {0}")]
-    Apply(Error),
+    Apply(String),
 }
 
 /// Monotonic counter for snapshot filename uniqueness.
@@ -3335,7 +3339,7 @@ impl MVCCEngine {
         };
 
         if !self.is_open() {
-            return Err(ApplyWalEntryError::Apply(Error::EngineNotOpen));
+            return Err(ApplyWalEntryError::Apply("engine not open".into()));
         }
 
         if entry.len() < (WAL_HEADER_SIZE as usize) + 4 {
@@ -3405,7 +3409,7 @@ impl MVCCEngine {
         )
         .map_err(|e| ApplyWalEntryError::Decode(format!("WALEntry::decode failed: {e}")))?;
         self.apply_wal_entry(wal_entry)
-            .map_err(ApplyWalEntryError::Apply)
+            .map_err(|e| ApplyWalEntryError::Apply(e.to_string()))
     }
 
     /// Return the current WAL LSN (highest committed LSN).
@@ -3644,6 +3648,23 @@ impl MVCCEngine {
         std::fs::read(path).map_err(|e| Error::internal(format!("failed to read snapshot: {}", e)))
     }
 
+    /// Read a snapshot segment file and extract the source_lsn from its header.
+    ///
+    /// Single file open — returns `(lsn_watermark, payload)` where
+    /// `lsn_watermark` is parsed from the header (offset 28) and
+    /// `payload` is the full file bytes. If the header is unreadable or
+    /// has a bad magic, `lsn_watermark` falls back to the current LSN.
+    pub fn read_snapshot_segment_with_watermark(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<(u64, Vec<u8>)> {
+        let payload = self.read_snapshot_segment_file(path)?;
+        let lsn_watermark = self
+            .read_snapshot_source_lsn(path)
+            .unwrap_or_else(|_| self.current_wal_lsn());
+        Ok((lsn_watermark, payload))
+    }
+
     /// Read the `source_lsn` from a snapshot file's 64-byte header.
     ///
     /// The snapshot header layout is:
@@ -3687,6 +3708,25 @@ impl MVCCEngine {
     pub fn list_table_names(&self) -> Result<Vec<String>> {
         let schemas = self.schemas.read().unwrap();
         Ok(schemas.values().map(|s| s.table_name.clone()).collect())
+    }
+
+    /// Return the current schema epoch. Incremented on every
+    /// CREATE/ALTER/DROP TABLE. Used by the sync_adapter to invalidate
+    /// its table_id → table_name cache when the schema changes.
+    ///
+    /// The epoch starts at 0 and is monotonically increasing. Callers
+    /// can compare against a previously-observed value to detect changes.
+    pub fn schema_epoch(&self) -> u64 {
+        self.schema_epoch.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Test-only: increment the schema epoch by 1. Used by the
+    /// sync_adapter's cache invalidation test to simulate a schema
+    /// change without needing to open the engine.
+    #[cfg(test)]
+    pub fn schema_epoch_inc_for_test(&self) {
+        self.schema_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
     }
 
     /// Compute the `TableId` for a table name.
