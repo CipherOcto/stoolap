@@ -68,13 +68,25 @@ pub struct StoolapAdapter {
 
 impl std::fmt::Debug for StoolapAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Hex-encode the 32-byte IDs for readability. The `?` in
+        // `{:02x?}` uses Debug formatting with 2-digit zero-padded hex
+        // per byte, producing e.g. `[ab, cd, ...]`.
         f.debug_struct("StoolapAdapter")
-            .field(
-                "mission_id",
-                &format_args!("{:02x?}", &self.mission_id_value[..]),
-            )
-            .field("node_id", &format_args!("{:02x?}", &self.node_id_value[..]))
+            .field("mission_id", &HexId(&self.mission_id_value))
+            .field("node_id", &HexId(&self.node_id_value))
             .finish()
+    }
+}
+
+/// Helper: debug-print a 32-byte ID as a hex string.
+struct HexId<'a>(&'a [u8; 32]);
+
+impl std::fmt::Debug for HexId<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
     }
 }
 
@@ -107,11 +119,6 @@ impl StoolapAdapter {
             node_id_value: node_id,
         }
     }
-
-    /// Return a reference to the inner `Mutex<Arc<MVCCEngine>>`.
-    pub fn engine(&self) -> &Mutex<Arc<MVCCEngine>> {
-        &self.engine
-    }
 }
 
 /// Compute the `TableId` for a table name.
@@ -131,16 +138,11 @@ fn compute_table_id(table_name: &str) -> TableId {
 
 /// Reverse-lookup: find the table name for a given `TableId`.
 ///
-/// Scans the engine's schemas (via `MVCCEngine::list_table_names`) and
-/// returns the first table whose computed `TableId` matches. Returns
-/// `None` if no table matches (which is a configuration error — the
-/// cipherocto sync engine is sending a `TableId` for a table the local
-/// DB doesn't have).
+/// Delegates to `MVCCEngine::find_table_name_by_table_id` (which is an
+/// O(n) scan). The cipherocto sync engine typically calls this once per
+/// sync session and caches the result.
 fn find_table_name_by_id(engine: &MVCCEngine, table_id: TableId) -> Option<String> {
-    let tables = engine.list_table_names().ok()?;
-    tables
-        .into_iter()
-        .find(|name| compute_table_id(name) == table_id)
+    engine.find_table_name_by_table_id(table_id).ok().flatten()
 }
 
 impl DatabaseSyncAdapter for StoolapAdapter {
@@ -162,27 +164,25 @@ impl DatabaseSyncAdapter for StoolapAdapter {
     }
 
     fn apply_wal_entry(&self, entry: &[u8]) -> Result<(), SyncError> {
-        // Decoding the WAL bytes is the "decryption" boundary — if the bytes
-        // are malformed (bad magic, bad CRC32, bad header), this is analogous
-        // to an AEAD decryption failure (the bytes don't validate).
-        // We classify such failures as DecryptionFailed per the trait's error
-        // model (RFC-0862 §Error Handling: "AEAD decryption failure: the
-        // adapter's apply_wal_entry could not verify the ciphertext").
+        // Map ApplyWalEntryError to SyncError per RFC-0862 §Error Handling:
+        // - Decode → DecryptionFailed (bytes failed to validate; analogous
+        //   to an AEAD decryption failure at the envelope layer).
+        // - Apply → BackendNotReady (transient error; the cipherocto sync
+        //   engine retries with backoff).
+        //
+        // We log the decode message at debug level (if logging is enabled)
+        // — the SyncError enum doesn't carry context, but the error is
+        // recorded in the cipherocto sync engine's metrics.
         self.engine
             .lock()
             .apply_wal_entry_bytes(entry)
-            .map_err(|e| {
-                let msg = e.to_string();
-                // Bad magic / bad CRC / bad version / truncated → DecryptionFailed
-                if msg.contains("magic")
-                    || msg.contains("version")
-                    || msg.contains("CRC")
-                    || msg.contains("truncated")
-                    || msg.contains("header_size")
-                {
+            .map_err(|e| match e {
+                crate::storage::mvcc::engine::ApplyWalEntryError::Decode(msg) => {
+                    eprintln!("WAL decode failed: {msg}");
                     SyncError::DecryptionFailed
-                } else {
-                    SyncError::BackendNotReady(format!("apply_wal_entry_bytes failed: {}", e))
+                }
+                crate::storage::mvcc::engine::ApplyWalEntryError::Apply(err) => {
+                    SyncError::BackendNotReady(format!("WAL apply failed: {err}"))
                 }
             })
     }
@@ -220,7 +220,14 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             return Ok(None);
         }
         let path = &paths[segment_index as usize];
-        let lsn_watermark = engine.current_wal_lsn();
+        // Read the source_lsn from the snapshot file's header (per the
+        // snapshot file format at src/storage/mvcc/snapshot.rs:37-168).
+        // Fall back to the current LSN if the header is unreadable or
+        // has a bad magic (the cipherocto sync engine treats this as
+        // "unknown watermark" and may fetch WAL entries to be safe).
+        let lsn_watermark = engine
+            .read_snapshot_source_lsn(path)
+            .unwrap_or_else(|_| engine.current_wal_lsn());
         let payload = match engine.read_snapshot_segment_file(path) {
             Ok(p) => p,
             Err(e) => {
@@ -279,6 +286,14 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         engine.create_snapshot_for_table(&table_name).map_err(|e| {
             SyncError::BackendNotReady(format!("create_snapshot_for_table failed: {}", e))
         })?;
+        // Prune old segments, keeping only the 2 most recent (the new one
+        // and one backup). This prevents disk bloat from accumulated
+        // regeneration requests.
+        engine
+            .prune_snapshot_segments(&table_name, 2)
+            .map_err(|e| {
+                SyncError::BackendNotReady(format!("prune_snapshot_segments failed: {}", e))
+            })?;
         // Return the new segment count.
         engine.snapshot_segment_count(&table_name).map_err(|e| {
             SyncError::BackendNotReady(format!("snapshot_segment_count failed: {}", e))

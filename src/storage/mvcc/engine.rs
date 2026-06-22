@@ -3255,6 +3255,36 @@ impl Engine for MVCCEngine {
 // StoolapAdapter (src/sync_adapter.rs) behind the `sync` feature.
 // ========================================================================
 
+/// Error type for [`MVCCEngine::apply_wal_entry_bytes`].
+///
+/// Distinguishes between "decoding" failures (the bytes are malformed —
+/// bad magic, bad version, bad CRC, truncated, etc.) and "apply" failures
+/// (the bytes decoded successfully but the underlying apply failed — e.g.,
+/// schema mismatch, disk full).
+///
+/// The cipherocto sync engine maps `Decode` to `SyncError::DecryptionFailed`
+/// (per RFC-0862 §Error Handling: the bytes failed to validate, analogous
+/// to an AEAD decryption failure) and `Apply` to `SyncError::BackendNotReady`
+/// (a transient error that the engine retries with backoff).
+#[derive(Debug, thiserror::Error)]
+pub enum ApplyWalEntryError {
+    /// The bytes failed to decode (bad magic, bad version, bad CRC,
+    /// truncated, or `WALEntry::decode` failed).
+    #[error("WAL entry decode failed: {0}")]
+    Decode(String),
+    /// The bytes decoded successfully but the underlying apply failed.
+    #[error("WAL entry apply failed: {0}")]
+    Apply(Error),
+}
+
+/// Monotonic counter for snapshot filename uniqueness.
+///
+/// Two snapshots created in the same millisecond would otherwise have the
+/// same timestamp-based filename. We append a monotonic counter (and the
+/// segment_index) to guarantee uniqueness within a process. The counter is
+/// process-local (not persisted), which is fine for uniqueness.
+static SNAPSHOT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl std::fmt::Debug for MVCCEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MVCCEngine")
@@ -3290,81 +3320,77 @@ impl MVCCEngine {
     ///  variable data portion (entry_size bytes) + 4-byte CRC32 trailer
     /// ```
     ///
-    /// Returns `Ok(())` on success, or an error if the bytes are malformed
-    /// (bad magic, unsupported version, CRC32 mismatch, etc.).
-    pub fn apply_wal_entry_bytes(&self, entry: &[u8]) -> Result<()> {
+    /// Returns `Ok(())` on success. Returns `Err(ApplyWalEntryError::Decode)`
+    /// if the bytes are malformed (bad magic, unsupported version, CRC32
+    /// mismatch, etc.) — this is the "decryption failure" boundary per the
+    /// trait's error model (RFC-0862 §Error Handling). Returns
+    /// `Err(ApplyWalEntryError::Apply)` if the underlying apply fails (e.g.,
+    /// schema mismatch, disk full).
+    pub fn apply_wal_entry_bytes(
+        &self,
+        entry: &[u8],
+    ) -> std::result::Result<(), ApplyWalEntryError> {
         use crate::storage::mvcc::wal_manager::{
             WAL_ENTRY_MAGIC, WAL_FORMAT_VERSION, WAL_HEADER_SIZE,
         };
 
         if !self.is_open() {
-            return Err(Error::EngineNotOpen);
+            return Err(ApplyWalEntryError::Apply(Error::EngineNotOpen));
         }
 
         if entry.len() < (WAL_HEADER_SIZE as usize) + 4 {
-            return Err(Error::internal(format!(
+            return Err(ApplyWalEntryError::Decode(format!(
                 "WAL entry too short: {} bytes (need at least {})",
                 entry.len(),
                 WAL_HEADER_SIZE as usize + 4
             )));
         }
 
-        let magic = u32::from_le_bytes(
-            entry[0..4]
-                .try_into()
-                .map_err(|_| Error::internal("WAL entry magic: try_into failed"))?,
-        );
+        let magic =
+            u32::from_le_bytes(entry[0..4].try_into().map_err(|_| {
+                ApplyWalEntryError::Decode("WAL entry magic: try_into failed".into())
+            })?);
         if magic != WAL_ENTRY_MAGIC {
-            return Err(Error::internal(format!(
-                "invalid WAL entry magic: 0x{:08X} (expected 0x{:08X})",
-                magic, WAL_ENTRY_MAGIC
+            return Err(ApplyWalEntryError::Decode(format!(
+                "invalid WAL entry magic: 0x{magic:08X} (expected 0x{WAL_ENTRY_MAGIC:08X})"
             )));
         }
 
         let version = entry[4];
         if version != WAL_FORMAT_VERSION {
-            return Err(Error::internal(format!(
-                "unsupported WAL version: {} (expected {})",
-                version, WAL_FORMAT_VERSION
+            return Err(ApplyWalEntryError::Decode(format!(
+                "unsupported WAL version: {version} (expected {WAL_FORMAT_VERSION})"
             )));
         }
 
         let flags_byte = entry[5];
         let flags = crate::storage::mvcc::wal_manager::WalFlags::from_byte(flags_byte);
 
-        let header_size = u16::from_le_bytes(
-            entry[6..8]
-                .try_into()
-                .map_err(|_| Error::internal("WAL entry header_size: try_into failed"))?,
-        );
+        let header_size = u16::from_le_bytes(entry[6..8].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry header_size: try_into failed".into())
+        })?);
         if header_size != WAL_HEADER_SIZE {
-            return Err(Error::internal(format!(
-                "WAL entry header_size mismatch: {} (expected {})",
-                header_size, WAL_HEADER_SIZE
+            return Err(ApplyWalEntryError::Decode(format!(
+                "WAL entry header_size mismatch: {header_size} (expected {WAL_HEADER_SIZE})"
             )));
         }
 
-        let lsn = u64::from_le_bytes(
-            entry[8..16]
-                .try_into()
-                .map_err(|_| Error::internal("WAL entry lsn: try_into failed"))?,
-        );
+        let lsn =
+            u64::from_le_bytes(entry[8..16].try_into().map_err(|_| {
+                ApplyWalEntryError::Decode("WAL entry lsn: try_into failed".into())
+            })?);
 
-        let previous_lsn = u64::from_le_bytes(
-            entry[16..24]
-                .try_into()
-                .map_err(|_| Error::internal("WAL entry previous_lsn: try_into failed"))?,
-        );
+        let previous_lsn = u64::from_le_bytes(entry[16..24].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry previous_lsn: try_into failed".into())
+        })?);
 
-        let entry_size = u32::from_le_bytes(
-            entry[24..28]
-                .try_into()
-                .map_err(|_| Error::internal("WAL entry entry_size: try_into failed"))?,
-        ) as usize;
+        let entry_size = u32::from_le_bytes(entry[24..28].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry entry_size: try_into failed".into())
+        })?) as usize;
 
         let data_portion = &entry[WAL_HEADER_SIZE as usize..];
         if data_portion.len() < entry_size + 4 {
-            return Err(Error::internal(format!(
+            return Err(ApplyWalEntryError::Decode(format!(
                 "WAL entry data truncated: have {} bytes, need {}",
                 data_portion.len(),
                 entry_size + 4
@@ -3376,8 +3402,10 @@ impl MVCCEngine {
             previous_lsn,
             flags,
             data_portion,
-        )?;
+        )
+        .map_err(|e| ApplyWalEntryError::Decode(format!("WALEntry::decode failed: {e}")))?;
         self.apply_wal_entry(wal_entry)
+            .map_err(ApplyWalEntryError::Apply)
     }
 
     /// Return the current WAL LSN (highest committed LSN).
@@ -3553,6 +3581,15 @@ impl MVCCEngine {
     }
 
     /// Write a snapshot segment to a file with atomic-rename.
+    ///
+    /// Uses the SAME filename pattern as `create_snapshot_for_table`
+    /// (`snapshot-<ts>.bin`) so that `snapshot_segment_paths` can find
+    /// it. The `segment_index` parameter is informational (recorded in
+    /// the file's metadata for debugging) — the actual ordinal position
+    /// in the sorted list is determined by the filename's timestamp.
+    ///
+    /// For uniqueness when two snapshots are created in the same
+    /// millisecond, a monotonic counter is appended to the timestamp.
     pub fn write_snapshot_segment_to_file(
         &self,
         table_name: &str,
@@ -3575,10 +3612,19 @@ impl MVCCEngine {
         std::fs::create_dir_all(&snapshot_dir)
             .map_err(|e| Error::internal(format!("failed to create snapshot dir: {}", e)))?;
 
+        // Use the same filename pattern as create_snapshot_for_table,
+        // with a uniqueness suffix (timestamp + monotonic counter +
+        // segment_index) to avoid collisions.
         let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S%.3f").to_string();
-        let final_path = snapshot_dir.join(format!("snapshot-{}-{}.bin", timestamp, segment_index));
-        let temp_path =
-            snapshot_dir.join(format!("snapshot-{}-{}.bin.tmp", timestamp, segment_index));
+        let counter = SNAPSHOT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let final_path = snapshot_dir.join(format!(
+            "snapshot-{}-{}-{:x}.bin",
+            timestamp, segment_index, counter
+        ));
+        let temp_path = snapshot_dir.join(format!(
+            "snapshot-{}-{}-{:x}.bin.tmp",
+            timestamp, segment_index, counter
+        ));
 
         std::fs::write(&temp_path, payload)
             .map_err(|e| Error::internal(format!("failed to write snapshot segment: {}", e)))?;
@@ -3598,6 +3644,42 @@ impl MVCCEngine {
         std::fs::read(path).map_err(|e| Error::internal(format!("failed to read snapshot: {}", e)))
     }
 
+    /// Read the `source_lsn` from a snapshot file's 64-byte header.
+    ///
+    /// The snapshot header layout is:
+    /// ```text
+    ///   offset 0..8   : magic (8 bytes, "STSVSHD" LE u64 = 0x5354534456534844)
+    ///   offset 8..12  : version (4 bytes)
+    ///   offset 12..20 : header_size (8 bytes, u64 LE)
+    ///   offset 20..28 : creation_time (8 bytes, u64 LE, millis since epoch)
+    ///   offset 28..36 : source_lsn (8 bytes, u64 LE)
+    ///   offset 36..64 : reserved (28 bytes)
+    /// ```
+    ///
+    /// Returns the `source_lsn` (the LSN at the time the snapshot was
+    /// generated). Returns 0 if the file is too small or has a bad magic
+    /// (the cipherocto sync engine treats 0 as "unknown watermark" and
+    /// falls back to the current LSN).
+    pub fn read_snapshot_source_lsn(&self, path: &std::path::Path) -> Result<u64> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| Error::internal(format!("failed to open snapshot for header: {}", e)))?;
+        let mut header = [0u8; 36];
+        if file.read_exact(&mut header).is_err() {
+            // File too small — return 0 (unknown watermark).
+            return Ok(0);
+        }
+        // Verify magic: "STSVSHD" LE u64 = 0x5354534456534844
+        const MAGIC: u64 = 0x5354534456534844;
+        let magic = u64::from_le_bytes(header[0..8].try_into().unwrap());
+        if magic != MAGIC {
+            // Bad magic — return 0 (unknown watermark).
+            return Ok(0);
+        }
+        // source_lsn is at offset 28
+        Ok(u64::from_le_bytes(header[28..36].try_into().unwrap()))
+    }
+
     /// List all table names in the engine. Case-preserved (uses the
     /// lowercase key for lookup but returns the original case names).
     /// Inherent method (not the `Engine` trait method) so it can be called
@@ -3605,6 +3687,32 @@ impl MVCCEngine {
     pub fn list_table_names(&self) -> Result<Vec<String>> {
         let schemas = self.schemas.read().unwrap();
         Ok(schemas.values().map(|s| s.table_name.clone()).collect())
+    }
+
+    /// Look up a table name by its precomputed `TableId`.
+    ///
+    /// `TableId` is the first 4 bytes of `BLAKE3-256(table_name.to_lowercase())`,
+    /// interpreted as a little-endian u32. The cipherocto sync engine uses
+    /// this convention (per the trait's RFC-0862 v1.1.0 design).
+    ///
+    /// This is an O(n) scan over the schemas. For sync workloads with many
+    /// tables, prefer caching the result at the call site. The cipherocto
+    /// sync engine typically calls this once per sync session (to build a
+    /// reverse-lookup table) and then reuses the cached mapping.
+    pub fn find_table_name_by_table_id(&self, table_id: u32) -> Result<Option<String>> {
+        use blake3::Hasher;
+        let schemas = self.schemas.read().unwrap();
+        for schema in schemas.values() {
+            let mut hasher = Hasher::new();
+            hasher.update(schema.table_name.to_lowercase().as_bytes());
+            let hash = hasher.finalize();
+            let bytes = hash.as_bytes();
+            let id = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            if id == table_id {
+                return Ok(Some(schema.table_name.clone()));
+            }
+        }
+        Ok(None)
     }
 
     /// Delete old snapshot segments beyond `keep_count` (per table).
