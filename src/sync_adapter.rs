@@ -376,7 +376,8 @@ pub fn table_id_for_name(table_name: &str) -> TableId {
 }
 
 /// Helper: read a snapshot segment by table name (for debugging and testing).
-pub fn read_snapshot_segment_by_name(
+#[cfg(test)]
+pub(crate) fn read_snapshot_segment_by_name(
     engine: &MVCCEngine,
     table_name: &str,
     segment_index: SegmentIndex,
