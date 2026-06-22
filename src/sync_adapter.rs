@@ -162,10 +162,29 @@ impl DatabaseSyncAdapter for StoolapAdapter {
     }
 
     fn apply_wal_entry(&self, entry: &[u8]) -> Result<(), SyncError> {
+        // Decoding the WAL bytes is the "decryption" boundary — if the bytes
+        // are malformed (bad magic, bad CRC32, bad header), this is analogous
+        // to an AEAD decryption failure (the bytes don't validate).
+        // We classify such failures as DecryptionFailed per the trait's error
+        // model (RFC-0862 §Error Handling: "AEAD decryption failure: the
+        // adapter's apply_wal_entry could not verify the ciphertext").
         self.engine
             .lock()
             .apply_wal_entry_bytes(entry)
-            .map_err(|e| SyncError::BackendNotReady(format!("apply_wal_entry_bytes failed: {}", e)))
+            .map_err(|e| {
+                let msg = e.to_string();
+                // Bad magic / bad CRC / bad version / truncated → DecryptionFailed
+                if msg.contains("magic")
+                    || msg.contains("version")
+                    || msg.contains("CRC")
+                    || msg.contains("truncated")
+                    || msg.contains("header_size")
+                {
+                    SyncError::DecryptionFailed
+                } else {
+                    SyncError::BackendNotReady(format!("apply_wal_entry_bytes failed: {}", e))
+                }
+            })
     }
     fn read_snapshot_segment(
         &self,
@@ -173,13 +192,16 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         segment_index: SegmentIndex,
     ) -> Result<Option<AdapterSegment>, SyncError> {
         // Reverse-lookup: find the table name for this table_id.
-        // NOTE: this requires a public table-name iterator on MVCCEngine
-        // (currently a limitation; see find_table_name_by_id doc).
+        // Unknown table → SegmentNotFound per the trait.
         let engine = self.engine.lock();
         let table_name = match find_table_name_by_id(&engine, table_id) {
             Some(n) => n,
             None => {
-                return Ok(None); // Unknown table → SegmentNotFound per the trait
+                return Err(SyncError::SegmentNotFound {
+                    table_id,
+                    segment_index,
+                    regenerated: false,
+                });
             }
         };
         let paths = match engine.snapshot_segment_paths(&table_name) {
@@ -192,7 +214,10 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             }
         };
         if (segment_index as usize) >= paths.len() {
-            return Ok(None); // Out-of-bounds → SegmentNotFound per the trait
+            // Per the trait doc: "Ok(None) if no file at that position
+            // (the cipherocto sync engine interprets None as a signal to
+            // descend the Merkle tree or request a different ordinal)".
+            return Ok(None);
         }
         let path = &paths[segment_index as usize];
         let lsn_watermark = engine.current_wal_lsn();
@@ -223,10 +248,11 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         let table_name = match find_table_name_by_id(&engine, table_id) {
             Some(n) => n,
             None => {
-                return Err(SyncError::BackendNotReady(format!(
-                    "unknown table_id: {}",
-                    table_id
-                )));
+                return Err(SyncError::SegmentNotFound {
+                    table_id,
+                    segment_index,
+                    regenerated: false,
+                });
             }
         };
         engine
@@ -245,10 +271,11 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         let table_name = match find_table_name_by_id(&engine, table_id) {
             Some(n) => n,
             None => {
-                return Err(SyncError::BackendNotReady(format!(
-                    "unknown table_id for regeneration: {}",
-                    table_id
-                )));
+                return Err(SyncError::SegmentNotFound {
+                    table_id,
+                    segment_index: 0,
+                    regenerated: false,
+                });
             }
         };
         // Create a fresh snapshot for this table.
@@ -458,5 +485,32 @@ mod tests {
         let cloned = adapter.clone();
         assert_eq!(cloned.mission_id().unwrap(), adapter.mission_id().unwrap());
         assert_eq!(cloned.node_id().unwrap(), adapter.node_id().unwrap());
+    }
+
+    #[test]
+    fn apply_wal_entry_bad_magic_returns_decryption_failed() {
+        let mut engine = MVCCEngine::in_memory();
+        engine.open_engine().unwrap();
+        let engine = Arc::new(engine);
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        let bad_bytes = vec![0u8; 64]; // wrong magic
+        let err = adapter.apply_wal_entry(&bad_bytes).unwrap_err();
+        assert!(matches!(err, SyncError::DecryptionFailed), "got: {:?}", err);
+    }
+
+    #[test]
+    fn read_snapshot_segment_unknown_table_returns_segment_not_found() {
+        let engine = Arc::new(MVCCEngine::in_memory());
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        let err = adapter.read_snapshot_segment(0xDEADBEEF, 0).unwrap_err();
+        assert!(matches!(err, SyncError::SegmentNotFound { .. }), "got: {:?}", err);
+    }
+
+    #[test]
+    fn write_snapshot_segment_unknown_table_returns_segment_not_found() {
+        let engine = Arc::new(MVCCEngine::in_memory());
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        let err = adapter.write_snapshot_segment(0xDEADBEEF, 0, b"x").unwrap_err();
+        assert!(matches!(err, SyncError::SegmentNotFound { .. }), "got: {:?}", err);
     }
 }
