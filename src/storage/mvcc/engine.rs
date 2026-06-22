@@ -3681,7 +3681,7 @@ impl MVCCEngine {
     /// generated). Returns 0 if the file is too small or has a bad magic
     /// (the cipherocto sync engine treats 0 as "unknown watermark" and
     /// falls back to the current LSN).
-    pub fn read_snapshot_source_lsn(&self, path: &std::path::Path) -> Result<u64> {
+    pub(crate) fn read_snapshot_source_lsn(&self, path: &std::path::Path) -> Result<u64> {
         use std::io::Read;
         let mut file = std::fs::File::open(path)
             .map_err(|e| Error::internal(format!("failed to open snapshot for header: {}", e)))?;

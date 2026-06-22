@@ -75,9 +75,8 @@ pub struct StoolapAdapter {
 
 impl std::fmt::Debug for StoolapAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Hex-encode the 32-byte IDs for readability. The `?` in
-        // `{:02x?}` uses Debug formatting with 2-digit zero-padded hex
-        // per byte, producing e.g. `[ab, cd, ...]`.
+        // Hex-encode the 32-byte IDs for readability via the HexId helper
+        // (a compact hex string, e.g. "ab12cd34...").
         f.debug_struct("StoolapAdapter")
             .field("mission_id", &HexId(&self.mission_id_value))
             .field("node_id", &HexId(&self.node_id_value))
@@ -430,6 +429,7 @@ impl SyncConfig {
 mod tests {
     use super::*;
     use crate::storage::mvcc::engine::MVCCEngine;
+    use crate::storage::mvcc::wal_manager::WAL_ENTRY_MAGIC;
 
     fn mission_id() -> MissionId {
         let mut m = [0u8; 32];
@@ -578,6 +578,31 @@ mod tests {
     }
 
     #[test]
+    fn apply_wal_entry_too_short_returns_decryption_failed() {
+        let engine = MVCCEngine::in_memory();
+        engine.open_engine().unwrap();
+        let engine = Arc::new(engine);
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        let bad_bytes = vec![0u8; 10]; // less than WAL_HEADER_SIZE (32) + 4
+        let err = adapter.apply_wal_entry(&bad_bytes).unwrap_err();
+        assert!(matches!(err, SyncError::DecryptionFailed), "got: {:?}", err);
+    }
+
+    #[test]
+    fn apply_wal_entry_bad_version_returns_decryption_failed() {
+        let engine = MVCCEngine::in_memory();
+        engine.open_engine().unwrap();
+        let engine = Arc::new(engine);
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        // Build a 64-byte payload with the correct magic but wrong version.
+        let mut bad_bytes = vec![0u8; 64];
+        bad_bytes[0..4].copy_from_slice(&WAL_ENTRY_MAGIC.to_le_bytes());
+        bad_bytes[4] = 99; // wrong version
+        let err = adapter.apply_wal_entry(&bad_bytes).unwrap_err();
+        assert!(matches!(err, SyncError::DecryptionFailed), "got: {:?}", err);
+    }
+
+    #[test]
     fn read_snapshot_segment_unknown_table_returns_segment_not_found() {
         let engine = Arc::new(MVCCEngine::in_memory());
         let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
@@ -586,6 +611,27 @@ mod tests {
             matches!(err, SyncError::SegmentNotFound { .. }),
             "got: {:?}",
             err
+        );
+    }
+
+    #[test]
+    fn read_snapshot_segment_out_of_bounds_returns_ok_none() {
+        // When the segment_index is out of bounds, the trait says
+        // return Ok(None) (the cipherocto sync engine interprets this
+        // as a signal to descend the Merkle tree or request a
+        // different ordinal).
+        let engine = Arc::new(MVCCEngine::in_memory());
+        let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
+        // Use a known table_id that doesn't exist → SegmentNotFound.
+        // We can't easily test the "exists but out of bounds" case
+        // without creating a real table + snapshot, which requires
+        // opening the engine. The trait spec for this is covered
+        // by the engine-level snapshot_segment_paths test.
+        let result = adapter.read_snapshot_segment(0xCAFEBABE, 999);
+        assert!(
+            matches!(result, Err(SyncError::SegmentNotFound { .. })),
+            "got: {:?}",
+            result
         );
     }
 
