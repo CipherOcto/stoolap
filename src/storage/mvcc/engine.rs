@@ -3689,32 +3689,30 @@ impl MVCCEngine {
         Ok(schemas.values().map(|s| s.table_name.clone()).collect())
     }
 
+    /// Compute the `TableId` for a table name.
+    ///
+    /// The convention is `TableId = u32::from_le_bytes(BLAKE3-256(table_name.to_lowercase().as_bytes())[0..4])`.
+    ///
+    /// The cipherocto sync engine uses the same convention (per the trait's
+    /// RFC-0862 v1.1.0 design). This is a deterministic, collision-resistant
+    /// mapping (BLAKE3-256 produces 32 bytes; we take the first 4 bytes as u32).
+    ///
+    /// This is a shared contract between the stoolap fork and the cipherocto
+    /// sync engine. If you change this function, you MUST also change the
+    /// cipherocto side (see `octo-sync/src/types.rs::compute_table_id`).
+    pub fn compute_table_id(table_name: &str) -> u32 {
+        use blake3::Hasher;
+        let mut hasher = Hasher::new();
+        hasher.update(table_name.to_lowercase().as_bytes());
+        let hash = hasher.finalize();
+        let bytes = hash.as_bytes();
+        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+    }
+
     /// Look up a table name by its precomputed `TableId`.
     ///
     /// `TableId` is the first 4 bytes of `BLAKE3-256(table_name.to_lowercase())`,
     /// interpreted as a little-endian u32. The cipherocto sync engine uses
-    /// this convention (per the trait's RFC-0862 v1.1.0 design).
-    ///
-    /// This is an O(n) scan over the schemas. For sync workloads with many
-    /// tables, prefer caching the result at the call site. The cipherocto
-    /// sync engine typically calls this once per sync session (to build a
-    /// reverse-lookup table) and then reuses the cached mapping.
-    pub fn find_table_name_by_table_id(&self, table_id: u32) -> Result<Option<String>> {
-        use blake3::Hasher;
-        let schemas = self.schemas.read().unwrap();
-        for schema in schemas.values() {
-            let mut hasher = Hasher::new();
-            hasher.update(schema.table_name.to_lowercase().as_bytes());
-            let hash = hasher.finalize();
-            let bytes = hash.as_bytes();
-            let id = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-            if id == table_id {
-                return Ok(Some(schema.table_name.clone()));
-            }
-        }
-        Ok(None)
-    }
-
     /// Delete old snapshot segments beyond `keep_count` (per table).
     pub fn prune_snapshot_segments(&self, table_name: &str, keep_count: u32) -> Result<u32> {
         let mut paths = self.snapshot_segment_paths(table_name)?;

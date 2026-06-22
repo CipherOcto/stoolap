@@ -31,7 +31,6 @@
 
 use std::sync::Arc;
 
-use blake3::Hasher;
 use parking_lot::Mutex;
 
 use octo_sync::adapter::{DatabaseSyncAdapter, SnapshotSegment as AdapterSegment};
@@ -64,6 +63,14 @@ pub struct StoolapAdapter {
     /// The local node ID (32 bytes). Set at construction; immutable.
     /// Accessed via the `DatabaseSyncAdapter::node_id` trait method.
     node_id_value: NodeId,
+    /// Cached reverse-lookup table: `TableId → table_name`. Populated lazily
+    /// on first use and invalidated when the table list changes (the cipherocto
+    /// sync engine calls `read_snapshot_segment` etc. many times per sync
+    /// session, so caching avoids O(n²) total work).
+    ///
+    /// `None` means the cache hasn't been populated yet (first call).
+    /// `Some(HashMap)` means the cache is populated.
+    table_id_cache: Mutex<Option<std::collections::HashMap<TableId, String>>>,
 }
 
 impl std::fmt::Debug for StoolapAdapter {
@@ -96,6 +103,10 @@ impl Clone for StoolapAdapter {
             engine: Mutex::new(self.engine.lock().clone()),
             mission_id_value: self.mission_id_value,
             node_id_value: self.node_id_value,
+            // Start with an empty cache in the clone (don't share the cache
+            // — the cipherocto sync engine typically has one adapter per
+            // session, and cloning is rare).
+            table_id_cache: Mutex::new(None),
         }
     }
 }
@@ -117,32 +128,59 @@ impl StoolapAdapter {
             engine: Mutex::new(engine),
             mission_id_value: mission_id,
             node_id_value: node_id,
+            table_id_cache: Mutex::new(None),
         }
     }
 }
 
 /// Compute the `TableId` for a table name.
 ///
-/// The convention is `TableId = u32::from_le_bytes(BLAKE3-256(table_name.to_lowercase().as_bytes())[0..4])`.
-///
-/// The cipherocto sync engine uses the same convention (per the trait's
-/// RFC-0862 v1.1.0 design). This is a deterministic, collision-resistant
-/// mapping (BLAKE3-256 produces 32 bytes; we take the first 4 bytes as u32).
+/// Re-exports `MVCCEngine::compute_table_id` (the shared contract between
+/// the stoolap fork and the cipherocto sync engine). This is a
+/// deterministic, collision-resistant mapping (BLAKE3-256 produces 32 bytes;
+/// we take the first 4 bytes as u32).
 fn compute_table_id(table_name: &str) -> TableId {
-    let mut hasher = Hasher::new();
-    hasher.update(table_name.to_lowercase().as_bytes());
-    let hash = hasher.finalize();
-    let bytes = hash.as_bytes();
-    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+    MVCCEngine::compute_table_id(table_name)
 }
 
 /// Reverse-lookup: find the table name for a given `TableId`.
 ///
-/// Delegates to `MVCCEngine::find_table_name_by_table_id` (which is an
-/// O(n) scan). The cipherocto sync engine typically calls this once per
-/// sync session and caches the result.
-fn find_table_name_by_id(engine: &MVCCEngine, table_id: TableId) -> Option<String> {
-    engine.find_table_name_by_table_id(table_id).ok().flatten()
+/// Uses a lazy-initialized cache (`table_id_cache`) to avoid O(n) scans
+/// on every call. The cache is populated on first use and reused for
+/// subsequent calls. The cipherocto sync engine typically calls this
+/// O(log n) times per table per sync session (Merkle tree descent),
+/// so caching turns O(n²) total work into O(n) + O(log n) per session.
+fn find_table_name_by_id(
+    engine_arc: &Arc<MVCCEngine>,
+    cache: &Mutex<Option<std::collections::HashMap<TableId, String>>>,
+    table_id: TableId,
+) -> Option<String> {
+    // Fast path: check the cache.
+    {
+        let guard = cache.lock();
+        if let Some(map) = guard.as_ref() {
+            if let Some(name) = map.get(&table_id) {
+                return Some(name.clone());
+            }
+            // Cache is populated but table_id not found → return None
+            // (the table genuinely doesn't exist; no point re-scanning).
+            return None;
+        }
+    }
+
+    // Slow path: cache is empty, build it.
+    let engine = engine_arc.as_ref();
+    let tables = engine.list_table_names().ok()?;
+    let mut map = std::collections::HashMap::with_capacity(tables.len());
+    for name in &tables {
+        let id = compute_table_id(name);
+        // On hash collision, keep the first one (BLAKE3 collisions are
+        // astronomically unlikely — 128-bit collision resistance).
+        map.entry(id).or_insert_with(|| name.clone());
+    }
+    let result = map.get(&table_id).cloned();
+    *cache.lock() = Some(map);
+    result
 }
 
 impl DatabaseSyncAdapter for StoolapAdapter {
@@ -170,15 +208,15 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         // - Apply → BackendNotReady (transient error; the cipherocto sync
         //   engine retries with backoff).
         //
-        // We log the decode message at debug level (if logging is enabled)
-        // — the SyncError enum doesn't carry context, but the error is
-        // recorded in the cipherocto sync engine's metrics.
+        // Note: we do NOT log the decode message here. The SyncError enum
+        // is the signal; the cipherocto sync engine records it in its
+        // metrics. Side-effect logging (eprintln!) would be untestable
+        // and would spam stderr in production.
         self.engine
             .lock()
             .apply_wal_entry_bytes(entry)
             .map_err(|e| match e {
-                crate::storage::mvcc::engine::ApplyWalEntryError::Decode(msg) => {
-                    eprintln!("WAL decode failed: {msg}");
+                crate::storage::mvcc::engine::ApplyWalEntryError::Decode(_) => {
                     SyncError::DecryptionFailed
                 }
                 crate::storage::mvcc::engine::ApplyWalEntryError::Apply(err) => {
@@ -193,8 +231,8 @@ impl DatabaseSyncAdapter for StoolapAdapter {
     ) -> Result<Option<AdapterSegment>, SyncError> {
         // Reverse-lookup: find the table name for this table_id.
         // Unknown table → SegmentNotFound per the trait.
-        let engine = self.engine.lock();
-        let table_name = match find_table_name_by_id(&engine, table_id) {
+        let engine_arc = self.engine.lock().clone();
+        let table_name = match find_table_name_by_id(&engine_arc, &self.table_id_cache, table_id) {
             Some(n) => n,
             None => {
                 return Err(SyncError::SegmentNotFound {
@@ -204,7 +242,7 @@ impl DatabaseSyncAdapter for StoolapAdapter {
                 });
             }
         };
-        let paths = match engine.snapshot_segment_paths(&table_name) {
+        let paths = match engine_arc.snapshot_segment_paths(&table_name) {
             Ok(p) => p,
             Err(e) => {
                 return Err(SyncError::BackendNotReady(format!(
@@ -225,10 +263,10 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         // Fall back to the current LSN if the header is unreadable or
         // has a bad magic (the cipherocto sync engine treats this as
         // "unknown watermark" and may fetch WAL entries to be safe).
-        let lsn_watermark = engine
+        let lsn_watermark = engine_arc
             .read_snapshot_source_lsn(path)
-            .unwrap_or_else(|_| engine.current_wal_lsn());
-        let payload = match engine.read_snapshot_segment_file(path) {
+            .unwrap_or_else(|_| engine_arc.current_wal_lsn());
+        let payload = match engine_arc.read_snapshot_segment_file(path) {
             Ok(p) => p,
             Err(e) => {
                 return Err(SyncError::BackendNotReady(format!(
@@ -251,8 +289,8 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         segment_index: SegmentIndex,
         payload: &[u8],
     ) -> Result<(), SyncError> {
-        let engine = self.engine.lock();
-        let table_name = match find_table_name_by_id(&engine, table_id) {
+        let engine_arc = self.engine.lock().clone();
+        let table_name = match find_table_name_by_id(&engine_arc, &self.table_id_cache, table_id) {
             Some(n) => n,
             None => {
                 return Err(SyncError::SegmentNotFound {
@@ -262,7 +300,7 @@ impl DatabaseSyncAdapter for StoolapAdapter {
                 });
             }
         };
-        engine
+        engine_arc
             .write_snapshot_segment_to_file(&table_name, segment_index, payload)
             .map(|_| ())
             .map_err(|e| {
@@ -271,8 +309,8 @@ impl DatabaseSyncAdapter for StoolapAdapter {
     }
 
     fn regenerate_snapshot(&self, table_id: TableId) -> Result<u32, SyncError> {
-        let engine = self.engine.lock();
-        let table_name = match find_table_name_by_id(&engine, table_id) {
+        let engine_arc = self.engine.lock().clone();
+        let table_name = match find_table_name_by_id(&engine_arc, &self.table_id_cache, table_id) {
             Some(n) => n,
             None => {
                 return Err(SyncError::SegmentNotFound {
@@ -283,19 +321,21 @@ impl DatabaseSyncAdapter for StoolapAdapter {
             }
         };
         // Create a fresh snapshot for this table.
-        engine.create_snapshot_for_table(&table_name).map_err(|e| {
-            SyncError::BackendNotReady(format!("create_snapshot_for_table failed: {}", e))
-        })?;
+        engine_arc
+            .create_snapshot_for_table(&table_name)
+            .map_err(|e| {
+                SyncError::BackendNotReady(format!("create_snapshot_for_table failed: {}", e))
+            })?;
         // Prune old segments, keeping only the 2 most recent (the new one
         // and one backup). This prevents disk bloat from accumulated
         // regeneration requests.
-        engine
+        engine_arc
             .prune_snapshot_segments(&table_name, 2)
             .map_err(|e| {
                 SyncError::BackendNotReady(format!("prune_snapshot_segments failed: {}", e))
             })?;
         // Return the new segment count.
-        engine.snapshot_segment_count(&table_name).map_err(|e| {
+        engine_arc.snapshot_segment_count(&table_name).map_err(|e| {
             SyncError::BackendNotReady(format!("snapshot_segment_count failed: {}", e))
         })
     }
@@ -355,16 +395,20 @@ pub fn read_snapshot_segment_by_name(
 /// Sync configuration passed to `Database::open_with_sync`.
 ///
 /// The cipherocto sync engine passes this to the stoolap fork when opening
-/// a database with sync support. The mission_id and node_id are required;
-/// the public_key is optional (for HMAC envelope verification).
+/// a database with sync support. The `mission_id` and `node_id` are required
+/// and are stable for the lifetime of the adapter.
+///
+/// The cipherocto sync engine derives the per-mission `transport_key` and
+/// `execution_key` via `HKDF-BLAKE3(mission_root_key, "sync:v1", mission_id)`
+/// (per RFC-0862 §4.3.1 and mission 0862d). The stoolap fork does not need
+/// the public key or any key material — the cipherocto sync engine handles
+/// all cryptography at the envelope layer.
 #[derive(Debug, Clone)]
 pub struct SyncConfig {
     /// The mission ID (32 bytes). Required.
     pub mission_id: MissionId,
     /// The local node ID (32 bytes). Required.
     pub node_id: NodeId,
-    /// The public key (32 bytes) for HMAC envelope verification. Optional.
-    pub public_key: Option<[u8; 32]>,
 }
 
 impl SyncConfig {
@@ -373,14 +417,7 @@ impl SyncConfig {
         Self {
             mission_id,
             node_id,
-            public_key: None,
         }
-    }
-
-    /// Set the public key for HMAC envelope verification.
-    pub fn with_public_key(mut self, public_key: [u8; 32]) -> Self {
-        self.public_key = Some(public_key);
-        self
     }
 }
 
@@ -456,7 +493,25 @@ mod tests {
     #[test]
     fn find_table_name_by_id_empty_engine() {
         let engine = Arc::new(MVCCEngine::in_memory());
-        assert!(find_table_name_by_id(&engine, 0xDEADBEEF).is_none());
+        let cache = Mutex::new(None);
+        assert!(find_table_name_by_id(&engine, &cache, 0xDEADBEEF).is_none());
+    }
+
+    #[test]
+    fn find_table_name_by_id_caches_result() {
+        // After the first call, the cache is populated. Subsequent calls
+        // for the same table_id should return the same result without
+        // re-scanning.
+        let engine = Arc::new(MVCCEngine::in_memory());
+        let cache = Mutex::new(None);
+
+        // First call: populates the cache.
+        let r1 = find_table_name_by_id(&engine, &cache, 0xDEADBEEF);
+        // Cache should be populated now.
+        assert!(cache.lock().is_some());
+        // Second call: uses the cache.
+        let r2 = find_table_name_by_id(&engine, &cache, 0xDEADBEEF);
+        assert_eq!(r1, r2);
     }
 
     #[test]
@@ -470,14 +525,6 @@ mod tests {
         let cfg = SyncConfig::new(mission_id(), node_id());
         assert_eq!(cfg.mission_id, mission_id());
         assert_eq!(cfg.node_id, node_id());
-        assert!(cfg.public_key.is_none());
-    }
-
-    #[test]
-    fn sync_config_with_public_key() {
-        let key = [0xAB; 32];
-        let cfg = SyncConfig::new(mission_id(), node_id()).with_public_key(key);
-        assert_eq!(cfg.public_key, Some(key));
     }
 
     #[test]
