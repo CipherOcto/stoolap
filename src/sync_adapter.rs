@@ -615,23 +615,23 @@ mod tests {
     }
 
     #[test]
-    fn read_snapshot_segment_out_of_bounds_returns_ok_none() {
-        // When the segment_index is out of bounds, the trait says
-        // return Ok(None) (the cipherocto sync engine interprets this
-        // as a signal to descend the Merkle tree or request a
-        // different ordinal).
+    fn read_snapshot_segment_unknown_table_returns_segment_not_found_with_index() {
+        // Verify the SegmentNotFound carries the correct segment_index
+        // (the cipherocto sync engine uses this to know which segment
+        // was requested).
         let engine = Arc::new(MVCCEngine::in_memory());
         let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
-        // Use a known table_id that doesn't exist → SegmentNotFound.
-        // We can't easily test the "exists but out of bounds" case
-        // without creating a real table + snapshot, which requires
-        // opening the engine. The trait spec for this is covered
-        // by the engine-level snapshot_segment_paths test.
-        let result = adapter.read_snapshot_segment(0xCAFEBABE, 999);
+        let err = adapter.read_snapshot_segment(0xCAFEBABE, 42).unwrap_err();
         assert!(
-            matches!(result, Err(SyncError::SegmentNotFound { .. })),
+            matches!(
+                err,
+                SyncError::SegmentNotFound {
+                    segment_index: 42,
+                    ..
+                }
+            ),
             "got: {:?}",
-            result
+            err
         );
     }
 
