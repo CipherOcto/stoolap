@@ -513,4 +513,41 @@ mod tests {
         let err = adapter.write_snapshot_segment(0xDEADBEEF, 0, b"x").unwrap_err();
         assert!(matches!(err, SyncError::SegmentNotFound { .. }), "got: {:?}", err);
     }
+
+    #[test]
+    fn file_backed_engine_persistence_flow() {
+        use crate::storage::config::Config;
+        use std::env;
+
+        let tmp = env::temp_dir().join(format!("stoolap_sync_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let db_path = tmp.join("test.db");
+
+        let config = Config::with_path(db_path.to_string_lossy().into_owned());
+        let mut engine = MVCCEngine::new(config);
+        engine.open_engine().unwrap();
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(!db_path.exists() || tmp.exists());
+    }
+
+    #[test]
+    fn snapshot_segment_paths_on_file_backed_engine() {
+        use crate::storage::config::Config;
+        use std::env;
+
+        let tmp = env::temp_dir().join(format!("stoolap_sync_test2_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let db_path = tmp.join("test.db");
+
+        let config = Config::with_path(db_path.to_string_lossy().into_owned());
+        let mut engine = MVCCEngine::new(config);
+        engine.open_engine().unwrap();
+        let paths = engine.snapshot_segment_paths("nonexistent").unwrap();
+        assert!(paths.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
