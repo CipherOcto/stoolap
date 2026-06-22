@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn apply_wal_entry_bad_magic_returns_decryption_failed() {
-        let mut engine = MVCCEngine::in_memory();
+        let engine = MVCCEngine::in_memory();
         engine.open_engine().unwrap();
         let engine = Arc::new(engine);
         let adapter = StoolapAdapter::new(Arc::clone(&engine), mission_id(), node_id());
@@ -525,7 +525,7 @@ mod tests {
         let db_path = tmp.join("test.db");
 
         let config = Config::with_path(db_path.to_string_lossy().into_owned());
-        let mut engine = MVCCEngine::new(config);
+        let engine = MVCCEngine::new(config);
         engine.open_engine().unwrap();
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -543,7 +543,7 @@ mod tests {
         let db_path = tmp.join("test.db");
 
         let config = Config::with_path(db_path.to_string_lossy().into_owned());
-        let mut engine = MVCCEngine::new(config);
+        let engine = MVCCEngine::new(config);
         engine.open_engine().unwrap();
         let paths = engine.snapshot_segment_paths("nonexistent").unwrap();
         assert!(paths.is_empty());
