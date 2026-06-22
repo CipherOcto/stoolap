@@ -54,6 +54,14 @@ serde_json = "1.0"
 # Deterministic Floating-Point (DFP) per RFC-0104
 octo-determin = { git = "https://github.com/CipherOcto/cipherocto", branch = "next" }
 
+# CipherOcto Stoolap Data Sync Protocol (RFC-0862 v1.1.0)
+# The trait boundary (DatabaseSyncAdapter) lives in the octo-sync leaf workspace.
+# Both the cipherocto workspace and the stoolap fork depend on it via git.
+# This breaks the Cargo workspace cycle (octo-sync is excluded from cipherocto;
+# stoolap is a single-package manifest, not a workspace member of cipherocto).
+octo-sync = { git = "https://github.com/CipherOcto/cipherocto", branch = "next", optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync"], optional = true }
+
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
 
@@ -149,6 +157,12 @@ semantic = ["candle-core", "candle-nn", "candle-transformers", "tokenizers", "hf
 zk = ["dep:blake3", "dep:which", "dep:tempfile", "dep:hex"]  # ZK types and plugin loader (stable compatible)
 commitment = ["dep:starknet-crypto", "dep:blake3"]  # Pedersen commitments + confidential queries (stable compatible)
 vector = ["dep:blake3", "dep:memmap2", "dep:tempfile"]  # Vector storage with Merkle + mmap
+
+# CipherOcto Stoolap Data Sync Protocol (RFC-0862 v1.1.0).
+# Enables the StoolapAdapter that implements DatabaseSyncAdapter for the
+# MVCCEngine. The cipherocto sync engine consumes any A: DatabaseSyncAdapter;
+# in the stoolap fork, A = StoolapAdapter.
+sync = ["dep:octo-sync", "dep:tokio", "dep:blake3"]
 
 [[example]]
 name = "benchmark_sqlite"

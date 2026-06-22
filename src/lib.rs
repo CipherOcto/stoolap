@@ -106,6 +106,14 @@ pub mod trie;
 #[cfg(any(feature = "zk", feature = "commitment"))]
 pub mod zk;
 
+/// CipherOcto Stoolap Data Sync Protocol (RFC-0862 v1.1.0) — StoolapAdapter
+/// that implements the `DatabaseSyncAdapter` trait from the `octo-sync` leaf
+/// workspace. Feature-gated behind the `sync` feature flag (which requires
+/// the `octo-sync` git dep). When the `sync` feature is enabled, the cipherocto
+/// sync engine can consume the `StoolapAdapter` via `Arc<dyn DatabaseSyncAdapter>`.
+#[cfg(feature = "sync")]
+pub mod sync_adapter;
+
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 

@@ -31,7 +31,7 @@ use crate::storage::{PersistenceConfig, SyncMode};
 
 /// Magic bytes for WAL entry marker ("WALE" in ASCII)
 /// Used to detect entry boundaries and partial writes
-const WAL_ENTRY_MAGIC: u32 = 0x454C4157;
+pub const WAL_ENTRY_MAGIC: u32 = 0x454C4157;
 
 /// Special transaction ID for marker entries (used after WAL truncation)
 pub const MARKER_TXN_ID: i64 = -1000;
@@ -66,10 +66,10 @@ const CHECKPOINT_MAGIC: u32 = 0x43504F49;
 // └─────────────────────────────────────────────────────────────────┘
 
 /// Current WAL entry format version
-const WAL_FORMAT_VERSION: u8 = 2;
+pub const WAL_FORMAT_VERSION: u8 = 2;
 
 /// WAL entry header size in bytes
-const WAL_HEADER_SIZE: u16 = 32;
+pub const WAL_HEADER_SIZE: u16 = 32;
 
 /// Checkpoint format version (v2 = section-based format)
 const CHECKPOINT_FORMAT_VERSION: u8 = 2;

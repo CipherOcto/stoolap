@@ -3247,10 +3247,383 @@ impl Engine for MVCCEngine {
 }
 
 // =============================================================================
+// CipherOcto Stoolap Data Sync Protocol (RFC-0862 v1.1.0) — public API
+//
+// These methods implement the MVCCEngine side of the
+// `DatabaseSyncAdapter` trait defined in the `octo-sync` leaf workspace.
+// They are stable, production-ready, and are referenced by the
+// StoolapAdapter (src/sync_adapter.rs) behind the `sync` feature.
+// ========================================================================
+
+impl std::fmt::Debug for MVCCEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MVCCEngine")
+            .field("path", &self.path)
+            .field("is_open", &self.open.load(std::sync::atomic::Ordering::Relaxed))
+            .field("current_lsn", &self.current_wal_lsn())
+            .finish()
+    }
+}
+
+// =============================================================================
 // Cleanup Functions
 // =============================================================================
 
 impl MVCCEngine {
+    /// Decode a raw WAL entry (as produced by `WALEntry::encode()`) and apply
+    /// it to the local database.
+    ///
+    /// This is the public counterpart of the private `apply_wal_entry` method
+    /// (which takes a parsed `WALEntry`). It exists so that the cipherocto
+    /// sync engine — which only knows the on-wire bytes — can replay a single
+    /// entry without depending on the internal `WALEntry` type.
+    ///
+    /// The bytes are in the V2 WAL entry format:
+    ///
+    /// ```text
+    ///  32-byte header:
+    ///    magic (4) | version (1) | flags (1) | header_size (2) |
+    ///    lsn (8) | previous_lsn (8) | entry_size (4) | reserved (4)
+    ///  variable data portion (entry_size bytes) + 4-byte CRC32 trailer
+    /// ```
+    ///
+    /// Returns `Ok(())` on success, or an error if the bytes are malformed
+    /// (bad magic, unsupported version, CRC32 mismatch, etc.).
+    pub fn apply_wal_entry_bytes(&self, entry: &[u8]) -> Result<()> {
+        use crate::storage::mvcc::wal_manager::{
+            WAL_ENTRY_MAGIC, WAL_FORMAT_VERSION, WAL_HEADER_SIZE,
+        };
+
+        if !self.is_open() {
+            return Err(Error::EngineNotOpen);
+        }
+
+        if entry.len() < (WAL_HEADER_SIZE as usize) + 4 {
+            return Err(Error::internal(format!(
+                "WAL entry too short: {} bytes (need at least {})",
+                entry.len(),
+                WAL_HEADER_SIZE as usize + 4
+            )));
+        }
+
+        let magic = u32::from_le_bytes(
+            entry[0..4]
+                .try_into()
+                .map_err(|_| Error::internal("WAL entry magic: try_into failed"))?,
+        );
+        if magic != WAL_ENTRY_MAGIC {
+            return Err(Error::internal(format!(
+                "invalid WAL entry magic: 0x{:08X} (expected 0x{:08X})",
+                magic, WAL_ENTRY_MAGIC
+            )));
+        }
+
+        let version = entry[4];
+        if version != WAL_FORMAT_VERSION {
+            return Err(Error::internal(format!(
+                "unsupported WAL version: {} (expected {})",
+                version, WAL_FORMAT_VERSION
+            )));
+        }
+
+        let flags_byte = entry[5];
+        let flags = crate::storage::mvcc::wal_manager::WalFlags::from_byte(flags_byte);
+
+        let header_size = u16::from_le_bytes(
+            entry[6..8]
+                .try_into()
+                .map_err(|_| Error::internal("WAL entry header_size: try_into failed"))?,
+        );
+        if header_size != WAL_HEADER_SIZE {
+            return Err(Error::internal(format!(
+                "WAL entry header_size mismatch: {} (expected {})",
+                header_size, WAL_HEADER_SIZE
+            )));
+        }
+
+        let lsn = u64::from_le_bytes(
+            entry[8..16]
+                .try_into()
+                .map_err(|_| Error::internal("WAL entry lsn: try_into failed"))?,
+        );
+
+        let previous_lsn = u64::from_le_bytes(
+            entry[16..24]
+                .try_into()
+                .map_err(|_| Error::internal("WAL entry previous_lsn: try_into failed"))?,
+        );
+
+        let entry_size = u32::from_le_bytes(
+            entry[24..28]
+                .try_into()
+                .map_err(|_| Error::internal("WAL entry entry_size: try_into failed"))?,
+        ) as usize;
+
+        let data_portion = &entry[WAL_HEADER_SIZE as usize..];
+        if data_portion.len() < entry_size + 4 {
+            return Err(Error::internal(format!(
+                "WAL entry data truncated: have {} bytes, need {}",
+                data_portion.len(),
+                entry_size + 4
+            )));
+        }
+
+        let wal_entry =
+            crate::storage::mvcc::wal_manager::WALEntry::decode(lsn, previous_lsn, flags, data_portion)?;
+        self.apply_wal_entry(wal_entry)
+    }
+
+    /// Return the current WAL LSN (highest committed LSN).
+    /// Returns 0 if persistence is disabled (in-memory only).
+    /// This is the public API for `DatabaseSyncAdapter::current_lsn`.
+    pub fn current_wal_lsn(&self) -> u64 {
+        self.persistence
+            .as_ref()
+            .as_ref()
+            .map(|pm| pm.current_lsn())
+            .unwrap_or(0)
+    }
+
+    /// Read WAL entries in the range `[from_lsn, to_lsn]` (inclusive) as
+    /// raw encoded bytes. This is the public API for
+    /// `DatabaseSyncAdapter::read_wal_range`.
+    ///
+    /// Uses `PersistenceManager::replay_two_phase` internally (the recovery
+    /// path is idempotent so re-applying already-applied entries is a no-op
+    /// via the entry.lsn() check in the recovery code).
+    pub fn read_wal_range(&self, from_lsn: u64, to_lsn: u64) -> Result<Vec<Vec<u8>>> {
+        if from_lsn > to_lsn {
+            return Err(Error::internal(format!(
+                "read_wal_range: from ({}) > to ({})",
+                from_lsn, to_lsn
+            )));
+        }
+        let pm = match self.persistence.as_ref().as_ref() {
+            Some(pm) if pm.is_enabled() => pm,
+            _ => return Ok(Vec::new()), // No persistence, no WAL
+        };
+        let mut entries: Vec<Vec<u8>> = Vec::new();
+        pm.replay_two_phase(from_lsn, |entry: crate::storage::mvcc::wal_manager::WALEntry| {
+            if entry.lsn <= to_lsn {
+                entries.push(entry.encode());
+            }
+            Ok(())
+        })?;
+        Ok(entries)
+    }
+
+    /// Create a per-table snapshot. Mirrors `create_snapshot` for one table.
+    pub fn create_snapshot_for_table(
+        &self,
+        table_name: &str,
+    ) -> Result<std::path::PathBuf> {
+        if !self.is_open() {
+            return Err(Error::EngineNotOpen);
+        }
+
+        let pm = match self.persistence.as_ref() {
+            Some(pm) if pm.is_enabled() => pm,
+            _ => {
+                return Err(Error::internal(
+                    "create_snapshot_for_table requires persistence to be enabled",
+                ));
+            }
+        };
+
+        let table_name_lower = table_name.to_lowercase();
+        let schemas = self.schemas.read().unwrap();
+        let schema = schemas
+            .get(&table_name_lower)
+            .ok_or_else(|| Error::TableNotFound(table_name.to_string()))?
+            .clone();
+        drop(schemas);
+
+        let snapshot_lsn = pm.create_checkpoint(vec![])?;
+        let snapshot_commit_seq = self.registry.current_commit_sequence();
+
+        let snapshot_dir = pm.path().join("snapshots").join(&table_name_lower);
+        if let Err(e) = std::fs::create_dir_all(&snapshot_dir) {
+            return Err(Error::internal(format!(
+                "failed to create snapshot directory: {}",
+                e
+            )));
+        }
+
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S%.3f").to_string();
+        let final_path = snapshot_dir.join(format!("snapshot-{}.bin", timestamp));
+        let temp_path = snapshot_dir.join(format!("snapshot-{}.bin.tmp", timestamp));
+
+        let stores = self.version_stores.read().unwrap();
+        let store = stores
+            .get(&table_name_lower)
+            .ok_or_else(|| Error::TableNotFound(table_name.to_string()))?
+            .clone();
+        drop(stores);
+
+        let mut writer = super::snapshot::SnapshotWriter::with_source_lsn(
+            &temp_path,
+            snapshot_lsn,
+        )
+        .map_err(|e| Error::internal(format!("failed to create snapshot writer: {}", e)))?;
+
+        writer
+            .write_schema(&schema)
+            .map_err(|e| Error::internal(format!("failed to write schema: {}", e)))?;
+
+        let mut write_error: Option<Error> = None;
+        store.for_each_committed_version_with_cutoff(
+            |row_id, version| {
+                let mut snapshot_version = version.clone();
+                snapshot_version.txn_id = -1;
+                if let Err(e) = writer.append_row(row_id, &snapshot_version) {
+                    write_error = Some(Error::internal(format!(
+                        "failed to write row {} to snapshot: {}",
+                        row_id, e
+                    )));
+                    return false;
+                }
+                true
+            },
+            snapshot_commit_seq,
+        );
+
+        if let Some(e) = write_error {
+            writer.fail();
+            return Err(e);
+        }
+
+        writer
+            .finalize()
+            .map_err(|e| Error::internal(format!("failed to finalize snapshot: {}", e)))?;
+
+        if let Err(e) = std::fs::rename(&temp_path, &final_path) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(Error::internal(format!(
+                "failed to rename snapshot file: {}",
+                e
+            )));
+        }
+
+        if let Ok(dir_file) = std::fs::File::open(&snapshot_dir) {
+            let _ = dir_file.sync_all();
+        }
+
+        Ok(final_path)
+    }
+
+    /// Return the list of snapshot file paths for a table, sorted by name.
+    pub fn snapshot_segment_paths(
+        &self,
+        table_name: &str,
+    ) -> Result<Vec<std::path::PathBuf>> {
+        if !self.is_open() {
+            return Err(Error::EngineNotOpen);
+        }
+        let pm = match self.persistence.as_ref() {
+            Some(pm) if pm.is_enabled() => pm,
+            _ => return Ok(Vec::new()),
+        };
+        let table_name_lower = table_name.to_lowercase();
+        let snapshot_dir = pm.path().join("snapshots").join(&table_name_lower);
+        if !snapshot_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&snapshot_dir)
+            .map_err(|e| Error::internal(format!("failed to read snapshot dir: {}", e)))?
+            .filter_map(std::io::Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().and_then(|s| s.to_str()) == Some("bin")
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with("snapshot-") && !n.ends_with(".tmp"))
+                        .unwrap_or(false)
+            })
+            .collect();
+        paths.sort();
+        Ok(paths)
+    }
+
+    /// Return the number of snapshot segments for a table.
+    pub fn snapshot_segment_count(&self, table_name: &str) -> Result<u32> {
+        let paths = self.snapshot_segment_paths(table_name)?;
+        Ok(paths.len() as u32)
+    }
+
+    /// Write a snapshot segment to a file with atomic-rename.
+    pub fn write_snapshot_segment_to_file(
+        &self,
+        table_name: &str,
+        segment_index: u32,
+        payload: &[u8],
+    ) -> Result<std::path::PathBuf> {
+        if !self.is_open() {
+            return Err(Error::EngineNotOpen);
+        }
+        let pm = match self.persistence.as_ref() {
+            Some(pm) if pm.is_enabled() => pm,
+            _ => {
+                return Err(Error::internal(
+                    "write_snapshot_segment_to_file requires persistence",
+                ));
+            }
+        };
+        let table_name_lower = table_name.to_lowercase();
+        let snapshot_dir = pm.path().join("snapshots").join(&table_name_lower);
+        std::fs::create_dir_all(&snapshot_dir)
+            .map_err(|e| Error::internal(format!("failed to create snapshot dir: {}", e)))?;
+
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S%.3f").to_string();
+        let final_path = snapshot_dir.join(format!("snapshot-{}-{}.bin", timestamp, segment_index));
+        let temp_path =
+            snapshot_dir.join(format!("snapshot-{}-{}.bin.tmp", timestamp, segment_index));
+
+        std::fs::write(&temp_path, payload)
+            .map_err(|e| Error::internal(format!("failed to write snapshot segment: {}", e)))?;
+
+        std::fs::rename(&temp_path, &final_path)
+            .map_err(|e| Error::internal(format!("failed to rename snapshot segment: {}", e)))?;
+
+        if let Ok(dir_file) = std::fs::File::open(&snapshot_dir) {
+            let _ = dir_file.sync_all();
+        }
+
+        Ok(final_path)
+    }
+
+    /// Read a raw snapshot segment file.
+    pub fn read_snapshot_segment_file(&self, path: &std::path::Path) -> Result<Vec<u8>> {
+        std::fs::read(path)
+            .map_err(|e| Error::internal(format!("failed to read snapshot: {}", e)))
+    }
+
+    /// List all table names in the engine. Case-preserved (uses the
+    /// lowercase key for lookup but returns the original case names).
+    /// Inherent method (not the `Engine` trait method) so it can be called
+    /// from the sync_adapter without importing the trait.
+    pub fn list_table_names(&self) -> Result<Vec<String>> {
+        let schemas = self.schemas.read().unwrap();
+        Ok(schemas.values().map(|s| s.table_name.clone()).collect())
+    }
+
+    /// Delete old snapshot segments beyond `keep_count` (per table).
+    pub fn prune_snapshot_segments(&self, table_name: &str, keep_count: u32) -> Result<u32> {
+        let mut paths = self.snapshot_segment_paths(table_name)?;
+        if (paths.len() as u32) <= keep_count {
+            return Ok(0);
+        }
+        paths.reverse();
+        let to_remove = (paths.len() as u32) - keep_count;
+        let mut removed = 0u32;
+        for path in paths.iter().take(to_remove as usize) {
+            if std::fs::remove_file(path).is_ok() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
     /// Cleanup old transactions that have been idle for too long
     pub fn cleanup_old_transactions(&self, max_age: std::time::Duration) -> i32 {
         if !self.is_open() {

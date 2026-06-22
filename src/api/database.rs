@@ -74,6 +74,11 @@ pub(crate) struct DatabaseInner {
     /// Whether this DatabaseInner owns the engine (created it via open()).
     /// Cloned DatabaseInners share the engine but don't own it.
     owns_engine: bool,
+    /// StoolapAdapter instance (feature-gated behind `sync`).
+    /// Created lazily on first `open_with_sync` call. Shared between all
+    /// Database instances with the same DSN.
+    #[cfg(feature = "sync")]
+    sync_adapter: Arc<parking_lot::Mutex<Option<Arc<crate::sync_adapter::StoolapAdapter>>>>,
 }
 
 /// Type alias for Statement to use (avoids exposing DatabaseInner directly)
@@ -144,6 +149,8 @@ impl Clone for Database {
             executor: Arc::new(Mutex::new(executor)),
             dsn: self.inner.dsn.clone(),
             owns_engine: false, // Cloned handles don't own the engine
+            #[cfg(feature = "sync")]
+            sync_adapter: Arc::new(parking_lot::Mutex::new(None)),
         });
 
         Database { inner }
@@ -254,6 +261,8 @@ impl Database {
             executor: Arc::new(Mutex::new(executor)),
             dsn: dsn.to_string(),
             owns_engine: true, // This DatabaseInner owns the engine
+            #[cfg(feature = "sync")]
+            sync_adapter: Arc::new(parking_lot::Mutex::new(None)),
         });
 
         // Store in registry
@@ -283,9 +292,61 @@ impl Database {
             executor: Arc::new(Mutex::new(executor)),
             dsn: "memory://".to_string(),
             owns_engine: true, // This DatabaseInner owns the engine
+            #[cfg(feature = "sync")]
+            sync_adapter: Arc::new(parking_lot::Mutex::new(None)),
         });
 
         Ok(Database { inner })
+    }
+
+    /// Open a database with CipherOcto Stoolap Data Sync Protocol (RFC-0862 v1.1.0)
+    /// support. Returns the `Database` handle and an `Arc<dyn DatabaseSyncAdapter>`
+    /// that the cipherocto sync engine can consume.
+    ///
+    /// The DSN format is the same as `open()` (e.g. `memory://`, `file:///path/to/db`)
+    /// with optional sync configuration parameters:
+    ///
+    /// ```text
+    /// file:///path/to/db?sync.role=Replicator
+    ///                   &sync.mission=<32-byte-hex>
+    ///                   &sync.public_key=<hex>
+    ///                   &sync.writer_node_id=<32-byte-hex>
+    /// ```
+    ///
+    /// The `mission` parameter is the 32-byte mission ID (hex-encoded).
+    /// The `writer_node_id` parameter is the 32-byte local node ID (hex-encoded).
+    /// The `public_key` parameter is the 32-byte public key (hex-encoded) used
+    /// to verify the mission's HMAC envelopes.
+    ///
+    /// The cipherocto sync engine calls all trait methods via
+    /// `tokio::task::spawn_blocking`, so the adapter does not need to be
+    /// `Send` across await points — but it must be `Send + Sync` for the
+    /// trait object to be stored in `Arc<dyn DatabaseSyncAdapter + Send + Sync>`.
+    ///
+    /// Feature-gated behind the `sync` Cargo feature (which requires the
+    /// `octo-sync` git dep). When the feature is disabled, this method
+    /// does not exist.
+    #[cfg(feature = "sync")]
+    pub fn open_with_sync(
+        dsn: &str,
+        sync_config: crate::sync_adapter::SyncConfig,
+    ) -> Result<(Self, Arc<dyn octo_sync::adapter::DatabaseSyncAdapter>)> {
+        // Open the database normally
+        let db = Self::open(dsn)?;
+
+        // Build the StoolapAdapter
+        let adapter = crate::sync_adapter::StoolapAdapter::new(
+            Arc::clone(&db.inner.engine),
+            sync_config.mission_id,
+            sync_config.node_id,
+        );
+
+        // Build the trait object. The cipherocto sync engine keeps its own
+        // Arc<dyn DatabaseSyncAdapter>; we don't need to store the concrete
+        // type in DatabaseInner (the Database API is for queries, not sync).
+        let adapter_arc: Arc<dyn octo_sync::adapter::DatabaseSyncAdapter> = Arc::new(adapter);
+
+        Ok((db, adapter_arc))
     }
 
     /// Parse a DSN into scheme and path
