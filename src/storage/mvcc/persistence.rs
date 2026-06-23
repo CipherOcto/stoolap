@@ -501,6 +501,25 @@ impl PersistenceManager {
         Ok(())
     }
 
+    /// Append a WAL entry directly (for chain relay support).
+    ///
+    /// This is used by `MVCCEngine::apply_wal_entry_relay` to re-enter
+    /// received WAL entries into the local WAL. The entry gets a new local
+    /// LSN assigned by `WALManager::append_entry`.
+    ///
+    /// Per RFC-0862 §4.3.3.1: intermediate nodes MUST persist received
+    /// entries to their local WAL so downstream peers can read them via
+    /// `read_wal_range`.
+    pub fn append_wal_entry(&self, entry: WALEntry) -> Result<()> {
+        if !self.is_enabled() {
+            return Ok(());
+        }
+
+        let wal = self.wal.as_ref().ok_or(Error::WalNotInitialized)?;
+        wal.append_entry(entry)?;
+        Ok(())
+    }
+
     /// Record a transaction commit
     ///
     /// Uses commit_marker() which sets the COMMIT_MARKER flag for two-phase recovery

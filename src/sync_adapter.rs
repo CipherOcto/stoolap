@@ -223,13 +223,14 @@ impl DatabaseSyncAdapter for StoolapAdapter {
         // - Apply → BackendNotReady (transient error; the cipherocto sync
         //   engine retries with backoff).
         //
-        // Note: we do NOT log the decode message here. The SyncError enum
-        // is the signal; the cipherocto sync engine records it in its
-        // metrics. Side-effect logging (eprintln!) would be untestable
-        // and would spam stderr in production.
+        // Use apply_wal_entry_relay (not apply_wal_entry_bytes) to support
+        // chain relay topologies (RFC-0862 §4.3.3.1). The relay method:
+        // 1. Applies to in-memory MVCC state (same as apply_wal_entry_bytes)
+        // 2. Persists to local WAL files (makes entry visible to read_wal_range)
+        // 3. Advances current_lsn() (enables downstream peers to detect new entries)
         self.engine
             .lock()
-            .apply_wal_entry_bytes(entry)
+            .apply_wal_entry_relay(entry)
             .map_err(|e| match e {
                 crate::storage::mvcc::engine::ApplyWalEntryError::Decode(_) => {
                     SyncError::DecryptionFailed

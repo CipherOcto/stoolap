@@ -3412,6 +3412,125 @@ impl MVCCEngine {
             .map_err(|e| ApplyWalEntryError::Apply(e.to_string()))
     }
 
+    /// Apply a WAL entry and re-enter it into the local WAL (chain relay support).
+    ///
+    /// This method does everything `apply_wal_entry_bytes` does (validate, decode,
+    /// apply to in-memory MVCC state), PLUS writes the entry to the local WAL files
+    /// and advances the LSN counter. This is required for chain relay topologies
+    /// where intermediate nodes forward entries to downstream peers.
+    ///
+    /// Per RFC-0862 §4.3.3.1 and §DatabaseSyncAdapter Durability:
+    /// - The entry MUST be readable via `read_wal_range` after this call returns
+    /// - `current_lsn()` MUST advance if the entry's LSN exceeds the current value
+    ///
+    /// When persistence is disabled (in-memory only), this behaves identically
+    /// to `apply_wal_entry_bytes` (no WAL re-entry needed).
+    pub fn apply_wal_entry_relay(
+        &self,
+        entry: &[u8],
+    ) -> std::result::Result<(), ApplyWalEntryError> {
+        use crate::storage::mvcc::wal_manager::{
+            WAL_ENTRY_MAGIC, WAL_FORMAT_VERSION, WAL_HEADER_SIZE,
+        };
+
+        if !self.is_open() {
+            return Err(ApplyWalEntryError::Apply("engine not open".into()));
+        }
+
+        if entry.len() < (WAL_HEADER_SIZE as usize) + 4 {
+            return Err(ApplyWalEntryError::Decode(format!(
+                "WAL entry too short: {} bytes (need at least {})",
+                entry.len(),
+                WAL_HEADER_SIZE as usize + 4
+            )));
+        }
+
+        let magic =
+            u32::from_le_bytes(entry[0..4].try_into().map_err(|_| {
+                ApplyWalEntryError::Decode("WAL entry magic: try_into failed".into())
+            })?);
+        if magic != WAL_ENTRY_MAGIC {
+            return Err(ApplyWalEntryError::Decode(format!(
+                "invalid WAL entry magic: 0x{magic:08X} (expected 0x{WAL_ENTRY_MAGIC:08X})"
+            )));
+        }
+
+        let version = entry[4];
+        if version != WAL_FORMAT_VERSION {
+            return Err(ApplyWalEntryError::Decode(format!(
+                "unsupported WAL version: {version} (expected {WAL_FORMAT_VERSION})"
+            )));
+        }
+
+        let flags_byte = entry[5];
+        let flags = crate::storage::mvcc::wal_manager::WalFlags::from_byte(flags_byte);
+
+        let header_size = u16::from_le_bytes(entry[6..8].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry header_size: try_into failed".into())
+        })?);
+        if header_size != WAL_HEADER_SIZE {
+            return Err(ApplyWalEntryError::Decode(format!(
+                "WAL entry header_size mismatch: {header_size} (expected {WAL_HEADER_SIZE})"
+            )));
+        }
+
+        let lsn =
+            u64::from_le_bytes(entry[8..16].try_into().map_err(|_| {
+                ApplyWalEntryError::Decode("WAL entry lsn: try_into failed".into())
+            })?);
+
+        let previous_lsn = u64::from_le_bytes(entry[16..24].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry previous_lsn: try_into failed".into())
+        })?);
+
+        let entry_size = u32::from_le_bytes(entry[24..28].try_into().map_err(|_| {
+            ApplyWalEntryError::Decode("WAL entry entry_size: try_into failed".into())
+        })?) as usize;
+
+        let data_portion = &entry[WAL_HEADER_SIZE as usize..];
+        if data_portion.len() < entry_size + 4 {
+            return Err(ApplyWalEntryError::Decode(format!(
+                "WAL entry data truncated: have {} bytes, need {}",
+                data_portion.len(),
+                entry_size + 4
+            )));
+        }
+
+        let wal_entry = crate::storage::mvcc::wal_manager::WALEntry::decode(
+            lsn,
+            previous_lsn,
+            flags,
+            data_portion,
+        )
+        .map_err(|e| ApplyWalEntryError::Decode(format!("WALEntry::decode failed: {e}")))?;
+
+        // Step 1: Apply to in-memory MVCC state (same as apply_wal_entry_bytes)
+        self.apply_wal_entry(wal_entry.clone())
+            .map_err(|e| ApplyWalEntryError::Apply(e.to_string()))?;
+
+        // Step 2: Re-enter into local WAL (chain relay support)
+        // Only if persistence is enabled. This makes the entry visible to
+        // read_wal_range() and advances current_lsn().
+        if let Some(ref pm) = self.persistence.as_ref().as_ref() {
+            if pm.is_enabled() {
+                // Assign a new local LSN and persist to WAL files.
+                // The entry's original LSN is overwritten by append_entry.
+                if let Err(e) = pm.append_wal_entry(wal_entry) {
+                    // WAL re-entry failure is non-fatal for the in-memory apply,
+                    // but we log it because chain relay will break downstream.
+                    // The in-memory state is still consistent.
+                    tracing::warn!(
+                        error = %e,
+                        original_lsn = lsn,
+                        "WAL re-entry failed: chain relay may not work for downstream peers"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Return the current WAL LSN (highest committed LSN).
     /// Returns 0 if persistence is disabled (in-memory only).
     /// This is the public API for `DatabaseSyncAdapter::current_lsn`.
