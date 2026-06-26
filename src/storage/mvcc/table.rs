@@ -1157,8 +1157,18 @@ impl MVCCTable {
         // Check if row already exists in local versions
         {
             let txn_versions = self.txn_versions.read().unwrap();
-            if txn_versions.has_locally_seen(row_id) && txn_versions.get(row_id).is_some() {
-                return Err(Error::primary_key_constraint(row_id));
+            // Use get_local_version (not get) to distinguish
+            // "no local version" from "locally deleted".
+            // get() swallows deletes as None, but get_local_version
+            // returns the tombstone so we can see it's deleted.
+            if let Some(local) = txn_versions.get_local_version(row_id) {
+                if !local.is_deleted() {
+                    return Err(Error::primary_key_constraint(row_id));
+                }
+                // Row was locally deleted in this transaction —
+                // the INSERT is valid (re-insert after delete).
+                // Skip the global store check below.
+                return Ok(row_id);
             }
         }
 
