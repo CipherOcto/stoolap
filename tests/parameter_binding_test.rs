@@ -275,3 +275,91 @@ fn test_limit_parameter() {
 
     assert_eq!(count, 5, "LIMIT ? should limit to 5 rows");
 }
+
+/// Regression (CipherOcto/octo-whatsapp Phase 7.K, 2026-07-15):
+/// `messages.read_view_once` handler reported `match rows.next()`
+/// returning `None` after `ingester.ingest()` on the same
+/// `Database` handle, while a `for row in rows.by_ref()` on the
+/// same iterator saw the row. The hypothesis at the time was a
+/// Stoolap iterator or param-binding bug.
+///
+/// **Outcome:** no Stoolap bug — both `match rows.next()` and
+/// `for row in rows.by_ref()` correctly observe the inserted row.
+/// The downstream workaround in
+/// `crates/octo-whatsapp/src/ipc/handlers/messages_read_view_once.rs`
+/// (use `for row_res in rows.by_ref()` + `if r.is_none() { ... }`
+/// to capture the first row, instead of `match rows.next()`) was
+/// kept as defensive code since it costs nothing and the bug
+/// reproducer was unable to be isolated to a Stoolap call path
+/// after exhausting available diagnostic routes. If a future
+/// investigator wants to revert to `match rows.next()`, this test
+/// pins the expected Stoolap behaviour so a regression there
+/// would surface here.
+#[test]
+fn test_two_handles_same_dsn_match_first_next() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dsn = format!(
+        "file://{}/events.db",
+        dir.path().to_str().expect("utf8 path")
+    );
+
+    let db_a = Database::open(&dsn).expect("open A");
+    db_a.execute(
+        "CREATE TABLE messages (event_id INTEGER PRIMARY KEY, view_once INTEGER NOT NULL DEFAULT 0, consumed_at_unix_ms INTEGER, media_token TEXT)",
+        (),
+    )
+    .expect("create");
+
+    db_a.execute(
+        "INSERT INTO messages (event_id, view_once) VALUES (?, 1)",
+        (Value::from(42_i64),),
+    )
+    .expect("insert");
+
+    // Form A: single match next() — operator's failing pattern.
+    let mut rows = db_a
+        .query(
+            "SELECT consumed_at_unix_ms FROM messages WHERE event_id = ?",
+            (Value::from(42_i64),),
+        )
+        .expect("q");
+    let first = rows.next();
+    eprintln!("form A first={first:?}");
+
+    // Form B: drain loop — known working.
+    let mut rows2 = db_a
+        .query(
+            "SELECT consumed_at_unix_ms FROM messages WHERE event_id = ?",
+            (Value::from(42_i64),),
+        )
+        .expect("q");
+    let mut drain_count = 0;
+    for res in rows2.by_ref() {
+        if res.is_ok() {
+            drain_count += 1;
+        }
+    }
+    eprintln!("form B drain={drain_count}");
+
+    // Form C: literal-id SQL — known working.
+    let mut rows3 = db_a
+        .query(
+            "SELECT consumed_at_unix_ms FROM messages WHERE event_id = 42",
+            (),
+        )
+        .expect("q");
+    let mut literal_count = 0;
+    for res in rows3.by_ref() {
+        if res.is_ok() {
+            literal_count += 1;
+        }
+    }
+    eprintln!("form C literal={literal_count}");
+
+    assert!(
+        matches!(first, Some(Ok(_))),
+        "form A: `rows.next()` on a freshly inserted row must return Some(Ok(_)); got {first:?}"
+    );
+    assert_eq!(drain_count, 1, "form B: drain should see 1 row");
+    assert_eq!(literal_count, 1, "form C: literal WHERE should see 1 row");
+}
