@@ -1879,10 +1879,6 @@ impl Parser {
                         sub_vectors,
                     }));
                 }
-                _ => {
-                    // Unknown constraint keyword - skip it
-                    break;
-                }
                 "REFERENCES" => {
                     self.next_token(); // consume REFERENCES
                     if !self.expect_peek(TokenType::Identifier) {
