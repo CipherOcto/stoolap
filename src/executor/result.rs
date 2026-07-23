@@ -1178,7 +1178,9 @@ impl TopNResult {
 
         // Extract rows from heap and sort them
         let mut rows: Vec<Row> = heap.into_iter().map(|hr| hr.row).collect();
+        eprintln!("[DEBUG] TopNResult::new heap rows: {:?}", rows);
         rows.sort_unstable_by(|a, b| compare(a, b));
+        eprintln!("[DEBUG] TopNResult::new after sort: {:?}", rows);
 
         // Apply offset
         if offset > 0 && offset < rows.len() {

@@ -314,7 +314,7 @@ impl Executor {
         // Execute the main query
         // The third return value indicates if LIMIT/OFFSET was already applied (by storage-level pushdown)
         // The fourth return value contains deferred projection info if applicable
-        let (mut result, columns, limit_offset_applied, deferred_projection) =
+        let (mut result, columns, limit_offset_applied, mut deferred_projection) =
             self.execute_select_internal(stmt, ctx, &classification)?;
 
         // Apply set operations (UNION, INTERSECT, EXCEPT)
@@ -344,17 +344,34 @@ impl Executor {
 
         // Apply DISTINCT
         // When ORDER BY references columns not in SELECT, we add extra columns for sorting.
-        // DISTINCT should only consider the original SELECT columns, not the extra ORDER BY columns.
+        // DISTINCT should only consider the original SELECT columns, not the extra ORDER BY
+        // columns. Likewise, when the SELECT list has FEWER columns than the underlying
+        // scan (e.g. `SELECT DISTINCT x FROM t` where `t` also has a primary-key `id`),
+        // we must project to the SELECT columns BEFORE applying DISTINCT — otherwise
+        // `DistinctResult` hashes the underlying-row prefix and every row's `(id, x)`
+        // tuple is unique, making DISTINCT a no-op.
+        // Regression test:
+        // tests/cipherocto_unique_distinct_regression_test.rs::select_distinct_with_order_by_and_limit_dedupes
         if stmt.distinct {
-            if columns.len() > expected_columns && expected_columns > 0 {
-                // Extra ORDER BY columns present - only hash SELECT columns for distinctness
-                result = Box::new(DistinctResult::with_column_count(
-                    result,
-                    Some(expected_columns),
-                ));
-            } else {
-                result = Box::new(DistinctResult::new(result));
+            if expected_columns > 0 && expected_columns < columns.len() {
+                // Project the underlying scan to the SELECT columns first. Uses the
+                // simple column-reference projection helper; falls back to no-op
+                // (DistinctResult on raw scan) when SELECT has complex expressions.
+                if let Some((col_indices, output_names)) =
+                    self.get_simple_projection_indices(&stmt.columns, &columns)
+                {
+                    result = Box::new(StreamingProjectionResult::new(
+                        result,
+                        col_indices,
+                        output_names,
+                    ));
+                    // Deferred projection (computed for the full scan) must not run
+                    // again — the rows are now 1-per-SELECT-column, so reading
+                    // col_indices like [1] would index past the end and emit NULLs.
+                    deferred_projection = None;
+                }
             }
+            result = Box::new(DistinctResult::new(result));
         }
 
         // Apply ORDER BY (with TOP-N optimization if LIMIT is present)
