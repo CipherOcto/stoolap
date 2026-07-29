@@ -2347,10 +2347,17 @@ impl MVCCEngine {
             }
 
             if col.primary_key && col.data_type != DataType::Integer {
-                return Err(Error::internal(format!(
-                    "primary key column {} must be of type INTEGER",
-                    col.name
-                )));
+                // Allow non-INTEGER PK columns that participate in a
+                // composite PK (the rowid fast-path requires INTEGER,
+                // but composite PKs use a uniqueness index and accept
+                // any data type for their member columns).
+                let pk_count = schema.columns.iter().filter(|c| c.primary_key).count();
+                if pk_count <= 1 {
+                    return Err(Error::internal(format!(
+                        "primary key column {} must be of type INTEGER",
+                        col.name
+                    )));
+                }
             }
 
             if !seen_names.insert(col.name_lower.clone()) {

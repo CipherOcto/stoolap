@@ -179,6 +179,22 @@ impl Executor {
         // Build schema from column definitions
         let mut schema_builder = SchemaBuilder::new(table_name.as_str());
 
+        // Pre-scan table constraints for composite-PK column names so we
+        // can mark each participating column as primary_key = true when
+        // it is added to the schema. Without this propagation, the
+        // per-column primary_key flag would only be set for single-
+        // column inline PRIMARY KEY, and the composite PK declared via
+        // `PRIMARY KEY (a, b)` table constraint would be silently
+        // dropped (downstream code that relies on schema.primary_key_
+        // indices() would see an empty PK list, and UPDATE WHERE scope
+        // guards would silently allow partial-PK matches).
+        let mut composite_pk_columns: Vec<String> = Vec::new();
+        for tc in &stmt.table_constraints {
+            if let TableConstraint::PrimaryKey(cols) = tc {
+                composite_pk_columns.extend(cols.iter().map(|c| c.value_lower.to_string()));
+            }
+        }
+
         // Collect columns with UNIQUE constraints to create indexes after table creation
         let mut unique_columns: Vec<String> = Vec::new();
 
@@ -189,13 +205,31 @@ impl Executor {
                 .constraints
                 .iter()
                 .any(|c| matches!(c, ColumnConstraint::NotNull));
-            let is_primary_key = col_def
+            let mut is_primary_key = col_def
                 .constraints
                 .iter()
                 .any(|c| matches!(c, ColumnConstraint::PrimaryKey));
+            // Composite PK via table constraint: mark each named column
+            // as a PK. The "must be INTEGER" check below is relaxed for
+            // these because the composite key's uniqueness is enforced
+            // at row-insert time by the storage layer (per-table
+            // uniqueness index is built post-schema below).
+            if !is_primary_key
+                && composite_pk_columns
+                    .iter()
+                    .any(|c| c == &col_def.name.value_lower)
+            {
+                is_primary_key = true;
+            }
 
-            // Validate PRIMARY KEY type - only INTEGER is supported
-            if is_primary_key && data_type != DataType::Integer {
+            // Validate PRIMARY KEY type - only INTEGER is supported UNLESS the
+            // column is part of a composite PK declared via table
+            // constraint. The composite key's uniqueness is enforced
+            // separately and accepts non-INTEGER columns.
+            let is_composite_pk_member = composite_pk_columns
+                .iter()
+                .any(|c| c == &col_def.name.value_lower);
+            if is_primary_key && data_type != DataType::Integer && !is_composite_pk_member {
                 return Err(Error::Parse(format!(
                     "PRIMARY KEY column '{}' must be INTEGER type, got {:?}. Only INTEGER PRIMARY KEY is supported.",
                     col_name, data_type
@@ -307,6 +341,7 @@ impl Executor {
 
         // Collect table-level UNIQUE and FOREIGN KEY constraints
         let mut table_unique_constraints: Vec<Vec<String>> = Vec::new();
+        let mut composite_pk_columns: Vec<String> = Vec::new();
         for constraint in &stmt.table_constraints {
             match constraint {
                 TableConstraint::Unique(cols) => {
@@ -327,7 +362,16 @@ impl Executor {
                     )?;
                     schema_builder = schema_builder.add_foreign_key(fk_constraint);
                 }
-                _ => {}
+                TableConstraint::PrimaryKey(cols) => {
+                    // Composite PK columns are stored so we can set
+                    // per-column primary_key = true on the schema
+                    // after schema_builder.build() returns. Without
+                    // this propagation, downstream code (UPDATE WHERE
+                    // scope guards, composite-PK rowid lookups, etc.)
+                    // cannot see the composite key.
+                    composite_pk_columns.extend(cols.iter().map(|c| c.value_lower.to_string()));
+                }
+                TableConstraint::Check(_) => {}
             }
         }
 

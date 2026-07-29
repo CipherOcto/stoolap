@@ -40,6 +40,106 @@ use super::result::ExecResult;
 use super::utils::dummy_token_clone;
 use super::Executor;
 use std::sync::RwLock;
+/// Validate that an UPDATE's WHERE clause references all primary-key
+/// columns with equality, for tables whose PK is not a single INTEGER
+/// column (the rowid fast-path). For composite PK (e.g. cipherocto's
+/// `(recorder_did, event_id)`) and non-INTEGER single-column PK,
+/// `WHERE event_id = X` alone matches every row sharing that PK
+/// component across distinct other-PK values — a cross-recorder
+/// side-effect. Requiring the FULL PK match in WHERE makes the
+/// UPDATE scope unambiguous.
+///
+/// Composite-PK detection: per-column `primary_key = true` flags on
+/// the schema (set by DDL for both inline single-column PRIMARY KEY
+/// and composite PRIMARY KEY (a, b) table constraints).
+///
+/// Error variant is `Error::InvalidArgument` with a clear message.
+/// Callers (cipherocto's `set_event_anchor_tx_hash`) can map it to a
+/// domain error or surface it directly. Also called from the PK
+/// update fast path so the guard cannot be bypassed.
+pub(super) fn validate_update_where_references_pk(
+    stmt: &UpdateStatement,
+    schema: &Schema,
+) -> Result<()> {
+    let table_name = &stmt.table_name.value_lower;
+
+    let pk_indices = schema.primary_key_indices();
+    if pk_indices.is_empty() {
+        // No PK declared — accept any WHERE (heap table).
+        return Ok(());
+    }
+
+    // Single INTEGER PK is handled by the rowid fast-path; WHERE
+    // matching there is already exact.
+    if pk_indices.len() == 1 && schema.columns[pk_indices[0]].data_type == DataType::Integer {
+        return Ok(());
+    }
+
+    // Composite PK or non-INTEGER single-column PK: require WHERE to
+    // reference every PK column via equality.
+    let pk_column_lowers: Vec<String> = pk_indices
+        .iter()
+        .map(|&i| schema.columns[i].name.to_lowercase())
+        .collect();
+
+    let mut referenced = std::collections::HashSet::<SmartString>::new();
+    if let Some(expr) = stmt.where_clause.as_deref() {
+        collect_equality_columns(expr, &mut referenced);
+    }
+
+    let missing: Vec<&str> = pk_column_lowers
+        .iter()
+        .filter(|c| !referenced.iter().any(|r| r.as_str() == c.as_str()))
+        .map(|s| s.as_str())
+        .collect();
+
+    if !missing.is_empty() {
+        return Err(Error::InvalidArgument(format!(
+            "UPDATE on table '{table_name}' has primary key columns \
+             [{}] but the WHERE clause does not reference all of them \
+             with equality (missing: [{}]). UPDATE on a composite-PK \
+             or non-INTEGER PK must scope to the full primary key to \
+             avoid cross-entity side effects.",
+            pk_column_lowers.join(", "),
+            missing.join(", "),
+        )));
+    }
+    Ok(())
+}
+
+/// Recursive walker that collects column names referenced on the
+/// left side of `=` (or `<>` / `<` / `>` / ...) comparisons, recursing
+/// into AND-chains. Used by `validate_update_where_references_pk`.
+pub(super) fn collect_equality_columns(
+    expr: &Expression,
+    out: &mut std::collections::HashSet<SmartString>,
+) {
+    match expr {
+        Expression::Infix(infix) => {
+            if infix.op_type == InfixOperator::And {
+                collect_equality_columns(&infix.left, out);
+                collect_equality_columns(&infix.right, out);
+                return;
+            }
+            // For any other infix (=, <>, <, >, ...), record the
+            // left side if it's an Identifier or QualifiedIdentifier.
+            if let Expression::Identifier(id) = infix.left.as_ref() {
+                out.insert(id.value_lower.clone());
+            } else if let Expression::QualifiedIdentifier(q) = infix.left.as_ref() {
+                out.insert(q.name.value_lower.clone());
+            }
+        }
+        Expression::Identifier(id) => {
+            // Standalone identifier (unusual in WHERE but possible).
+            out.insert(id.value_lower.clone());
+        }
+        Expression::QualifiedIdentifier(q) => {
+            out.insert(q.name.value_lower.clone());
+        }
+        _ => {}
+    }
+}
+
 /// Validate type coercion didn't silently fail.
 /// Returns an error if a non-null value became null during coercion.
 fn validate_coercion(
@@ -1224,6 +1324,12 @@ impl Executor {
         let schema = table.schema();
         // OPTIMIZATION: Use CompactArc<Vec<String>> to share column names without cloning
         let column_names = schema.column_names_arc();
+
+        // Composite-PK / non-INTEGER PK scope guard. UPDATE WHERE on a
+        // single PK component would match every row sharing that
+        // component across distinct other-PK values — a cross-entity
+        // side effect. Require full PK match in WHERE for those tables.
+        validate_update_where_references_pk(stmt, &schema)?;
 
         // Pre-compute FK info for UPDATE validation
         // Determine which FK columns are being updated (for parent validation)

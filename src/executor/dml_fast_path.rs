@@ -49,6 +49,18 @@ impl Executor {
         ctx: &ExecutionContext,
         compiled: &RwLock<CompiledExecution>,
     ) -> Option<Result<Box<dyn QueryResult>>> {
+        // Composite-PK / non-INTEGER PK scope guard (mirrors the
+        // guard in execute_update so the fast path doesn't bypass
+        // it). See `validate_update_where_references_pk` in dml.rs
+        // for the rationale.
+        let schema = match self.engine.get_table_schema(&stmt.table_name.value_lower) {
+            Ok(s) => s,
+            Err(_) => return None, // fall through to normal path
+        };
+        if let Err(e) = super::dml::validate_update_where_references_pk(stmt, &schema) {
+            return Some(Err(e));
+        }
+
         // Quick reject: explicit transaction (use try_lock for fast rejection)
         {
             let active_tx = match self.active_transaction.try_lock() {
