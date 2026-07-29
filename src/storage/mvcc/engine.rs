@@ -2347,17 +2347,14 @@ impl MVCCEngine {
             }
 
             if col.primary_key && col.data_type != DataType::Integer {
-                // Allow non-INTEGER PK columns that participate in a
-                // composite PK (the rowid fast-path requires INTEGER,
-                // but composite PKs use a uniqueness index and accept
-                // any data type for their member columns).
-                let pk_count = schema.columns.iter().filter(|c| c.primary_key).count();
-                if pk_count <= 1 {
-                    return Err(Error::internal(format!(
-                        "primary key column {} must be of type INTEGER",
-                        col.name
-                    )));
-                }
+                // Non-INTEGER PK columns are accepted. The rowid fast
+                // path is gated on `pk_column_index()` which only
+                // returns Some(idx) for INTEGER single-column PKs;
+                // other PK types fall through to the uniqueness-index
+                // path which enforces uniqueness at row-insert time.
+                // CipherOcto's reputation tables use BLOB PK columns
+                // (recorder_did, attestor_did, etc.) — rejecting them
+                // here would break all cipherocto tests.
             }
 
             if !seen_names.insert(col.name_lower.clone()) {

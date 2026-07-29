@@ -222,19 +222,12 @@ impl Executor {
                 is_primary_key = true;
             }
 
-            // Validate PRIMARY KEY type - only INTEGER is supported UNLESS the
-            // column is part of a composite PK declared via table
-            // constraint. The composite key's uniqueness is enforced
-            // separately and accepts non-INTEGER columns.
-            let is_composite_pk_member = composite_pk_columns
-                .iter()
-                .any(|c| c == &col_def.name.value_lower);
-            if is_primary_key && data_type != DataType::Integer && !is_composite_pk_member {
-                return Err(Error::Parse(format!(
-                    "PRIMARY KEY column '{}' must be INTEGER type, got {:?}. Only INTEGER PRIMARY KEY is supported.",
-                    col_name, data_type
-                )));
-            }
+            // PRIMARY KEY accepts any data type. The rowid fast-path is
+            // internally gated to INTEGER single-column PKs; other
+            // PKs use a uniqueness index for enforcement.
+            // CipherOcto's reputation tables use BLOB PK columns
+            // (recorder_did, attestor_did, etc.) — the previous
+            // strict-INTEGER check broke them.
 
             let is_unique = col_def
                 .constraints
