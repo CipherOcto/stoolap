@@ -274,6 +274,13 @@ pub struct Schema {
 
     /// Cached lowercase column names (computed lazily on first access)
     column_names_lower_cache: OnceLock<CompactArc<Vec<String>>>,
+
+    /// Composite-PK column lowers, populated by DDL when a
+    /// `PRIMARY KEY (a, b)` table constraint is processed. Read by the
+    /// UPDATE WHERE scope guard to detect composite-PK tables (whose
+    /// per-column primary_key flags are NOT propagated, so
+    /// `primary_key_indices()` returns an empty list for them).
+    composite_pk_columns: Vec<String>,
 }
 
 impl Clone for Schema {
@@ -317,6 +324,7 @@ impl Clone for Schema {
             column_index_map_cache,
             pk_indices_cache,
             column_names_lower_cache,
+            composite_pk_columns: self.composite_pk_columns.clone(),
         }
     }
 }
@@ -399,6 +407,7 @@ impl Schema {
             column_index_map_cache,
             pk_indices_cache,
             column_names_lower_cache,
+            composite_pk_columns: Vec::new(),
         }
     }
 
@@ -479,6 +488,7 @@ impl Schema {
             column_index_map_cache,
             pk_indices_cache,
             column_names_lower_cache,
+            composite_pk_columns: Vec::new(),
         }
     }
 
@@ -587,6 +597,18 @@ impl Schema {
     /// Check if the schema has a primary key
     pub fn has_primary_key(&self) -> bool {
         self.columns.iter().any(|c| c.primary_key)
+    }
+
+    /// Composite-PK column lowers (set by DDL when a
+    /// `PRIMARY KEY (a, b)` table constraint is processed).
+    /// Read by the UPDATE WHERE scope guard in the executor.
+    pub fn composite_pk_columns(&self) -> &[String] {
+        &self.composite_pk_columns
+    }
+
+    /// Set composite-PK columns (post-build, called by DDL).
+    pub fn set_composite_pk_columns(&mut self, cols: Vec<String>) {
+        self.composite_pk_columns = cols;
     }
 
     /// Get the primary key column indices (cached for performance)

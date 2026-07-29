@@ -205,22 +205,21 @@ impl Executor {
                 .constraints
                 .iter()
                 .any(|c| matches!(c, ColumnConstraint::NotNull));
-            let mut is_primary_key = col_def
+            let is_primary_key = col_def
                 .constraints
                 .iter()
                 .any(|c| matches!(c, ColumnConstraint::PrimaryKey));
-            // Composite PK via table constraint: mark each named column
-            // as a PK. The "must be INTEGER" check below is relaxed for
-            // these because the composite key's uniqueness is enforced
-            // at row-insert time by the storage layer (per-table
-            // uniqueness index is built post-schema below).
-            if !is_primary_key
-                && composite_pk_columns
-                    .iter()
-                    .any(|c| c == &col_def.name.value_lower)
-            {
-                is_primary_key = true;
-            }
+            // Composite PK via table constraint: tracked separately
+            // (see composite_pk_columns above). Do NOT propagate
+            // primary_key = true to the per-column schema flags —
+            // doing so makes the storage layer register a
+            // single-column PkIndex on the first INTEGER PK column,
+            // which produces false PK violations for rows that share
+            // that column value but differ on other PK columns.
+            // Instead, the UPDATE scope guard detects composite PKs
+            // via Schema::has_composite_primary_key() (added below)
+            // and enforces full-PK WHERE scoping at the executor
+            // level.
 
             // PRIMARY KEY accepts any data type. The rowid fast-path is
             // internally gated to INTEGER single-column PKs; other
@@ -368,7 +367,16 @@ impl Executor {
             }
         }
 
-        let schema = schema_builder.build();
+        let mut schema = schema_builder.build();
+        // Round 7 cipherocto follow-up: record composite-PK column
+        // lowers on the schema so the UPDATE WHERE scope guard can
+        // detect composite-PK tables. The per-column primary_key
+        // flag is NOT propagated (would trigger false PK violations
+        // via the storage layer's single-column PkIndex). See
+        // Schema::composite_pk_columns().
+        if !composite_pk_columns.is_empty() {
+            schema.set_composite_pk_columns(composite_pk_columns.clone());
+        }
 
         // Collect FK columns that need auto-created indexes (skip PK and UNIQUE columns)
         let mut fk_index_columns: Vec<String> = Vec::new();

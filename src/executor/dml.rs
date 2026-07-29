@@ -49,9 +49,11 @@ use std::sync::RwLock;
 /// side-effect. Requiring the FULL PK match in WHERE makes the
 /// UPDATE scope unambiguous.
 ///
-/// Composite-PK detection: per-column `primary_key = true` flags on
-/// the schema (set by DDL for both inline single-column PRIMARY KEY
-/// and composite PRIMARY KEY (a, b) table constraints).
+/// Composite-PK detection: `Schema::composite_pk_columns()` (populated
+/// by DDL when a `PRIMARY KEY (a, b)` table constraint is processed).
+/// Per-column `primary_key = true` flags are NOT used here because
+/// they are NOT propagated for composite PKs (would trigger false
+/// PK violations via the storage layer's single-column PkIndex).
 ///
 /// Error variant is `Error::InvalidArgument` with a clear message.
 /// Callers (cipherocto's `set_event_anchor_tx_hash`) can map it to a
@@ -63,6 +65,37 @@ pub(super) fn validate_update_where_references_pk(
 ) -> Result<()> {
     let table_name = &stmt.table_name.value_lower;
 
+    // Composite PK: require WHERE to reference every PK column.
+    let composite_pk = schema.composite_pk_columns();
+    if !composite_pk.is_empty() {
+        let pk_column_lowers: Vec<&str> = composite_pk.iter().map(|s| s.as_str()).collect();
+
+        let mut referenced = std::collections::HashSet::<SmartString>::new();
+        if let Some(expr) = stmt.where_clause.as_deref() {
+            collect_equality_columns(expr, &mut referenced);
+        }
+
+        let missing: Vec<&str> = pk_column_lowers
+            .iter()
+            .copied()
+            .filter(|c| !referenced.iter().any(|r| r.as_str() == *c))
+            .collect();
+
+        if !missing.is_empty() {
+            return Err(Error::InvalidArgument(format!(
+                "UPDATE on table '{table_name}' has composite primary \
+                 key columns [{}] but the WHERE clause does not \
+                 reference all of them with equality (missing: [{}]). \
+                 UPDATE on a composite-PK table must scope to the \
+                 full primary key to avoid cross-entity side effects.",
+                pk_column_lowers.join(", "),
+                missing.join(", "),
+            )));
+        }
+        return Ok(());
+    }
+
+    // No composite PK. Check single-column PK via per-column flag.
     let pk_indices = schema.primary_key_indices();
     if pk_indices.is_empty() {
         // No PK declared — accept any WHERE (heap table).
@@ -75,8 +108,7 @@ pub(super) fn validate_update_where_references_pk(
         return Ok(());
     }
 
-    // Composite PK or non-INTEGER single-column PK: require WHERE to
-    // reference every PK column via equality.
+    // Single non-INTEGER PK: require WHERE to reference the PK column.
     let pk_column_lowers: Vec<String> = pk_indices
         .iter()
         .map(|&i| schema.columns[i].name.to_lowercase())
@@ -95,11 +127,11 @@ pub(super) fn validate_update_where_references_pk(
 
     if !missing.is_empty() {
         return Err(Error::InvalidArgument(format!(
-            "UPDATE on table '{table_name}' has primary key columns \
-             [{}] but the WHERE clause does not reference all of them \
-             with equality (missing: [{}]). UPDATE on a composite-PK \
-             or non-INTEGER PK must scope to the full primary key to \
-             avoid cross-entity side effects.",
+            "UPDATE on table '{table_name}' has non-INTEGER primary \
+             key column [{}] but the WHERE clause does not reference \
+             it with equality (missing: [{}]). UPDATE on a non-INTEGER \
+             PK must scope to the primary key to avoid cross-entity \
+             side effects.",
             pk_column_lowers.join(", "),
             missing.join(", "),
         )));
