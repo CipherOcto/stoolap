@@ -191,6 +191,20 @@ impl ToParam for &[u8] {
     }
 }
 
+/// Encode a `Dqa` for parameter binding.
+///
+/// Wraps the value via `Value::quant()`, which serializes into the
+/// canonical 16-byte BE `DqaEncoding` (value | scale | reserved[7])
+/// stored under the `DataType::Quant` extension tag. Wire form
+/// matches `octo_determin::Dqa::to_bytes()` byte-for-byte, so a
+/// Dqa value bound as a parameter reads back losslessly via
+/// `row.get::<Dqa>(idx)`.
+impl ToParam for octo_determin::Dqa {
+    fn to_param(&self) -> Value {
+        Value::quant(*self)
+    }
+}
+
 /// Trait for collections of parameters
 ///
 /// This enables passing tuples, arrays, and slices as parameters.

@@ -52,6 +52,7 @@ use crate::executor::{CachedPlanRef, ExecutionContext, Executor};
 use crate::storage::mvcc::engine::MVCCEngine;
 use crate::storage::traits::Engine;
 use crate::storage::{Config, SyncMode};
+use octo_determin::Dqa;
 
 use super::params::{NamedParams, Params};
 use super::rows::{FromRow, Rows};
@@ -1222,6 +1223,23 @@ impl<T: FromValue> FromValue for Option<T> {
         } else {
             Ok(Some(T::from_value(value)?))
         }
+    }
+}
+
+/// Decode a `Dqa` from a Stoolap column value.
+///
+/// Wire form: canonical 16-byte BE `DqaEncoding` defined in
+/// `octo_determin::Dqa::to_bytes()` — value(i64) | scale(u8) |
+/// reserved[7]. Matches the on-wire format produced by
+/// `Value::quant()` and `Dqa::to_bytes()` byte-for-byte, so a Dqa
+/// value serialized by `ToParam for Dqa` round-trips losslessly
+/// through the database.
+impl FromValue for Dqa {
+    fn from_value(value: &Value) -> Result<Self> {
+        value.as_dqa().ok_or_else(|| Error::TypeConversion {
+            from: format!("{:?}", value),
+            to: "Dqa".to_string(),
+        })
     }
 }
 
