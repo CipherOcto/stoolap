@@ -44,7 +44,7 @@
 
 use octo_determin::Dqa;
 use stoolap::common::CompactArc;
-use stoolap::{params, DataType, Database, FromValue, ToParam, Value};
+use stoolap::{params, DataType, Database, FromValue, Value};
 
 fn fresh_db(label: &str) -> Database {
     let db = Database::open_in_memory().unwrap();
@@ -60,12 +60,12 @@ fn read_back(db: &Database, table: &str, written: Dqa) -> Dqa {
     )
     .unwrap();
     let sql = format!("SELECT v FROM {table}");
-    let rows = db.query(&sql, ()).unwrap();
-    for row in rows {
-        let row = row.unwrap();
-        return row.get::<Dqa>(0).unwrap();
-    }
-    panic!("SELECT returned no rows");
+    let mut rows = db.query(&sql, ()).unwrap();
+    let row = rows
+        .next()
+        .expect("SELECT returned no rows")
+        .expect("row decode failed");
+    row.get::<Dqa>(0).unwrap()
 }
 
 #[test]
