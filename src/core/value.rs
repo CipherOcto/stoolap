@@ -499,10 +499,20 @@ impl Value {
     }
 
     /// Extract DQA from Extension payload
+    ///
+    /// Strict contract: payload must be exactly 17 bytes (1 tag + 16
+    /// DqaEncoding). The 7 reserved bytes (indices 10..17) must be
+    /// zero — matches `DqaEncoding::to_dqa` validation in
+    /// `octo_determin::dqa`. A future 24-byte encoding or non-zero
+    /// reserved bytes is REJECTED (returns `None`) to prevent silent
+    /// cross-version corruption.
     pub fn as_dqa(&self) -> Option<Dqa> {
         match self {
             Value::Extension(data) if data.first().copied() == Some(DataType::Quant as u8) => {
-                if data.len() < 10 {
+                if data.len() != 17 {
+                    return None;
+                }
+                if data[10..17] != [0u8; 7] {
                     return None;
                 }
                 let value = i64::from_be_bytes(data[1..9].try_into().ok()?);
