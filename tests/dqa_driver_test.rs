@@ -44,7 +44,7 @@
 
 use octo_determin::Dqa;
 use stoolap::common::CompactArc;
-use stoolap::{params, DataType, Database, FromValue, Value};
+use stoolap::{params, DataType, Database, FromValue, ToParam, Value};
 
 fn fresh_db(label: &str) -> Database {
     let db = Database::open_in_memory().unwrap();
@@ -192,7 +192,7 @@ fn as_dqa_rejects_long_payload() {
     buf.push(9);
     buf.extend_from_slice(&0_i64.to_be_bytes());
     buf.push(0);
-    buf.extend_from_slice(&[0u8; 15]); // 14 bytes of trailing payload
+    buf.extend_from_slice(&[0u8; 14]); // 14 trailing bytes => 24 total, too long
     let v = Value::Extension(CompactArc::from(buf));
     assert!(
         v.as_dqa().is_none(),
@@ -223,4 +223,49 @@ fn dqa_roundtrip_multi_row() {
         assert_eq!(got.value, want.value);
         assert_eq!(got.scale, want.scale);
     }
+}
+
+/// AC-6 edge: `i64::MIN` round-trip. Isolates the i64::MIN boundary
+/// from the multi-row test (catches row-iteration masking regressions).
+#[test]
+fn dqa_roundtrip_min() {
+    let db = fresh_db("r11");
+    let written = Dqa::new(i64::MIN, 0).unwrap();
+    let read = read_back(&db, "dqa_t_r11", written);
+    assert_eq!(read.value, i64::MIN);
+    assert_eq!(read.scale, 0);
+}
+
+/// AC-6 edge: `Dqa::new(0, 18)` round-trip — zero value at max scale.
+/// Distinct from `dqa_roundtrip_max_scale_18` (value=1) and
+/// `dqa_roundtrip_zero` (scale=0). Catches non-canonical-input
+/// divergence between fork quant path and canonical borsh path.
+#[test]
+fn dqa_roundtrip_zero_max_scale() {
+    let db = fresh_db("r12");
+    let written = Dqa::new(0, 18).unwrap();
+    let read = read_back(&db, "dqa_t_r12", written);
+    assert_eq!(read.value, 0);
+    assert_eq!(read.scale, 18);
+}
+
+/// Acceptance counter-test for `as_dqa_rejects_non_zero_reserved_bytes`.
+/// Without this, a logic inversion (e.g. check flipped to `== [0xFF; 7]`)
+/// would still pass the falsify test. Confirms the decoder accepts the
+/// canonical all-zero reserved field. Also verifies the tag byte is
+/// `DataType::Quant as u8` (= 9), the value field is BE-encoded, and
+/// the scale byte is at index 9 — confirming the wire form contract.
+#[test]
+fn as_dqa_accepts_canonical_payload() {
+    let mut buf = Vec::with_capacity(17);
+    buf.push(9); // DataType::Quant = 9
+    buf.extend_from_slice(&(-1_i64).to_be_bytes()); // value = -1
+    buf.push(2); // scale = 2
+    buf.extend_from_slice(&[0u8; 7]); // reserved = canonical zero
+    let v = Value::Extension(CompactArc::from(buf));
+    let decoded = v
+        .as_dqa()
+        .expect("as_dqa must accept canonical all-zero reserved field");
+    assert_eq!(decoded.value, -1, "BE-decoded value must be -1");
+    assert_eq!(decoded.scale, 2, "scale byte must be at index 9");
 }
