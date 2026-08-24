@@ -308,6 +308,19 @@ impl Value {
                     i64::try_from(truncated).ok()
                 })
             }
+            Value::Extension(data) if data.first().copied() == Some(DataType::Quant as u8) => {
+                // DQA → i64: lossless for scale=0 (canonical amount-bearing
+                // columns per RFC-0105 + cipherocto v013/v014 substrate
+                // pattern). For non-zero scale, return None to surface
+                // the lossy read-back rather than silently truncate.
+                self.as_dqa().and_then(|dqa| {
+                    if dqa.scale == 0 {
+                        Some(dqa.value)
+                    } else {
+                        None
+                    }
+                })
+            }
             Value::Extension(_) | Value::Blob(_) => None,
         }
     }
